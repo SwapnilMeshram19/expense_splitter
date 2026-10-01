@@ -1,6 +1,8 @@
 import { FlashList } from '@shopify/flash-list';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useCallback } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
@@ -15,7 +17,7 @@ import { simplifyDebts } from '@/domain/simplify';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
 import { formatIsoDate } from '@/lib/dates';
 import { toneColor, useTheme } from '@/ui/theme';
-import { useCallback } from 'react';
+
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
 
 function loadGroupView(groupId: string) {
@@ -65,6 +67,7 @@ function loadGroupView(groupId: string) {
 export default function GroupDetailScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const compute = useCallback(() => loadGroupView(groupId), [groupId]);
   const view = useLiveData(TABLES, compute);
 
@@ -77,8 +80,7 @@ export default function GroupDetailScreen() {
     );
   }
 
-  const nameOf = (id: string) =>
-    id === view.me ? 'You' : (view.names.get(id) ?? 'Unknown member');
+  const nameOf = (id: string) => (id === view.me ? 'You' : (view.names.get(id) ?? 'Unknown member'));
   const myBalance = describeMyBalance(view.myBalance);
 
   const header = (
@@ -116,7 +118,9 @@ export default function GroupDetailScreen() {
           <View key={m.id} style={styles.balanceRow}>
             <Text style={{ color: theme.text, fontSize: 15 }}>{nameOf(m.id)}</Text>
             <Text style={{ color: toneColor(theme, tone), fontSize: 15 }}>
-              {m.balance === 0 ? 'settled' : `${m.balance > 0 ? '+' : '−'}${formatPaise(Math.abs(m.balance))}`}
+              {m.balance === 0
+                ? 'settled'
+                : `${m.balance > 0 ? '+' : '−'}${formatPaise(Math.abs(m.balance))}`}
             </Text>
           </View>
         );
@@ -133,8 +137,11 @@ export default function GroupDetailScreen() {
         data={view.expenseRows}
         keyExtractor={(row) => row.expense.id}
         ListHeaderComponent={header}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         ListEmptyComponent={
-          <Text style={[styles.emptyExpenses, { color: theme.muted }]}>No expenses yet.</Text>
+          <Text style={[styles.emptyExpenses, { color: theme.muted }]}>
+            No expenses yet. Tap “+ Add expense” to add the first one.
+          </Text>
         }
         renderItem={({ item }) => {
           const share = describeMyExpenseShare(item.myNet, item.involved);
@@ -144,7 +151,18 @@ export default function GroupDetailScreen() {
               ? `${nameOf(firstPayer.memberId)} paid ${formatPaise(item.expense.amountPaise)}`
               : `${item.payers.length} people paid ${formatPaise(item.expense.amountPaise)}`;
           return (
-            <View style={[styles.expenseRow, { borderBottomColor: theme.border }]}>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/groups/[groupId]/expenses/[expenseId]',
+                  params: { groupId, expenseId: item.expense.id },
+                })
+              }
+              style={({ pressed }) => [
+                styles.expenseRow,
+                { borderBottomColor: theme.border, opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
               <View style={styles.expenseMain}>
                 <Text style={[styles.expenseTitle, { color: theme.text }]} numberOfLines={1}>
                   {item.expense.description}
@@ -154,10 +172,22 @@ export default function GroupDetailScreen() {
                 </Text>
               </View>
               <Text style={{ color: toneColor(theme, share.tone), fontSize: 13 }}>{share.label}</Text>
-            </View>
+            </Pressable>
           );
         }}
       />
+
+      {view.me ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })
+          }
+          style={[styles.fab, { backgroundColor: theme.primary, bottom: insets.bottom + 24 }]}
+        >
+          <Text style={[styles.fabText, { color: theme.onPrimary }]}>+ Add expense</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -180,4 +210,13 @@ const styles = StyleSheet.create({
   expenseMain: { flex: 1, gap: 2 },
   expenseTitle: { fontSize: 16, fontWeight: '500' },
   emptyExpenses: { paddingHorizontal: 16 },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 28,
+    elevation: 4,
+  },
+  fabText: { fontSize: 16, fontWeight: '600' },
 });

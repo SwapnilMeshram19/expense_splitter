@@ -1,6 +1,7 @@
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import { Stack } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
@@ -30,14 +31,16 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: theme.background },
-        headerTintColor: theme.text,
-        contentStyle: { backgroundColor: theme.background },
-      }}
-    />
+    <KeyboardProvider>
+      <Stack
+        screenOptions={{
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: theme.background },
+          headerTintColor: theme.text,
+          contentStyle: { backgroundColor: theme.background },
+        }}
+      />
+    </KeyboardProvider>
   );
 }
 

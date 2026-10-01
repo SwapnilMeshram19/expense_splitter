@@ -1,15 +1,19 @@
 {
   "expo": {
-  "name": "Expense Splitter",
+    "name": "Expense Splitter",
     "slug": "expense-splitter",
     "scheme": "expensesplitter",
-    "platforms": ["android", "ios"],
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.expensesplitter.app"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

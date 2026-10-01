@@ -1,6 +1,7 @@
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
 import { createGroup } from '@/db/repositories/groups';
@@ -46,71 +47,77 @@ export default function NewGroupScreen() {
   const input = inputStyle(theme);
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <>
       <Stack.Screen options={{ title: 'New group' }} />
-
-      <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
-      <TextInput
-        value={groupName}
-        onChangeText={setGroupName}
-        placeholder="e.g. Goa trip, Flat 302"
-        placeholderTextColor={theme.muted}
-        maxLength={MAX_NAME_LENGTH}
-        style={input}
-        autoFocus
-      />
-
-      <Text style={[styles.label, { color: theme.muted }]}>Your name</Text>
-      <TextInput
-        value={selfName}
-        onChangeText={setSelfName}
-        placeholder="How others see you"
-        placeholderTextColor={theme.muted}
-        maxLength={MAX_NAME_LENGTH}
-        style={input}
-      />
-
-      <Text style={[styles.label, { color: theme.muted }]}>People</Text>
-      {people.map((person) => (
-        <View key={person.key} style={styles.personRow}>
-          <TextInput
-            value={person.name}
-            onChangeText={(name) => updatePerson(person.key, name)}
-            placeholder="Name"
-            placeholderTextColor={theme.muted}
-            maxLength={MAX_NAME_LENGTH}
-            style={[input, styles.personInput]}
-          />
-          <Pressable
-            accessibilityLabel="Remove person"
-            onPress={() => removePerson(person.key)}
-            style={styles.removeButton}
-            hitSlop={8}
-          >
-            <Text style={{ color: theme.muted, fontSize: 18 }}>✕</Text>
-          </Pressable>
-        </View>
-      ))}
-      <Pressable onPress={addPerson} style={styles.addPerson}>
-        <Text style={{ color: theme.primary, fontWeight: '600' }}>+ Add person</Text>
-      </Pressable>
-      <Text style={{ color: theme.muted, fontSize: 13 }}>
-        People don’t need the app. You can invite them later.
-      </Text>
-
-      {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={submit}
-        style={({ pressed }) => [
-          styles.submit,
-          { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
-        ]}
+      <KeyboardAwareScrollView
+        bottomOffset={62}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.submitText, { color: theme.onPrimary }]}>Create group</Text>
-      </Pressable>
-    </ScrollView>
+        <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
+        <TextInput
+          value={groupName}
+          onChangeText={setGroupName}
+          placeholder="e.g. Goa trip, Flat 302"
+          placeholderTextColor={theme.muted}
+          maxLength={MAX_NAME_LENGTH}
+          style={input}
+          autoFocus
+        />
+
+        <Text style={[styles.label, { color: theme.muted }]}>Your name</Text>
+        <TextInput
+          value={selfName}
+          onChangeText={setSelfName}
+          placeholder="How others see you"
+          placeholderTextColor={theme.muted}
+          maxLength={MAX_NAME_LENGTH}
+          style={input}
+        />
+
+        <Text style={[styles.label, { color: theme.muted }]}>People</Text>
+        {people.map((person) => (
+          <View key={person.key} style={styles.personRow}>
+            <TextInput
+              value={person.name}
+              onChangeText={(name) => updatePerson(person.key, name)}
+              placeholder="Name"
+              placeholderTextColor={theme.muted}
+              maxLength={MAX_NAME_LENGTH}
+              style={[input, styles.personInput]}
+            />
+            <Pressable
+              accessibilityLabel="Remove person"
+              onPress={() => removePerson(person.key)}
+              style={styles.removeButton}
+              hitSlop={8}
+            >
+              <Text style={{ color: theme.muted, fontSize: 18 }}>✕</Text>
+            </Pressable>
+          </View>
+        ))}
+        <Pressable onPress={addPerson} style={styles.addPerson}>
+          <Text style={{ color: theme.primary, fontWeight: '600' }}>+ Add person</Text>
+        </Pressable>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>
+          People don’t need the app. You can invite them later.
+        </Text>
+
+        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={submit}
+          style={({ pressed }) => [
+            styles.submit,
+            { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <Text style={[styles.submitText, { color: theme.onPrimary }]}>Create group</Text>
+        </Pressable>
+      </KeyboardAwareScrollView>
+      <KeyboardToolbar />
+    </>
   );
 }
 
@@ -120,7 +127,7 @@ const inputStyle = (theme: Theme) => [
 ];
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 8 },
+  container: { padding: 16, gap: 8, paddingBottom: 48 },
   label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
