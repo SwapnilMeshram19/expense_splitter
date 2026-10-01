@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.21",
+    "@shopify/flash-list": "2.0.2",
     "drizzle-orm": "^0.45.3",
     "eslint-config-expo": "~57.0.2",
     "expo": "~57.0.26",

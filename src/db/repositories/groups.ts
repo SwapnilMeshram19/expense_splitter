@@ -1,15 +1,10 @@
-import { desc, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
-import { activityLog, groups, members } from '../schema';
-import {
-  findDuplicateName,
-  normalizeName,
-  validateName,
-  type NameError,
-} from './names';
+import { activityLog, groups, members, type Group } from '../schema';
+import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
 
 export interface CreateGroupInput {
   name: string;
@@ -27,6 +22,16 @@ export type GroupError =
 /** Live-queryable list of active groups, most recently updated first. */
 export const activeGroupsQuery = (db: AppDb) =>
   db.select().from(groups).where(isNull(groups.deletedAt)).orderBy(desc(groups.updatedAt));
+
+export function getGroup(db: AppDb, groupId: string): Group | null {
+  return (
+    db
+      .select()
+      .from(groups)
+      .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
+      .get() ?? null
+  );
+}
 
 /** Create a group with the self member and placeholders, atomically. */
 export function createGroup(

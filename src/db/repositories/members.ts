@@ -4,12 +4,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
 import { activityLog, groups, members } from '../schema';
-import {
-  findDuplicateName,
-  normalizeName,
-  validateName,
-  type NameError,
-} from './names';
+import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
 
 export type MemberError =
   | NameError
@@ -25,11 +20,36 @@ export const activeMembersQuery = (db: AppDb, groupId: string) =>
     .where(and(eq(members.groupId, groupId), isNull(members.deletedAt)))
     .orderBy(asc(members.createdAt), asc(members.id));
 
+/** All members including those who left, so old expenses can still show their names. */
+export const groupMembersQuery = (db: AppDb, groupId: string) =>
+  db
+    .select()
+    .from(members)
+    .where(eq(members.groupId, groupId))
+    .orderBy(asc(members.createdAt), asc(members.id));
+
 export function activeMemberIds(db: AppDb, groupId: string): Set<string> {
   return new Set(
     activeMembersQuery(db, groupId)
       .all()
       .map((m) => m.id),
+  );
+}
+
+/** The member representing this device's user in a group, if any. */
+export function findSelfMemberId(db: AppDb, groupId: string, deviceUserId: string): string | null {
+  return (
+    db
+      .select({ id: members.id })
+      .from(members)
+      .where(
+        and(
+          eq(members.groupId, groupId),
+          eq(members.userId, deviceUserId),
+          isNull(members.deletedAt),
+        ),
+      )
+      .get()?.id ?? null
   );
 }
 
