@@ -1,0 +1,109 @@
+/**
+ * Money utilities. All amounts are integer paise (1 ₹ = 100 paise).
+ * No floating-point arithmetic is used for parsing or formatting.
+ */
+
+export type Paise = number;
+
+/** Sanity cap per single amount: ₹1,00,00,000 (1 crore). Adjust if needed. */
+export const MAX_AMOUNT_PAISE: Paise = 1_00_00_000 * 100;
+
+export type ParseResult =
+  | { ok: true; paise: Paise }
+  | { ok: false; error: 'EMPTY' | 'INVALID' | 'TOO_MANY_DECIMALS' | 'ZERO' | 'TOO_LARGE' };
+
+/**
+ * Parse user- or OCR-provided rupee text into integer paise.
+ * Accepts: "249", "249.5", "249.50", ".5", "₹ 1,23,456.78", "1,00,000", "Rs. 100".
+ * Rejects: negatives, >2 decimals, multiple dots, letters/exponents, zero, above cap.
+ */
+export function parseRupeesToPaise(input: string): ParseResult {
+  const cleaned = input.replace(/[₹\s,]/g, '').replace(/^Rs\.?/i, '');
+  if (cleaned === '' || cleaned === '.') return { ok: false, error: 'EMPTY' };
+  if (!/^\d*(\.\d*)?$/.test(cleaned)) return { ok: false, error: 'INVALID' };
+
+  const dot = cleaned.indexOf('.');
+  const rupeePart = dot === -1 ? cleaned : cleaned.slice(0, dot);
+  const decimalPart = dot === -1 ? '' : cleaned.slice(dot + 1);
+
+  if (decimalPart.length > 2) return { ok: false, error: 'TOO_MANY_DECIMALS' };
+
+  // Number('') is 0, so ".5" works. Number() can lose precision on absurdly long digit
+  // strings (or become Infinity), but any such value is far above the cap and rejected
+  // below, so every *accepted* value is exact.
+  const paise = Number(rupeePart) * 100 + Number(decimalPart.padEnd(2, '0'));
+
+  if (paise === 0) return { ok: false, error: 'ZERO' };
+  if (paise > MAX_AMOUNT_PAISE) return { ok: false, error: 'TOO_LARGE' };
+
+  return { ok: true, paise };
+}
+
+/**
+ * Restrict live TextInput text to a valid *partial* amount.
+ * Call from onChangeText; returns the previous value if the new one is invalid.
+ */
+export function sanitizeAmountInput(next: string, previous: string): string {
+  const stripped = next.replace(/[₹\s,]/g, '');
+  if (stripped === '') return '';
+  // digits, optional single dot, max 2 decimals; max 8 rupee digits (< ₹10 crore)
+  return /^\d{0,8}(\.\d{0,2})?$/.test(stripped) ? stripped : previous;
+}
+
+/** Group an integer digit string in Indian style: 1234567 -> 12,34,567 */
+function groupIndian(digits: string): string {
+  if (digits.length <= 3) return digits;
+  const last3 = digits.slice(-3);
+  const rest = digits.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+  return `${rest},${last3}`;
+}
+
+export interface FormatOptions {
+  /** Always show 2 decimals (for balances/settlements). Default: hide ".00". */
+  forceDecimals?: boolean;
+  /** Include the ₹ symbol. Default true. */
+  symbol?: boolean;
+}
+
+/**
+ * Format paise for display with Indian grouping.
+ * Does not rely on Intl, so output is identical across Hermes/Android versions and Deno.
+ */
+export function formatPaise(paise: Paise, opts: FormatOptions = {}): string {
+  const { forceDecimals = false, symbol = true } = opts;
+  if (!Number.isSafeInteger(paise)) throw new RangeError(`Invalid paise: ${paise}`);
+
+  const negative = paise < 0;
+  const abs = Math.abs(paise);
+  const rupees = Math.floor(abs / 100);
+  const fraction = abs % 100;
+
+  const decimals = forceDecimals || fraction !== 0 ? `.${String(fraction).padStart(2, '0')}` : '';
+  const body = `${groupIndian(String(rupees))}${decimals}`;
+  return `${negative ? '-' : ''}${symbol ? '₹' : ''}${body}`;
+}
+
+/** Compact form for tight UI: ₹950, ₹12.5K, ₹1.2L, ₹3.4Cr (display only; truncates, never rounds up). */
+export function formatPaiseCompact(paise: Paise): string {
+  const negative = paise < 0;
+  const rupees = Math.floor(Math.abs(paise) / 100);
+  const units: Array<[number, string]> = [
+    [1_00_00_000, 'Cr'],
+    [1_00_000, 'L'],
+    [1_000, 'K'],
+  ];
+  for (const [size, label] of units) {
+    if (rupees >= size) {
+      const tenths = Math.floor((rupees * 10) / size); // truncate to 1 decimal
+      const whole = Math.floor(tenths / 10);
+      const dec = tenths % 10;
+      return `${negative ? '-' : ''}₹${whole}${dec ? `.${dec}` : ''}${label}`;
+    }
+  }
+  return formatPaise(paise, { symbol: true });
+}
+
+/** Value for pre-filling an edit field: 24950 -> "249.50", 10000 -> "100". */
+export function paiseToInputString(paise: Paise): string {
+  return formatPaise(paise, { symbol: false }).replace(/,/g, '');
+}
