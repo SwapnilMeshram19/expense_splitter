@@ -1,24 +1,41 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { groupExpensesQuery } from '@/db/repositories/expenses';
 import { getGroup } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
+import { deleteSettlement, groupSettlementsQuery } from '@/db/repositories/settlements';
+import type { Expense, Settlement } from '@/db/schema';
 import { getDeviceUserId } from '@/db/session';
-import { computeBalances, computePairwiseDebts } from '@/domain/balances';
+import { computeBalances, computePairwiseDebts, type PayerLine } from '@/domain/balances';
 import { formatPaise } from '@/domain/money';
 import { simplifyDebts } from '@/domain/simplify';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
-import { formatIsoDate } from '@/lib/dates';
+import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
+import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { toneColor, useTheme } from '@/ui/theme';
 
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
+
+type HistoryRow =
+  | {
+      kind: 'expense';
+      key: string;
+      date: string;
+      createdAt: number;
+      expense: Expense;
+      payers: readonly PayerLine[];
+      myNet: number;
+      involved: boolean;
+    }
+  | { kind: 'settlement'; key: string; date: string; createdAt: number; settlement: Settlement };
 
 function loadGroupView(groupId: string) {
   const group = getGroup(db, groupId);
@@ -35,7 +52,7 @@ function loadGroupView(groupId: string) {
     : computePairwiseDebts(ledger.expenses, ledger.settlements).debts;
 
   const linesById = new Map(ledger.expenses.map((e) => [e.id, e]));
-  const expenseRows = groupExpensesQuery(db, groupId)
+  const expenseRows: HistoryRow[] = groupExpensesQuery(db, groupId)
     .all()
     .map((expense) => {
       const payers = linesById.get(expense.id)?.payers ?? [];
@@ -44,8 +61,32 @@ function loadGroupView(groupId: string) {
       const myShare = shares.find((s) => s.memberId === me)?.amountPaise ?? 0;
       const involved =
         payers.some((p) => p.memberId === me) || shares.some((s) => s.memberId === me);
-      return { expense, payers, myNet: myPaid - myShare, involved };
+      return {
+        kind: 'expense',
+        key: `e-${expense.id}`,
+        date: expense.expenseDate,
+        createdAt: expense.createdAt,
+        expense,
+        payers,
+        myNet: myPaid - myShare,
+        involved,
+      };
     });
+
+  const settlementRows: HistoryRow[] = groupSettlementsQuery(db, groupId)
+    .all()
+    .map((settlement) => ({
+      kind: 'settlement',
+      key: `s-${settlement.id}`,
+      date: toLocalIsoDate(new Date(settlement.settledAt)),
+      createdAt: settlement.createdAt,
+      settlement,
+    }));
+
+  // Newest first: by calendar date, then by creation time within the same day.
+  const history = [...expenseRows, ...settlementRows].sort((a, b) =>
+    a.date !== b.date ? (a.date < b.date ? 1 : -1) : b.createdAt - a.createdAt,
+  );
 
   // Show active members, plus anyone who left but still has a non-zero balance.
   const memberBalances = allMembers
@@ -58,7 +99,7 @@ function loadGroupView(groupId: string) {
     names,
     invalidCount: invalidIds.length,
     transfers,
-    expenseRows,
+    history,
     memberBalances,
     myBalance: me ? (balances.get(me) ?? 0) : 0,
   };
@@ -80,7 +121,31 @@ export default function GroupDetailScreen() {
     );
   }
 
-  const nameOf = (id: string) => (id === view.me ? 'You' : (view.names.get(id) ?? 'Unknown member'));
+  const me = view.me;
+  const nameOf = (id: string) => (id === me ? 'You' : (view.names.get(id) ?? 'Unknown member'));
+
+  const openSettle = (params: { from?: string; to?: string; amount?: string } = {}) =>
+    router.push({ pathname: '/groups/[groupId]/settle', params: { groupId, ...params } });
+
+  const confirmDeleteSettlement = (settlement: Settlement) => {
+    if (!me) return;
+    Alert.alert(
+      'Delete this payment?',
+      `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${formatPaise(settlement.amountPaise)}. Balances will go back to how they were before it.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            const result = deleteSettlement(appContext, settlement.id, me);
+            if (!result.ok) Alert.alert('Could not delete', describeSettlementError(result.error, nameOf));
+          },
+        },
+      ],
+    );
+  };
+
   const myBalance = describeMyBalance(view.myBalance);
 
   const header = (
@@ -103,13 +168,28 @@ export default function GroupDetailScreen() {
         <Text style={{ color: theme.muted }}>Everyone is settled up.</Text>
       ) : (
         view.transfers.map((t) => (
-          <Text key={`${t.fromMemberId}-${t.toMemberId}`} style={{ color: theme.text, fontSize: 15 }}>
-            {nameOf(t.fromMemberId)} {t.fromMemberId === view.me ? 'pay' : 'pays'}{' '}
-            {t.toMemberId === view.me ? 'you' : nameOf(t.toMemberId)}{' '}
-            <Text style={{ fontWeight: '600' }}>{formatPaise(t.amountPaise)}</Text>
-          </Text>
+          <Pressable
+            key={`${t.fromMemberId}-${t.toMemberId}`}
+            disabled={!me}
+            onPress={() =>
+              openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })
+            }
+            style={({ pressed }) => [styles.transferRow, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text style={[styles.transferText, { color: theme.text }]}>
+              {nameOf(t.fromMemberId)} {t.fromMemberId === me ? 'pay' : 'pays'}{' '}
+              {t.toMemberId === me ? 'you' : nameOf(t.toMemberId)}{' '}
+              <Text style={{ fontWeight: '600' }}>{formatPaise(t.amountPaise)}</Text>
+            </Text>
+            {me ? <Text style={{ color: theme.primary, fontWeight: '600' }}>Record</Text> : null}
+          </Pressable>
         ))
       )}
+      {me ? (
+        <Pressable onPress={() => openSettle()} style={styles.linkButton}>
+          <Text style={{ color: theme.primary, fontWeight: '600' }}>Record a payment</Text>
+        </Pressable>
+      ) : null}
 
       <Text style={[styles.section, { color: theme.muted }]}>Balances</Text>
       {view.memberBalances.map((m) => {
@@ -126,7 +206,7 @@ export default function GroupDetailScreen() {
         );
       })}
 
-      <Text style={[styles.section, { color: theme.muted }]}>Expenses</Text>
+      <Text style={[styles.section, { color: theme.muted }]}>History</Text>
     </View>
   );
 
@@ -134,16 +214,50 @@ export default function GroupDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ title: view.group.name }} />
       <FlashList
-        data={view.expenseRows}
-        keyExtractor={(row) => row.expense.id}
+        data={view.history}
+        keyExtractor={(row) => row.key}
+        getItemType={(row) => row.kind}
         ListHeaderComponent={header}
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         ListEmptyComponent={
-          <Text style={[styles.emptyExpenses, { color: theme.muted }]}>
+          <Text style={[styles.emptyHistory, { color: theme.muted }]}>
             No expenses yet. Tap “+ Add expense” to add the first one.
           </Text>
         }
         renderItem={({ item }) => {
+          if (item.kind === 'settlement') {
+            const s = item.settlement;
+            const text =
+              s.fromMemberId === me
+                ? `You paid ${nameOf(s.toMemberId)}`
+                : s.toMemberId === me
+                  ? `${nameOf(s.fromMemberId)} paid you`
+                  : `${nameOf(s.fromMemberId)} paid ${nameOf(s.toMemberId)}`;
+            return (
+              <Pressable
+                disabled={!me}
+                onPress={() => confirmDeleteSettlement(s)}
+                style={({ pressed }) => [
+                  styles.historyRow,
+                  { borderBottomColor: theme.border, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <View style={styles.historyMain}>
+                  <Text style={[styles.historyTitle, { color: theme.text }]} numberOfLines={1}>
+                    💸 {text}
+                  </Text>
+                  <Text style={{ color: theme.muted, fontSize: 13 }} numberOfLines={1}>
+                    {formatIsoDate(item.date)} · {METHOD_LABELS[s.method]}
+                    {s.note ? ` · ${s.note}` : ''}
+                  </Text>
+                </View>
+                <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>
+                  {formatPaise(s.amountPaise)}
+                </Text>
+              </Pressable>
+            );
+          }
+
           const share = describeMyExpenseShare(item.myNet, item.involved);
           const firstPayer = item.payers[0];
           const paidBy =
@@ -159,16 +273,16 @@ export default function GroupDetailScreen() {
                 })
               }
               style={({ pressed }) => [
-                styles.expenseRow,
+                styles.historyRow,
                 { borderBottomColor: theme.border, opacity: pressed ? 0.6 : 1 },
               ]}
             >
-              <View style={styles.expenseMain}>
-                <Text style={[styles.expenseTitle, { color: theme.text }]} numberOfLines={1}>
+              <View style={styles.historyMain}>
+                <Text style={[styles.historyTitle, { color: theme.text }]} numberOfLines={1}>
                   {item.expense.description}
                 </Text>
                 <Text style={{ color: theme.muted, fontSize: 13 }}>
-                  {formatIsoDate(item.expense.expenseDate)} · {paidBy}
+                  {formatIsoDate(item.date)} · {paidBy}
                 </Text>
               </View>
               <Text style={{ color: toneColor(theme, share.tone), fontSize: 13 }}>{share.label}</Text>
@@ -177,12 +291,10 @@ export default function GroupDetailScreen() {
         }}
       />
 
-      {view.me ? (
+      {me ? (
         <Pressable
           accessibilityRole="button"
-          onPress={() =>
-            router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })
-          }
+          onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })}
           style={[styles.fab, { backgroundColor: theme.primary, bottom: insets.bottom + 24 }]}
         >
           <Text style={[styles.fabText, { color: theme.onPrimary }]}>+ Add expense</Text>
@@ -198,8 +310,11 @@ const styles = StyleSheet.create({
   header: { padding: 16, gap: 6 },
   myBalance: { fontSize: 20, fontWeight: '700' },
   section: { fontSize: 13, fontWeight: '600', marginTop: 16, textTransform: 'uppercase' },
+  transferRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
+  transferText: { flex: 1, fontSize: 15 },
+  linkButton: { paddingVertical: 6 },
   balanceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-  expenseRow: {
+  historyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -207,9 +322,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
-  expenseMain: { flex: 1, gap: 2 },
-  expenseTitle: { fontSize: 16, fontWeight: '500' },
-  emptyExpenses: { paddingHorizontal: 16 },
+  historyMain: { flex: 1, gap: 2 },
+  historyTitle: { fontSize: 16, fontWeight: '500' },
+  emptyHistory: { paddingHorizontal: 16 },
   fab: {
     position: 'absolute',
     right: 20,
