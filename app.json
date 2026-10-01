@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Expense Splitter",
+    "slug": "expense-splitter",
+    "scheme": "expensesplitter",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.expensesplitter.app"
+    }
+  }
+}
