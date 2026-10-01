@@ -1,0 +1,244 @@
+/**
+ * Net balances and pairwise debts from expenses and settlements.
+ * Pure TypeScript, zero dependencies (shared by app and Edge Functions).
+ *
+ * Sign convention: balance = paid − owed.
+ *   positive → the group owes this member
+ *   negative → this member owes the group
+ * Balances of a group always sum to exactly 0.
+ *
+ * Callers pass only live records (soft-deleted/tombstoned rows are filtered out upstream).
+ */
+import type { Paise } from './money';
+import { allocateByWeights, compareMemberIds, type MemberId, type ShareLine } from './splits';
+
+export interface PayerLine {
+  memberId: MemberId;
+  amountPaise: Paise;
+}
+
+export interface LedgerExpense {
+  id: string;
+  /** Who paid and how much. Must sum exactly to the sum of shares. */
+  payers: readonly PayerLine[];
+  /** Who owes how much (the output of computeSplit). */
+  shares: readonly ShareLine[];
+}
+
+export interface LedgerSettlement {
+  id: string;
+  /** Member who paid the money. */
+  fromMemberId: MemberId;
+  /** Member who received the money. */
+  toMemberId: MemberId;
+  amountPaise: Paise;
+}
+
+export interface Debt {
+  fromMemberId: MemberId;
+  toMemberId: MemberId;
+  amountPaise: Paise;
+}
+
+export interface BalancesResult {
+  balances: Map<MemberId, Paise>;
+  /** Ids of records skipped because they failed integrity checks (e.g. corrupted sync data). */
+  invalidIds: string[];
+}
+
+export interface PairwiseResult {
+  debts: Debt[];
+  invalidIds: string[];
+}
+
+type AmountLine = { memberId: MemberId; amountPaise: Paise };
+
+function isValidLines(lines: readonly AmountLine[]): boolean {
+  if (lines.length === 0) return false;
+  const seen = new Set<MemberId>();
+  for (const line of lines) {
+    if (!line.memberId || seen.has(line.memberId)) return false;
+    if (!Number.isSafeInteger(line.amountPaise) || line.amountPaise < 0) return false;
+    seen.add(line.memberId);
+  }
+  return true;
+}
+
+const sumLines = (lines: readonly AmountLine[]): number =>
+  lines.reduce((sum, line) => sum + line.amountPaise, 0);
+
+const byMemberId = (a: AmountLine, b: AmountLine) => compareMemberIds(a.memberId, b.memberId);
+
+export function isValidExpense(expense: LedgerExpense): boolean {
+  if (!isValidLines(expense.payers) || !isValidLines(expense.shares)) return false;
+  const paid = sumLines(expense.payers);
+  return paid > 0 && paid === sumLines(expense.shares);
+}
+
+export function isValidSettlement(settlement: LedgerSettlement): boolean {
+  return (
+    !!settlement.fromMemberId &&
+    !!settlement.toMemberId &&
+    settlement.fromMemberId !== settlement.toMemberId &&
+    Number.isSafeInteger(settlement.amountPaise) &&
+    settlement.amountPaise > 0
+  );
+}
+
+function partition(
+  expenses: readonly LedgerExpense[],
+  settlements: readonly LedgerSettlement[],
+): { validExpenses: LedgerExpense[]; validSettlements: LedgerSettlement[]; invalidIds: string[] } {
+  const invalidIds: string[] = [];
+  const validExpenses = expenses.filter((e) => isValidExpense(e) || (invalidIds.push(e.id), false));
+  const validSettlements = settlements.filter(
+    (s) => isValidSettlement(s) || (invalidIds.push(s.id), false),
+  );
+  return { validExpenses, validSettlements, invalidIds };
+}
+
+/** Net balance per member (paid − owed, adjusted by settlements). */
+export function computeBalances(
+  expenses: readonly LedgerExpense[],
+  settlements: readonly LedgerSettlement[],
+): BalancesResult {
+  const { validExpenses, validSettlements, invalidIds } = partition(expenses, settlements);
+  const balances = new Map<MemberId, Paise>();
+  const add = (memberId: MemberId, delta: number) =>
+    balances.set(memberId, (balances.get(memberId) ?? 0) + delta);
+
+  for (const expense of validExpenses) {
+    for (const payer of expense.payers) add(payer.memberId, payer.amountPaise);
+    for (const share of expense.shares) add(share.memberId, -share.amountPaise);
+  }
+  for (const settlement of validSettlements) {
+    add(settlement.fromMemberId, settlement.amountPaise);
+    add(settlement.toMemberId, -settlement.amountPaise);
+  }
+
+  return { balances, invalidIds };
+}
+
+/**
+ * Split one (valid) expense into debtor → payer amounts, proportional to what each payer
+ * paid, such that every debtor's amounts sum exactly to their share AND every payer
+ * receives exactly what they paid. Self-amounts (paid and owes) are not debts.
+ *
+ * Stage 1 rounds each row (debtor) independently, which keeps rows exact but lets columns
+ * (payers) drift by a few paise. Stage 2 moves single paise within rows from over-paid to
+ * under-paid payers, choosing the row where the move best restores proportionality.
+ */
+function allocateExpenseToPayers(expense: LedgerExpense): Debt[] {
+  const payers = expense.payers.filter((p) => p.amountPaise > 0).sort(byMemberId);
+  const sharers = expense.shares.filter((s) => s.amountPaise > 0).sort(byMemberId);
+  const total = BigInt(sumLines(payers));
+  const weights = payers.map((p) => ({ memberId: p.memberId, value: p.amountPaise }));
+
+  // grid[r][c]: what sharer r owes payer c. Indices are always in range (r < sharers.length,
+  // c < payers.length), hence the non-null assertions.
+  const grid = sharers.map((s) =>
+    allocateByWeights(s.amountPaise, weights).map((part) => part.amountPaise),
+  );
+  const cell = (r: number, c: number): number => grid[r]![c]!;
+  const setCell = (r: number, c: number, value: number) => {
+    grid[r]![c] = value;
+  };
+  // (cell − exact proportional value) × total, so comparisons are exact integers.
+  const deviation = (r: number, c: number): bigint =>
+    BigInt(cell(r, c)) * total - BigInt(sharers[r]!.amountPaise) * BigInt(payers[c]!.amountPaise);
+
+  const columnError = payers.map(
+    (payer, c) => grid.reduce((sum, row) => sum + row[c]!, 0) - payer.amountPaise,
+  );
+
+  for (;;) {
+    const from = columnError.findIndex((e) => e > 0);
+    if (from === -1) break;
+    // Column errors sum to zero, so a negative column exists whenever a positive one does.
+    const to = columnError.findIndex((e) => e < 0);
+
+    let best = -1;
+    let bestScore = 0n;
+    let bestIntoSelf = false;
+    for (let r = 0; r < grid.length; r++) {
+      if (cell(r, from) === 0) continue;
+      const score = deviation(r, from) - deviation(r, to);
+      const intoSelf = payers[to]!.memberId === sharers[r]!.memberId;
+      if (
+        best === -1 ||
+        score > bestScore ||
+        (score === bestScore && intoSelf && !bestIntoSelf)
+      ) {
+        best = r;
+        bestScore = score;
+        bestIntoSelf = intoSelf;
+      }
+    }
+
+    setCell(best, from, cell(best, from) - 1);
+    setCell(best, to, cell(best, to) + 1);
+    columnError[from] = columnError[from]! - 1;
+    columnError[to] = columnError[to]! + 1;
+  }
+
+  const debts: Debt[] = [];
+  sharers.forEach((sharer, r) => {
+    payers.forEach((payer, c) => {
+      const amount = cell(r, c);
+      if (amount > 0 && sharer.memberId !== payer.memberId) {
+        debts.push({ fromMemberId: sharer.memberId, toMemberId: payer.memberId, amountPaise: amount });
+      }
+    });
+  });
+  return debts;
+}
+
+/**
+ * Pairwise "who owes whom" without simplification: debts only exist between people who
+ * actually shared expenses. Each member's share is split across payers in proportion to
+ * what they paid, with exact row and column sums, so the result reconstructs
+ * computeBalances to the paisa.
+ */
+export function computePairwiseDebts(
+  expenses: readonly LedgerExpense[],
+  settlements: readonly LedgerSettlement[],
+): PairwiseResult {
+  const { validExpenses, validSettlements, invalidIds } = partition(expenses, settlements);
+
+  // Keyed by ordered pair (low, high). amount > 0: low owes high; amount < 0: high owes low.
+  const pairs = new Map<string, { low: MemberId; high: MemberId; amount: number }>();
+
+  const addDebt = (from: MemberId, to: MemberId, amount: number) => {
+    const fromIsLow = compareMemberIds(from, to) < 0;
+    const low = fromIsLow ? from : to;
+    const high = fromIsLow ? to : from;
+    const key = `${low}\u0000${high}`;
+    const entry = pairs.get(key) ?? { low, high, amount: 0 };
+    entry.amount += fromIsLow ? amount : -amount;
+    pairs.set(key, entry);
+  };
+
+  for (const expense of validExpenses) {
+    for (const debt of allocateExpenseToPayers(expense)) {
+      addDebt(debt.fromMemberId, debt.toMemberId, debt.amountPaise);
+    }
+  }
+
+  // A payment from A to B reduces A's debt to B, i.e. adds debt B → A.
+  for (const settlement of validSettlements) {
+    addDebt(settlement.toMemberId, settlement.fromMemberId, settlement.amountPaise);
+  }
+
+  const debts: Debt[] = [];
+  for (const { low, high, amount } of pairs.values()) {
+    if (amount > 0) debts.push({ fromMemberId: low, toMemberId: high, amountPaise: amount });
+    else if (amount < 0) debts.push({ fromMemberId: high, toMemberId: low, amountPaise: -amount });
+  }
+  debts.sort(
+    (a, b) =>
+      compareMemberIds(a.fromMemberId, b.fromMemberId) ||
+      compareMemberIds(a.toMemberId, b.toMemberId),
+  );
+
+  return { debts, invalidIds };
+}
