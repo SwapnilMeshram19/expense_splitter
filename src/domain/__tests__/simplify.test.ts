@@ -1,7 +1,7 @@
 import { mulberry32, randInt } from '../../test-utils/prng';
 import { simplifyDebts } from '../simplify';
 
-const balancesOf = (entries: Array<[string, number]>) => new Map(entries);
+const balancesOf = (entries: [string, number][]) => new Map(entries);
 
 describe('simplifyDebts', () => {
   it('returns no transfers for an empty or settled group', () => {

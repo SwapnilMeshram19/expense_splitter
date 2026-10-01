@@ -87,7 +87,7 @@ export function formatPaise(paise: Paise, opts: FormatOptions = {}): string {
 export function formatPaiseCompact(paise: Paise): string {
   const negative = paise < 0;
   const rupees = Math.floor(Math.abs(paise) / 100);
-  const units: Array<[number, string]> = [
+  const units: [number, string][] = [
     [1_00_00_000, 'Cr'],
     [1_00_000, 'L'],
     [1_000, 'K'],

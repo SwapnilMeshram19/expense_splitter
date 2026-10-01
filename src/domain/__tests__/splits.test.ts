@@ -269,7 +269,7 @@ describe('itemized split', () => {
 
   it('rejects unassigned and invalid items with the right index', () => {
     const valid = { amountPaise: 100, memberIds: ['a'] };
-    const cases: Array<[SplitInput, object]> = [
+    const cases: [SplitInput, object][] = [
       [
         { type: 'itemized', items: [{ amountPaise: 100, memberIds: [] }] },
         { code: 'ITEM_UNASSIGNED', itemIndex: 0 },

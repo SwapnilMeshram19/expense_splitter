@@ -27,7 +27,7 @@ import type { ItemInput, SplitInput } from '@/domain/splits';
 /** Split input as stored: itemized items also carry their receipt line name. */
 export type StoredSplitInput =
   | Exclude<SplitInput, { type: 'itemized' }>
-  | { type: 'itemized'; items: Array<ItemInput & { name: string }> };
+  | { type: 'itemized'; items: (ItemInput & { name: string })[] };
 
 export const EXPENSE_CATEGORIES = [
   'general',
