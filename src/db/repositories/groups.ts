@@ -1,9 +1,11 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 
+import { computeBalances } from '@/domain/balances';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
 import { activityLog, groups, members, type Group } from '../schema';
+import { loadGroupLedger } from './ledger';
 import { activeMemberIds } from './members';
 import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
 
@@ -21,6 +23,11 @@ export type GroupError =
   | { target: 'member'; error: NameError };
 
 export type GroupUpdateError = NameError | { code: 'GROUP_NOT_FOUND' } | { code: 'NOT_A_MEMBER' };
+
+export type GroupDeleteError =
+  | { code: 'GROUP_NOT_FOUND' }
+  | { code: 'NOT_A_MEMBER' }
+  | { code: 'UNSETTLED_BALANCES'; count: number };
 
 /** Live-queryable list of active groups, most recently updated first. */
 export const activeGroupsQuery = (db: AppDb) =>
@@ -152,6 +159,59 @@ export function setSimplifyDebts(
         actorMemberId: input.actorMemberId,
         before: { simplifyDebts: group.simplifyDebts },
         after: { simplifyDebts: input.simplifyDebts },
+        createdAt: t,
+      })
+      .run();
+  });
+
+  return ok(undefined);
+}
+
+/**
+ * Soft-delete a group. Only allowed when everyone is settled up, so no money disappears.
+ *
+ * actorMemberId = null covers local leftovers with no "you" in them: allowed only when no
+ * member of the group is linked to an account (placeholders only). Phase 3 replaces this
+ * with server-side permission rules for shared groups.
+ */
+export function deleteGroup(
+  ctx: RepoContext,
+  input: { groupId: string; actorMemberId: string | null },
+): Result<void, GroupDeleteError> {
+  const group = getGroup(ctx.db, input.groupId);
+  if (!group) return err({ code: 'GROUP_NOT_FOUND' });
+
+  if (input.actorMemberId !== null) {
+    if (!activeMemberIds(ctx.db, group.id).has(input.actorMemberId)) return err({ code: 'NOT_A_MEMBER' });
+  } else {
+    const linked = ctx.db
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.groupId, group.id), isNotNull(members.userId)))
+      .get();
+    if (linked) return err({ code: 'NOT_A_MEMBER' });
+  }
+
+  const ledger = loadGroupLedger(ctx.db, group.id);
+  const { balances } = computeBalances(ledger.expenses, ledger.settlements);
+  const unsettled = [...balances.values()].filter((b) => b !== 0).length;
+  if (unsettled > 0) return err({ code: 'UNSETTLED_BALANCES', count: unsettled });
+
+  const t = ctx.now();
+  ctx.db.transaction((tx) => {
+    tx.update(groups)
+      .set({ deletedAt: t, updatedAt: t, dirty: true })
+      .where(eq(groups.id, group.id))
+      .run();
+    tx.insert(activityLog)
+      .values({
+        id: ctx.newId(),
+        groupId: group.id,
+        entityType: 'group',
+        entityId: group.id,
+        action: 'delete',
+        actorMemberId: input.actorMemberId,
+        before: { name: group.name },
         createdAt: t,
       })
       .run();

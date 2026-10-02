@@ -149,7 +149,13 @@ export default function GroupDetailScreen() {
   const myBalance = describeMyBalance(view.myBalance);
 
   const header = (
-    <View style={styles.header}>
+   <View style={styles.header}>
+      {!me ? (
+        <Text style={{ color: theme.warning }}>
+          You’re not a member of this group, so you can’t add expenses here. Open Settings to
+          delete it.
+        </Text>
+      ) : null}
       <Text style={[styles.myBalance, { color: toneColor(theme, myBalance.tone) }]}>
         {myBalance.label.charAt(0).toUpperCase() + myBalance.label.slice(1)}
       </Text>

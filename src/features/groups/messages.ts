@@ -1,4 +1,4 @@
-import type { GroupError, GroupUpdateError } from '@/db/repositories/groups';
+import type { GroupDeleteError, GroupError, GroupUpdateError } from '@/db/repositories/groups';
 import type { MemberError } from '@/db/repositories/members';
 import type { NameError } from '@/db/repositories/names';
 import { formatPaise } from '@/domain/money';
@@ -28,6 +28,17 @@ export function describeGroupUpdateError(error: GroupUpdateError): string {
       return 'This group no longer exists.';
     case 'NOT_A_MEMBER':
       return 'You’re not a member of this group.';
+  }
+}
+
+export function describeGroupDeleteError(error: GroupDeleteError): string {
+  switch (error.code) {
+    case 'GROUP_NOT_FOUND':
+      return 'This group no longer exists.';
+    case 'NOT_A_MEMBER':
+      return 'You can only delete groups you’re a member of.';
+    case 'UNSETTLED_BALANCES':
+      return `${error.count} people still have balances. Record the payments first so everyone is settled up.`;
   }
 }
 

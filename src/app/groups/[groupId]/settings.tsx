@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
@@ -6,7 +6,7 @@ import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
-import { getGroup, renameGroup, setSimplifyDebts } from '@/db/repositories/groups';
+import { deleteGroup, getGroup, renameGroup, setSimplifyDebts } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import {
   activeMembersQuery,
@@ -20,7 +20,11 @@ import type { Group } from '@/db/schema';
 import { getDeviceUserId } from '@/db/session';
 import { computeBalances } from '@/domain/balances';
 import { formatPaise } from '@/domain/money';
-import { describeGroupUpdateError, describeMemberError } from '@/features/groups/messages';
+import {
+  describeGroupDeleteError,
+  describeGroupUpdateError,
+  describeMemberError,
+} from '@/features/groups/messages';
 import { useTheme, type Theme } from '@/ui/theme';
 
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
@@ -43,19 +47,53 @@ function loadSettingsView(groupId: string) {
   return { group, me, members };
 }
 
+function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
+  Alert.alert(
+    `Delete “${group.name}”?`,
+    'The group and its history will be removed from your list.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          const result = deleteGroup(appContext, { groupId: group.id, actorMemberId });
+          if (result.ok) router.dismissTo('/');
+          else Alert.alert('Can’t delete yet', describeGroupDeleteError(result.error));
+        },
+      },
+    ],
+  );
+}
+
 export default function GroupSettingsScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const theme = useTheme();
   const compute = useCallback(() => loadSettingsView(groupId), [groupId]);
   const view = useLiveData(TABLES, compute);
 
-  if (!view || !view.me) {
+  if (!view) {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Group settings' }} />
-        <Text style={{ color: theme.muted }}>
-          {view ? 'You’re not a member of this group.' : 'This group no longer exists.'}
+        <Text style={{ color: theme.muted }}>This group no longer exists.</Text>
+      </View>
+    );
+  }
+
+  if (!view.me) {
+    return (
+      <View style={styles.center}>
+        <Stack.Screen options={{ title: 'Group settings' }} />
+        <Text style={[styles.notMember, { color: theme.text }]}>
+          You’re not a member of “{view.group.name}”, so you can’t change it.
         </Text>
+        <Text style={[styles.notMember, { color: theme.muted }]}>
+          This usually means it was created before you set up your name, for example while testing.
+        </Text>
+        <Pressable onPress={() => confirmDeleteGroup(view.group, null)} style={styles.dangerButton}>
+          <Text style={{ color: theme.negative, fontWeight: '600' }}>Delete group</Text>
+        </Pressable>
       </View>
     );
   }
@@ -150,6 +188,15 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
+        <Pressable
+          onPress={() => router.push({ pathname: '/groups/[groupId]/activity', params: { groupId: group.id } })}
+          style={[styles.row, styles.linkRow, { borderColor: theme.border }]}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Activity</Text>
+          <Text style={{ color: theme.muted }}>Every change, newest first ›</Text>
+        </Pressable>
+
         <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
         <View style={styles.row}>
           <TextInput
@@ -245,6 +292,13 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
         </View>
 
         {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+
+        <Pressable onPress={() => confirmDeleteGroup(group, me)} style={styles.dangerButton}>
+          <Text style={{ color: theme.negative, fontWeight: '600' }}>Delete group</Text>
+        </Pressable>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>
+          Only possible when everyone is settled up.
+        </Text>
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
@@ -257,13 +311,16 @@ const inputStyle = (theme: Theme) => [
 ];
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  notMember: { textAlign: 'center', fontSize: 15 },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
   label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   flex: { flex: 1 },
+  linkRow: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12 },
   switchRow: { marginTop: 12, gap: 16 },
   memberRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   inlineButton: { paddingHorizontal: 6, paddingVertical: 8 },
+  dangerButton: { marginTop: 24, paddingVertical: 12, alignItems: 'center' },
 });
