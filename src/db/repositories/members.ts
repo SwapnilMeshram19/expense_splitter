@@ -1,16 +1,21 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
+import { computeBalances } from '@/domain/balances';
+import type { Paise } from '@/domain/money';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
 import { activityLog, groups, members } from '../schema';
+import { loadGroupLedger } from './ledger';
 import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
 
 export type MemberError =
   | NameError
   | { code: 'GROUP_NOT_FOUND' }
   | { code: 'MEMBER_NOT_FOUND' }
-  | { code: 'NOT_A_MEMBER' };
+  | { code: 'NOT_A_MEMBER' }
+  | { code: 'CANNOT_REMOVE_SELF' }
+  | { code: 'MEMBER_HAS_BALANCE'; balancePaise: Paise };
 
 /** Live-queryable active members of a group, in the order they were added. */
 export const activeMembersQuery = (db: AppDb, groupId: string) =>
@@ -114,6 +119,7 @@ export function renameMember(
   const displayName = normalizeName(input.displayName);
   const nameError = validateName(displayName);
   if (nameError) return err(nameError);
+  if (displayName === member.displayName) return ok(undefined);
   const otherNames = others.filter((m) => m.id !== member.id).map((m) => m.displayName);
   if (findDuplicateName([...otherNames, displayName])) {
     return err({ code: 'DUPLICATE_NAME', name: displayName });
@@ -135,6 +141,54 @@ export function renameMember(
         actorMemberId: input.actorMemberId,
         before: { displayName: member.displayName },
         after: { displayName },
+        createdAt: t,
+      })
+      .run();
+  });
+
+  return ok(undefined);
+}
+
+/**
+ * Remove a member from the group (soft delete). Only allowed when their balance is exactly
+ * zero, otherwise money would silently vanish from everyone else's balances. Old expenses
+ * keep referencing the member, so history and names stay intact.
+ */
+export function removeMember(
+  ctx: RepoContext,
+  input: { memberId: string; actorMemberId: string },
+): Result<void, MemberError> {
+  const member = ctx.db
+    .select()
+    .from(members)
+    .where(and(eq(members.id, input.memberId), isNull(members.deletedAt)))
+    .get();
+  if (!member) return err({ code: 'MEMBER_NOT_FOUND' });
+
+  if (!activeMemberIds(ctx.db, member.groupId).has(input.actorMemberId)) {
+    return err({ code: 'NOT_A_MEMBER' });
+  }
+  if (member.id === input.actorMemberId) return err({ code: 'CANNOT_REMOVE_SELF' });
+
+  const ledger = loadGroupLedger(ctx.db, member.groupId);
+  const balance = computeBalances(ledger.expenses, ledger.settlements).balances.get(member.id) ?? 0;
+  if (balance !== 0) return err({ code: 'MEMBER_HAS_BALANCE', balancePaise: balance });
+
+  const t = ctx.now();
+  ctx.db.transaction((tx) => {
+    tx.update(members)
+      .set({ deletedAt: t, updatedAt: t, dirty: true })
+      .where(eq(members.id, member.id))
+      .run();
+    tx.insert(activityLog)
+      .values({
+        id: ctx.newId(),
+        groupId: member.groupId,
+        entityType: 'member',
+        entityId: member.id,
+        action: 'delete',
+        actorMemberId: input.actorMemberId,
+        before: { displayName: member.displayName },
         createdAt: t,
       })
       .run();

@@ -212,7 +212,21 @@ export default function GroupDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: view.group.name }} />
+      <Stack.Screen
+        options={{
+          title: view.group.name,
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } })}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Group settings"
+            >
+              <Text style={{ color: theme.primary, fontWeight: '600' }}>Settings</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <FlashList
         data={view.history}
         keyExtractor={(row) => row.key}

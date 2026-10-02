@@ -1,0 +1,269 @@
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
+
+import { appContext } from '@/db/appContext';
+import { db } from '@/db/client';
+import { useLiveData } from '@/db/hooks/useLiveData';
+import { getGroup, renameGroup, setSimplifyDebts } from '@/db/repositories/groups';
+import { loadGroupLedger } from '@/db/repositories/ledger';
+import {
+  activeMembersQuery,
+  addMember,
+  findSelfMemberId,
+  removeMember,
+  renameMember,
+} from '@/db/repositories/members';
+import { MAX_NAME_LENGTH } from '@/db/repositories/names';
+import type { Group } from '@/db/schema';
+import { getDeviceUserId } from '@/db/session';
+import { computeBalances } from '@/domain/balances';
+import { formatPaise } from '@/domain/money';
+import { describeGroupUpdateError, describeMemberError } from '@/features/groups/messages';
+import { useTheme, type Theme } from '@/ui/theme';
+
+const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
+
+interface MemberRow {
+  id: string;
+  displayName: string;
+  balance: number;
+}
+
+function loadSettingsView(groupId: string) {
+  const group = getGroup(db, groupId);
+  if (!group) return null;
+  const me = findSelfMemberId(db, groupId, getDeviceUserId());
+  const ledger = loadGroupLedger(db, groupId);
+  const { balances } = computeBalances(ledger.expenses, ledger.settlements);
+  const members: MemberRow[] = activeMembersQuery(db, groupId)
+    .all()
+    .map((m) => ({ id: m.id, displayName: m.displayName, balance: balances.get(m.id) ?? 0 }));
+  return { group, me, members };
+}
+
+export default function GroupSettingsScreen() {
+  const { groupId } = useLocalSearchParams<{ groupId: string }>();
+  const theme = useTheme();
+  const compute = useCallback(() => loadSettingsView(groupId), [groupId]);
+  const view = useLiveData(TABLES, compute);
+
+  if (!view || !view.me) {
+    return (
+      <View style={styles.center}>
+        <Stack.Screen options={{ title: 'Group settings' }} />
+        <Text style={{ color: theme.muted }}>
+          {view ? 'You’re not a member of this group.' : 'This group no longer exists.'}
+        </Text>
+      </View>
+    );
+  }
+
+  return <SettingsForm group={view.group} me={view.me} members={view.members} />;
+}
+
+function balanceLabel(balance: number): string {
+  if (balance > 0) return `is owed ${formatPaise(balance)}`;
+  if (balance < 0) return `owes ${formatPaise(-balance)}`;
+  return 'settled';
+}
+
+function SettingsForm({ group, me, members }: { group: Group; me: string; members: MemberRow[] }) {
+  const theme = useTheme();
+  const [groupName, setGroupName] = useState(group.name);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const input = inputStyle(theme);
+  const nameChanged = groupName.trim() !== group.name;
+
+  const saveGroupName = () => {
+    const result = renameGroup(appContext, { groupId: group.id, name: groupName, actorMemberId: me });
+    setError(result.ok ? null : describeGroupUpdateError(result.error));
+  };
+
+  const toggleSimplify = (value: boolean) => {
+    const result = setSimplifyDebts(appContext, { groupId: group.id, simplifyDebts: value, actorMemberId: me });
+    if (!result.ok) setError(describeGroupUpdateError(result.error));
+  };
+
+  const add = () => {
+    const result = addMember(appContext, { groupId: group.id, displayName: newMemberName, actorMemberId: me });
+    if (!result.ok) {
+      setError(describeMemberError(result.error));
+      return;
+    }
+    setNewMemberName('');
+    setError(null);
+  };
+
+  const startRename = (member: MemberRow) => {
+    setEditingId(member.id);
+    setEditName(member.displayName);
+    setError(null);
+  };
+
+  const saveRename = () => {
+    if (!editingId) return;
+    const result = renameMember(appContext, { memberId: editingId, displayName: editName, actorMemberId: me });
+    if (!result.ok) {
+      setError(describeMemberError(result.error));
+      return;
+    }
+    setEditingId(null);
+    setError(null);
+  };
+
+  const confirmRemove = (member: MemberRow) => {
+    if (member.balance !== 0) {
+      Alert.alert(
+        `Can’t remove ${member.displayName} yet`,
+        `${member.displayName} ${balanceLabel(member.balance)}. Record the payments first, then remove them.`,
+      );
+      return;
+    }
+    Alert.alert(
+      `Remove ${member.displayName}?`,
+      'They won’t appear in new expenses. Past expenses keep their name.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            const result = removeMember(appContext, { memberId: member.id, actorMemberId: me });
+            if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error));
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <>
+      <Stack.Screen options={{ title: 'Group settings' }} />
+      <KeyboardAwareScrollView
+        bottomOffset={62}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
+        <View style={styles.row}>
+          <TextInput
+            value={groupName}
+            onChangeText={(text) => {
+              setGroupName(text);
+              setError(null);
+            }}
+            maxLength={MAX_NAME_LENGTH}
+            style={[input, styles.flex]}
+          />
+          {nameChanged ? (
+            <Pressable onPress={saveGroupName} style={styles.inlineButton}>
+              <Text style={{ color: theme.primary, fontWeight: '600' }}>Save</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View style={[styles.row, styles.switchRow]}>
+          <View style={styles.flex}>
+            <Text style={{ color: theme.text, fontSize: 16 }}>Simplify debts</Text>
+            <Text style={{ color: theme.muted, fontSize: 13 }}>
+              Suggest the fewest payments to settle everyone, even between people who didn’t share
+              an expense. Balances stay the same either way.
+            </Text>
+          </View>
+          <Switch value={group.simplifyDebts} onValueChange={toggleSimplify} />
+        </View>
+
+        <Text style={[styles.label, { color: theme.muted }]}>People</Text>
+        {members.map((member) => {
+          const isMe = member.id === me;
+          if (editingId === member.id) {
+            return (
+              <View key={member.id} style={styles.row}>
+                <TextInput
+                  value={editName}
+                  onChangeText={(text) => {
+                    setEditName(text);
+                    setError(null);
+                  }}
+                  maxLength={MAX_NAME_LENGTH}
+                  style={[input, styles.flex]}
+                  autoFocus
+                />
+                <Pressable onPress={saveRename} style={styles.inlineButton}>
+                  <Text style={{ color: theme.primary, fontWeight: '600' }}>Save</Text>
+                </Pressable>
+                <Pressable onPress={() => setEditingId(null)} style={styles.inlineButton}>
+                  <Text style={{ color: theme.muted }}>Cancel</Text>
+                </Pressable>
+              </View>
+            );
+          }
+          return (
+            <View key={member.id} style={[styles.row, styles.memberRow, { borderBottomColor: theme.border }]}>
+              <View style={styles.flex}>
+                <Text style={{ color: theme.text, fontSize: 16 }}>
+                  {member.displayName}
+                  {isMe ? ' (you)' : ''}
+                </Text>
+                <Text style={{ color: theme.muted, fontSize: 13 }}>{balanceLabel(member.balance)}</Text>
+              </View>
+              <Pressable onPress={() => startRename(member)} style={styles.inlineButton} hitSlop={6}>
+                <Text style={{ color: theme.primary }}>Rename</Text>
+              </Pressable>
+              {!isMe ? (
+                <Pressable onPress={() => confirmRemove(member)} style={styles.inlineButton} hitSlop={6}>
+                  <Text style={{ color: theme.negative }}>Remove</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
+
+        <View style={styles.row}>
+          <TextInput
+            value={newMemberName}
+            onChangeText={(text) => {
+              setNewMemberName(text);
+              setError(null);
+            }}
+            placeholder="Add a person"
+            placeholderTextColor={theme.muted}
+            maxLength={MAX_NAME_LENGTH}
+            style={[input, styles.flex]}
+            onSubmitEditing={add}
+            returnKeyType="done"
+          />
+          <Pressable onPress={add} style={styles.inlineButton}>
+            <Text style={{ color: theme.primary, fontWeight: '600' }}>Add</Text>
+          </Pressable>
+        </View>
+
+        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+      </KeyboardAwareScrollView>
+      <KeyboardToolbar />
+    </>
+  );
+}
+
+const inputStyle = (theme: Theme) => [
+  styles.input,
+  { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border },
+];
+
+const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  container: { padding: 16, gap: 10, paddingBottom: 48 },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
+  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  flex: { flex: 1 },
+  switchRow: { marginTop: 12, gap: 16 },
+  memberRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  inlineButton: { paddingHorizontal: 6, paddingVertical: 8 },
+});
