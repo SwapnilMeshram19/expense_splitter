@@ -1,4 +1,10 @@
-import { cleanOtp, describeAuthError, isValidEmail, normalizeEmail } from '../messages';
+import {
+  cleanOtp,
+  describeAuthError,
+  describeGoogleError,
+  isValidEmail,
+  normalizeEmail,
+} from '../messages';
 
 describe('describeAuthError', () => {
   it('detects network failures (no HTTP response)', () => {
@@ -22,14 +28,28 @@ describe('describeAuthError', () => {
     expect(describeAuthError({ status: 429 })).toMatch(/Too many attempts/);
   });
 
-  it('reports missing configuration', () => {
+  it('reports missing configuration and disabled providers', () => {
     expect(describeAuthError({ name: 'MissingConfigError' })).toMatch(/isn’t set up/);
+    expect(describeAuthError({ code: 'provider_disabled' })).toMatch(/turned off/);
   });
 
   it('falls back to generic text and never echoes server details', () => {
     expect(describeAuthError({ code: 'unexpected_failure', status: 400 })).toBe(
       'Something went wrong. Please try again.',
     );
+  });
+});
+
+describe('describeGoogleError', () => {
+  it('maps native module codes', () => {
+    expect(describeGoogleError('NO_GOOGLE_ACCOUNT')).toMatch(/Add one in Settings/);
+    expect(describeGoogleError('UNAVAILABLE')).toMatch(/use email/);
+    expect(describeGoogleError('SIGN_IN_FAILED')).toMatch(/didn’t work/);
+  });
+
+  it('returns null for codes it does not own', () => {
+    expect(describeGoogleError('otp_expired')).toBeNull();
+    expect(describeGoogleError(undefined)).toBeNull();
   });
 });
 

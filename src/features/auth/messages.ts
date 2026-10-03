@@ -45,7 +45,8 @@ export function describeAuthError(e: AuthErrorLike): string {
       return 'We can’t send email to this address yet. Please try again later.';
     case 'signup_disabled':
     case 'email_provider_disabled':
-      return 'Email sign-in is turned off right now. Please try again later.';
+    case 'provider_disabled':
+      return 'This sign-in method is turned off right now. Please try another.';
   }
 
   if (e.status === 429) return 'Too many attempts. Wait a few minutes, then try again.';
@@ -53,4 +54,20 @@ export function describeAuthError(e: AuthErrorLike): string {
     return 'We couldn’t complete that right now. Please try again in a few minutes.';
   }
   return 'Something went wrong. Please try again.';
+}
+
+/** Codes thrown by modules/google-credential. null = not a Google-sheet error. */
+export function describeGoogleError(code: string | undefined): string | null {
+  switch (code) {
+    case 'NO_GOOGLE_ACCOUNT':
+      return 'No Google account on this phone. Add one in Settings → Accounts, or sign in with email.';
+    case 'UNAVAILABLE':
+      return 'Google sign-in isn’t available in this version of the app. Please use email.';
+    case 'NO_ACTIVITY':
+    case 'SIGN_IN_FAILED':
+    case 'UNEXPECTED_CREDENTIAL':
+      return 'Google sign-in didn’t work. Try again, or sign in with email.';
+    default:
+      return null;
+  }
 }

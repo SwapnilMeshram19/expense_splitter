@@ -3,7 +3,13 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
-import { sendEmailCode, signOut, useAuth, verifyEmailCode } from '@/features/auth/authStore';
+import {
+  sendEmailCode,
+  signInWithGoogle,
+  signOut,
+  useAuth,
+  verifyEmailCode,
+} from '@/features/auth/authStore';
 import {
   cleanOtp,
   isValidEmail,
@@ -12,6 +18,8 @@ import {
   RESEND_COOLDOWN_S,
 } from '@/features/auth/messages';
 import { useTheme, type Theme } from '@/ui/theme';
+
+import { isGoogleSignInAvailable } from '../../modules/google-credential';
 
 export default function AccountScreen() {
   const auth = useAuth();
@@ -89,6 +97,15 @@ function SignIn({ notice }: { notice: string | null }) {
     return () => clearTimeout(id);
   }, [cooldown]);
 
+  const google = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await signInWithGoogle();
+    setBusy(false);
+    // error === null means the user dismissed the chooser: not worth a message.
+    if (!result.ok && result.error) setError(result.error);
+  };
+
   const send = async (target: string) => {
     setBusy(true);
     setError(null);
@@ -152,6 +169,24 @@ function SignIn({ notice }: { notice: string | null }) {
             Optional. Everything works on this phone without an account. Signing in lets you share groups
             with friends and keep a backup.
           </Text>
+
+          {isGoogleSignInAvailable ? (
+            <>
+              <Pressable
+                onPress={() => void google()}
+                disabled={busy}
+                accessibilityRole="button"
+                style={[
+                  styles.googleButton,
+                  { borderColor: theme.border, backgroundColor: theme.surface, opacity: busy ? 0.6 : 1 },
+                ]}
+              >
+                <Text style={[styles.googleText, { color: theme.text }]}>Continue with Google</Text>
+              </Pressable>
+              <Text style={[styles.divider, { color: theme.muted }]}>or use email</Text>
+            </>
+          ) : null}
+
           <Text style={[styles.label, { color: theme.muted }]}>Email</Text>
           <TextInput
             value={email}
@@ -268,6 +303,9 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   codeInput: { fontSize: 28, letterSpacing: 8, textAlign: 'center' },
   notice: { borderWidth: 1, borderRadius: 10, padding: 12 },
+  googleButton: { marginTop: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  googleText: { fontSize: 16, fontWeight: '600' },
+  divider: { textAlign: 'center', marginTop: 4 },
   primaryButton: { marginTop: 8, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   primaryText: { fontSize: 16, fontWeight: '600' },
   secondaryButton: { marginTop: 16, borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
