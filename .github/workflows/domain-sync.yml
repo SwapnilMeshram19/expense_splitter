@@ -1,0 +1,28 @@
+name: Domain copy in sync
+
+on:
+  push:
+    paths: ['src/domain/**', 'scripts/sync-domain.mjs', 'supabase/functions/_shared/**']
+  pull_request:
+    paths: ['src/domain/**', 'scripts/sync-domain.mjs', 'supabase/functions/_shared/**']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/sync-domain.mjs
+      - name: Fail if the committed copy is stale
+        run: |
+          if [ -n "$(git status --porcelain -- supabase/functions/_shared/domain)" ]; then
+            git status --porcelain -- supabase/functions/_shared/domain
+            echo "::error::src/domain changed without re-running 'npm run domain:sync'. Run it and commit."
+            exit 1
+          fi

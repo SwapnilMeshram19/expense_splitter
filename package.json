@@ -67,7 +67,9 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "check": "npm run typecheck && npm run lint && npm test -- --ci",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "domain:sync": "node scripts/sync-domain.mjs",
+    "functions:deploy": "supabase functions deploy sync-push --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt"
   },
   "private": true
 }

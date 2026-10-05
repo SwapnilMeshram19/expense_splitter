@@ -6,6 +6,7 @@ module.exports = defineConfig([
   expoConfig,
   prettierConfig,
   {
-    ignores: ['dist/*', '.expo/*', 'supabase/functions/*', 'src/db/migrations/*'],
+    // supabase/ holds Deno code (npm: specifiers, .ts imports) and SQL: not part of the app build.
+    ignores: ['dist/*', '.expo/*', 'supabase/**', 'src/db/migrations/*'],
   },
 ]);
