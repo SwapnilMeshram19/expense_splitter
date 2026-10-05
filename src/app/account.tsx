@@ -17,6 +17,7 @@ import {
   OTP_LENGTH,
   RESEND_COOLDOWN_S,
 } from '@/features/auth/messages';
+import { SyncPanel } from '@/sync/SyncPanel';
 import { useTheme, type Theme } from '@/ui/theme';
 
 import { isGoogleSignInAvailable } from '../../modules/google-credential';
@@ -69,8 +70,9 @@ function SignedIn({ email }: { email: string | null }) {
       <Text style={[styles.label, { color: theme.muted }]}>Signed in as</Text>
       <Text style={[styles.email, { color: theme.text }]}>{email ?? 'your account'}</Text>
       <Text style={{ color: theme.muted }}>
-        Your groups are linked to this account. Sharing and backup across phones arrive in the next update.
+        Your groups are backed up to this account and kept in sync on every phone you sign in on.
       </Text>
+      <SyncPanel />
       <Pressable
         onPress={confirmSignOut}
         disabled={busy}

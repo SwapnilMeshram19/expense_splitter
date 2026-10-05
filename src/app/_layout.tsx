@@ -8,17 +8,30 @@ import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
 import { AccountButton } from '@/features/auth/AccountButton';
 import { startAuth } from '@/features/auth/authStore';
+import { startSyncScheduler } from '@/sync/scheduler';
+import { SyncIndicator } from '@/sync/SyncIndicator';
 import { useTheme } from '@/ui/theme';
 
-const renderAccountButton = () => <AccountButton />;
+function HeaderActions() {
+  return (
+    <View style={styles.headerActions}>
+      <SyncIndicator />
+      <AccountButton />
+    </View>
+  );
+}
+
+const renderHeaderActions = () => <HeaderActions />;
 
 export default function RootLayout() {
   const theme = useTheme();
   const { success, error } = useMigrations(db, migrations);
 
-  // Auth binds the account to local data, so it starts only after migrations.
+  // Order matters: auth links the account to local data before the scheduler's first push.
   useEffect(() => {
-    if (success) startAuth();
+    if (!success) return;
+    startAuth();
+    startSyncScheduler();
   }, [success]);
 
   if (error) {
@@ -50,7 +63,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: theme.background },
         }}
       >
-        <Stack.Screen name="index" options={{ headerRight: renderAccountButton }} />
+        <Stack.Screen name="index" options={{ headerRight: renderHeaderActions }} />
       </Stack>
     </KeyboardProvider>
   );
@@ -58,4 +71,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
 });
