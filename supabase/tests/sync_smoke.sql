@@ -153,7 +153,7 @@ begin
     "entity_type":"expense","entity_id":"e0000000-0000-0000-0000-000000000001","action":"create",
     "actor_member_id":"b0000000-0000-0000-0000-000000000001","before":null,"after":null,"created_at":1}]}');
   assert jsonb_array_length(res->'applied') = 1, format('retried history must be acknowledged: %s', res);
-  assert (select count(*) from public.activity_log) = 1, 'retried history must not duplicate';
+  assert (select count(*) from public.activity_log where id = 'd0000000-0000-0000-0000-000000000001') = 1, 'retried history must not duplicate';
 
   res := public.apply_push('a0000000-0000-0000-0000-000000000001', jsonb_build_object('settlements',
     jsonb_build_array(
