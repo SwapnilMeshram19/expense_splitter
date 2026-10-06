@@ -21,30 +21,30 @@ import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/d
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { toneColor, useTheme } from '@/ui/theme';
-
+import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
 
 type HistoryRow =
   | {
-      kind: 'expense';
-      key: string;
-      date: string;
-      createdAt: number;
-      expense: Expense;
-      payers: readonly PayerLine[];
-      myNet: number;
-      involved: boolean;
-    }
+    kind: 'expense';
+    key: string;
+    date: string;
+    createdAt: number;
+    expense: Expense;
+    payers: readonly PayerLine[];
+    myNet: number;
+    involved: boolean;
+  }
   | { kind: 'settlement'; key: string; date: string; createdAt: number; settlement: Settlement };
 
 function loadGroupView(groupId: string) {
+
   const group = getGroup(db, groupId);
   if (!group) return null;
 
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   const allMembers = groupMembersQuery(db, groupId).all();
   const names = new Map(allMembers.map((m) => [m.id, m.displayName]));
-
   const ledger = loadGroupLedger(db, groupId);
   const { balances, invalidIds } = computeBalances(ledger.expenses, ledger.settlements);
   const transfers = group.simplifyDebts
@@ -149,13 +149,14 @@ export default function GroupDetailScreen() {
   const myBalance = describeMyBalance(view.myBalance);
 
   const header = (
-   <View style={styles.header}>
+    <View style={styles.header}>
       {!me ? (
         <Text style={{ color: theme.warning }}>
           You’re not a member of this group, so you can’t add expenses here. Open Settings to
           delete it.
         </Text>
       ) : null}
+      {me ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
       <Text style={[styles.myBalance, { color: toneColor(theme, myBalance.tone) }]}>
         {myBalance.label.charAt(0).toUpperCase() + myBalance.label.slice(1)}
       </Text>
@@ -174,21 +175,36 @@ export default function GroupDetailScreen() {
         <Text style={{ color: theme.muted }}>Everyone is settled up.</Text>
       ) : (
         view.transfers.map((t) => (
-          <Pressable
-            key={`${t.fromMemberId}-${t.toMemberId}`}
-            disabled={!me}
-            onPress={() =>
-              openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })
-            }
-            style={({ pressed }) => [styles.transferRow, { opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={[styles.transferText, { color: theme.text }]}>
-              {nameOf(t.fromMemberId)} {t.fromMemberId === me ? 'pay' : 'pays'}{' '}
-              {t.toMemberId === me ? 'you' : nameOf(t.toMemberId)}{' '}
-              <Text style={{ fontWeight: '600' }}>{formatPaise(t.amountPaise)}</Text>
-            </Text>
-            {me ? <Text style={{ color: theme.primary, fontWeight: '600' }}>Record</Text> : null}
-          </Pressable>
+          <View key={`${t.fromMemberId}-${t.toMemberId}`} style={styles.transferRow}>
+            <Pressable
+              disabled={!me}
+              onPress={() => openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })}
+              style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.6 : 1 })}
+            >
+              <Text style={[styles.transferText, { color: theme.text }]}>
+                {nameOf(t.fromMemberId)} {t.fromMemberId === me ? 'pay' : 'pays'}{' '}
+                {t.toMemberId === me ? 'you' : nameOf(t.toMemberId)}{' '}
+                <Text style={{ fontWeight: '600' }}>{formatPaise(t.amountPaise)}</Text>
+              </Text>
+            </Pressable>
+            {me && t.fromMemberId === me ? (
+              <Pressable
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Pay ${nameOf(t.toMemberId)} with UPI`}
+                onPress={() =>
+                  router.push({
+                    pathname: '/groups/[groupId]/pay',
+                    params: { groupId, to: t.toMemberId, amount: String(t.amountPaise) },
+                  })
+                }
+              >
+                <Text style={{ color: theme.primary, fontWeight: '600' }}>Pay UPI</Text>
+              </Pressable>
+            ) : me ? (
+              <Text style={{ color: theme.primary, fontWeight: '600' }}>Record</Text>
+            ) : null}
+          </View>
         ))
       )}
       {me ? (
