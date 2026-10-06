@@ -188,13 +188,13 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable
-          onPress={() => router.push({ pathname: '/groups/[groupId]/activity', params: { groupId: group.id } })}
+         <Pressable
+          onPress={() => router.push({ pathname: '/groups/[groupId]/invite', params: { groupId: group.id } })}
           style={[styles.row, styles.linkRow, { borderColor: theme.border }]}
           accessibilityRole="button"
         >
-          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Activity</Text>
-          <Text style={{ color: theme.muted }}>Every change, newest first ›</Text>
+          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Invite people</Text>
+          <Text style={{ color: theme.muted }}>Share a link ›</Text>
         </Pressable>
 
         <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
