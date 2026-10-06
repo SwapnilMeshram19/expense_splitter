@@ -1,11 +1,12 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
-import { setMemberUpiVpa } from '@/db/repositories/memberUpi';
+import { getLastOwnVpa, setMemberUpiVpa } from '@/db/repositories/memberUpi';
 import { parseVpaInput } from '@/domain/upi';
+import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
 import { loadMemberUpiSetup, type MemberUpiSetup } from '@/features/upi/loaders';
 import { describeMemberUpiError } from '@/features/upi/messages';
 import { useTheme } from '@/ui/theme';
@@ -31,7 +32,9 @@ export default function MemberUpiScreen() {
 function MemberUpiForm({ setup }: { setup: Ready }) {
   const theme = useTheme();
   const { member } = setup;
-  const [text, setText] = useState(member.vpa ?? '');
+  // Your own UPI ID from another group, offered (never auto-saved) when this group has none yet.
+  const [prefill] = useState(() => (member.vpa === null && member.isMe ? getLastOwnVpa(appContext) : null));
+  const [text, setText] = useState(member.vpa ?? prefill ?? '');
   const [error, setError] = useState<string | null>(null);
   const title = member.isMe ? 'Your UPI ID' : `${member.name}’s UPI ID`;
 
@@ -81,9 +84,12 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
           autoComplete="off"
           keyboardType="email-address"
           maxLength={1000}
-          autoFocus={member.vpa === null}
+          autoFocus={member.vpa === null && prefill === null}
           style={[styles.input, { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border }]}
         />
+        {prefill && text === prefill ? (
+          <Text style={{ color: theme.muted }}>Filled in from another group. Check it, then tap Save.</Text>
+        ) : null}
         {preview ? <Text style={{ color: theme.muted }}>Will be saved as {preview}</Text> : null}
         <Text style={{ color: theme.muted }}>
           {member.isMe
@@ -94,18 +100,8 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
 
         {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => save(text)}
-          style={({ pressed }) => [styles.submit, { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 }]}
-        >
-          <Text style={[styles.submitText, { color: theme.onPrimary }]}>Save</Text>
-        </Pressable>
-        {member.vpa ? (
-          <Pressable accessibilityRole="button" onPress={confirmRemove} style={styles.link}>
-            <Text style={{ color: theme.negative, fontWeight: '600' }}>Remove UPI ID</Text>
-          </Pressable>
-        ) : null}
+        <PrimaryButton label="Save" onPress={() => save(text)} />
+        {member.vpa ? <LinkButton label="Remove UPI ID" onPress={confirmRemove} color={theme.negative} /> : null}
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
@@ -118,7 +114,4 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
   value: { fontSize: 18, fontWeight: '600' },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  submit: { marginTop: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitText: { fontSize: 16, fontWeight: '600' },
-  link: { alignSelf: 'center', paddingVertical: 12 },
 });

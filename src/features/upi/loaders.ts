@@ -23,7 +23,12 @@ function loadMember(groupId: string, memberId: string | undefined) {
   return row && row.deletedAt === null ? row : null;
 }
 
-// ── Pay screen ─────────────────────────────────────────────────────────────
+function balancesOf(groupId: string): Map<string, number> {
+  const ledger = loadGroupLedger(db, groupId);
+  return computeBalances(ledger.expenses, ledger.settlements).balances;
+}
+
+// ── Pay screen (you pay someone) ───────────────────────────────────────────
 
 export interface PayPayee {
   id: string;
@@ -47,8 +52,7 @@ export function loadPaySetup(groupId: string, toMemberId: string | undefined): P
   const row = loadMember(groupId, toMemberId);
   if (!row) return fail('This person is no longer in the group.');
 
-  const ledger = loadGroupLedger(db, groupId);
-  const myBalance = computeBalances(ledger.expenses, ledger.settlements).balances.get(me) ?? 0;
+  const myBalance = balancesOf(groupId).get(me) ?? 0;
 
   return {
     ok: true,
@@ -62,6 +66,44 @@ export function loadPaySetup(groupId: string, toMemberId: string | undefined): P
       canEditVpa: canEditMemberUpi(row, me),
     },
     myDebtPaise: Math.max(0, -myBalance),
+  };
+}
+
+// ── Request screen (someone pays you; you show a QR code) ──────────────────
+
+export type RequestSetup =
+  | {
+      ok: true;
+      me: string;
+      myName: string;
+      myVpa: string | null;
+      groupName: string;
+      payer: { id: string; name: string };
+      payerDebtPaise: number;
+    }
+  | Fail;
+
+export function loadRequestSetup(groupId: string, fromMemberId: string | undefined): RequestSetup {
+  const group = getGroup(db, groupId);
+  if (!group) return fail('This group no longer exists.');
+  const me = findSelfMemberId(db, groupId, getDeviceUserId());
+  if (!me) return fail('You’re not a member of this group.');
+  if (!fromMemberId || fromMemberId === me) return fail('Choose who is paying you.');
+  const payerRow = loadMember(groupId, fromMemberId);
+  if (!payerRow) return fail('This person is no longer in the group.');
+  const meRow = loadMember(groupId, me);
+  if (!meRow) return fail('You’re not a member of this group.');
+
+  const payerBalance = balancesOf(groupId).get(payerRow.id) ?? 0;
+
+  return {
+    ok: true,
+    me,
+    myName: meRow.displayName,
+    myVpa: isValidVpa(meRow.upiVpa) ? meRow.upiVpa : null,
+    groupName: group.name,
+    payer: { id: payerRow.id, name: payerRow.displayName },
+    payerDebtPaise: Math.max(0, -payerBalance),
   };
 }
 

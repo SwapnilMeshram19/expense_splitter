@@ -1,4 +1,5 @@
 import { formatPaise } from '@/domain/money';
+import { maskVpa } from '@/domain/upi';
 
 import type { WireTable } from './wire';
 
@@ -51,9 +52,12 @@ export function summarizeRow(
     case 'groups':
       out.push(`Name: ${str(row.name)}`);
       break;
-    case 'members':
+    case 'members': {
       out.push(`Name: ${str(row.display_name)}`);
+      const vpa = str(row.upi_vpa);
+      out.push(`UPI ID: ${vpa ? maskVpa(vpa) : 'none'}`);
       break;
+    }
     case 'expenses': {
       out.push(`${str(row.description)} · ${formatPaise(num(row.amount_paise))}`);
       out.push(`Date: ${formatIsoDate(str(row.expense_date))}`);
@@ -79,8 +83,13 @@ export function summarizeRow(
   return out;
 }
 
-/** Why the server refused a change, in terms a user can act on. */
-export function rejectionReason(code: string | undefined): string {
+/**
+ * Why the server refused a change, in terms a user can act on.
+ * `detail` is the Postgres SQLSTATE for INVALID rejections.
+ */
+export function rejectionReason(code: string | undefined, detail?: string): string {
+  // Raised by private.guard_member_vpa(): the placeholder was claimed while this phone edited it.
+  if (detail === '23V01') return 'This person has joined the group, so only they can change their UPI ID.';
   switch (code) {
     case 'FORBIDDEN':
     case 'NOT_A_MEMBER':

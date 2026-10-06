@@ -215,8 +215,7 @@ export function loadIssueViews(ctx: RepoContext): IssueView[] {
       title: issueTitle(issue.table, local ?? server),
       mine: summarizeRow(issue.table, local, nameOf),
       theirs: issue.kind === 'conflict' && server ? summarizeRow(issue.table, server, nameOf) : null,
-      reason: issue.kind === 'rejected' ? rejectionReason(issue.code) : null,
-      canDiscard:
+      reason: issue.kind === 'rejected' ? rejectionReason(issue.code, issue.detail) : null, canDiscard:
         issue.kind === 'rejected' && versioned && (rowState(ctx, issue.table as VersionedTable, issue.id)?.version ?? 0) > 0,
     };
   });

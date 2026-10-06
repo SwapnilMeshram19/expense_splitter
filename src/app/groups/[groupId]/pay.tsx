@@ -1,15 +1,17 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
-import { groupSettlementsQuery, recordSettlement } from '@/db/repositories/settlements';
+import { recordSettlement } from '@/db/repositories/settlements';
 import { formatPaise, paiseToInputString, parseRupeesToPaise, sanitizeAmountInput } from '@/domain/money';
 import { buildUpiPayUri, paiseToUpiAmount, UPI_P2P_LIMIT_PAISE, UTR_PATTERN } from '@/domain/upi';
 import { describeSettlementError } from '@/features/settlements/messages';
+import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
+import { isRecentDuplicate } from '@/features/upi/duplicates';
 import { hasUpiApp, openUpiApp } from '@/features/upi/launch';
 import { loadPaySetup, type PaySetup } from '@/features/upi/loaders';
 import {
@@ -23,24 +25,9 @@ import { useTheme } from '@/ui/theme';
 type Ready = Extract<PaySetup, { ok: true }>;
 type Phase = 'form' | 'waiting' | 'confirm';
 
-const DUPLICATE_WINDOW_MS = 48 * 60 * 60 * 1000;
-
 // Module-level (not in a component), so reading the clock here is fine for the compiler's purity rule.
 function newPending(fields: Omit<PendingUpiPayment, 'startedAt'>): PendingUpiPayment {
   return { ...fields, startedAt: Date.now() };
-}
-
-function isRecentDuplicate(groupId: string, from: string, to: string, amountPaise: number): boolean {
-  const now = Date.now();
-  return groupSettlementsQuery(db, groupId)
-    .all()
-    .some(
-      (s) =>
-        s.fromMemberId === from &&
-        s.toMemberId === to &&
-        s.amountPaise === amountPaise &&
-        now - s.createdAt < DUPLICATE_WINDOW_MS,
-    );
 }
 
 export default function PayScreen() {
@@ -216,7 +203,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     };
 
     // The payee may already have recorded it on their phone.
-    if (isRecentDuplicate(groupId, me, payee.id, amountPaise)) {
+    if (isRecentDuplicate(db, groupId, me, payee.id, amountPaise)) {
       Alert.alert(
         'Already recorded?',
         `A ${formatPaise(amountPaise)} payment from you to ${payee.name} was recorded in the last 2 days. Record this one as well?`,
@@ -395,33 +382,6 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
   );
 }
 
-function PrimaryButton({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.submit,
-        { backgroundColor: theme.primary, opacity: disabled ? 0.5 : pressed ? 0.8 : 1 },
-      ]}
-    >
-      <Text style={[styles.submitText, { color: theme.onPrimary }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function LinkButton({ label, onPress, color }: { label: string; onPress: () => void; color?: string }) {
-  const theme = useTheme();
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.link} hitSlop={8}>
-      <Text style={{ color: color ?? theme.primary, fontWeight: '600' }}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
@@ -431,9 +391,6 @@ const styles = StyleSheet.create({
   rupee: { fontSize: 28, marginRight: 6 },
   amountInput: { flex: 1, fontSize: 32, fontWeight: '600', paddingVertical: 8 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  submit: { marginTop: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitText: { fontSize: 16, fontWeight: '600' },
-  link: { paddingVertical: 10 },
   row: { flexDirection: 'row', gap: 20 },
   block: { gap: 6, marginTop: 8 },
 });

@@ -197,5 +197,6 @@ describe('issue actions', () => {
     expect(pulls[1]).toEqual(['100', [g.groupId]]);
     expect(groupRow(g.groupId)).toMatchObject({ name: 'Goa', version: 3, dirty: false });
     expect(getRefetchGroupIds(t.ctx)).toEqual([]);
+        expect(rejectionReason('INVALID', '23V01')).toMatch(/only they can change their UPI ID/);
   });
 });

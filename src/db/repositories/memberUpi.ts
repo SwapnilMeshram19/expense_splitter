@@ -1,11 +1,14 @@
 import { eq } from 'drizzle-orm';
 
-import { maskVpa, parseVpaInput, type VpaError } from '@/domain/upi';
+import { isValidVpa, maskVpa, parseVpaInput, type VpaError } from '@/domain/upi';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { RepoContext } from '../context';
-import { activityLog, members } from '../schema';
+import { activityLog, members, settings } from '../schema';
 import { activeMemberIds } from './members';
+
+/** Local-only (settings is never synced): your own last-saved UPI ID, offered as a prefill in other groups. */
+export const LAST_OWN_VPA_KEY = 'last_own_upi_vpa';
 
 export type MemberUpiError =
   | { code: 'MEMBER_NOT_FOUND' }
@@ -19,6 +22,11 @@ export type MemberUpiError =
  */
 export function canEditMemberUpi(member: { id: string; userId: string | null }, actorMemberId: string): boolean {
   return member.id === actorMemberId || member.userId === null;
+}
+
+export function getLastOwnVpa(ctx: RepoContext): string | null {
+  const value = ctx.db.select().from(settings).where(eq(settings.key, LAST_OWN_VPA_KEY)).get()?.value;
+  return isValidVpa(value) ? value : null;
 }
 
 /** Set or clear (null / blank) a member's UPI ID. Accepts a pasted upi:// link too. */
@@ -56,6 +64,12 @@ export function setMemberUpiVpa(
         createdAt: t,
       })
       .run();
+    if (vpa !== null && member.id === input.actorMemberId) {
+      tx.insert(settings)
+        .values({ key: LAST_OWN_VPA_KEY, value: vpa })
+        .onConflictDoUpdate({ target: settings.key, set: { value: vpa } })
+        .run();
+    }
   });
 
   return ok({ vpa });

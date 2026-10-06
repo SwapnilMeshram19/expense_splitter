@@ -19,32 +19,33 @@ import { formatPaise } from '@/domain/money';
 import { simplifyDebts } from '@/domain/simplify';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
+import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { toneColor, useTheme } from '@/ui/theme';
-import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
+
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
 
 type HistoryRow =
   | {
-    kind: 'expense';
-    key: string;
-    date: string;
-    createdAt: number;
-    expense: Expense;
-    payers: readonly PayerLine[];
-    myNet: number;
-    involved: boolean;
-  }
+      kind: 'expense';
+      key: string;
+      date: string;
+      createdAt: number;
+      expense: Expense;
+      payers: readonly PayerLine[];
+      myNet: number;
+      involved: boolean;
+    }
   | { kind: 'settlement'; key: string; date: string; createdAt: number; settlement: Settlement };
 
 function loadGroupView(groupId: string) {
-
   const group = getGroup(db, groupId);
   if (!group) return null;
 
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   const allMembers = groupMembersQuery(db, groupId).all();
   const names = new Map(allMembers.map((m) => [m.id, m.displayName]));
+
   const ledger = loadGroupLedger(db, groupId);
   const { balances, invalidIds } = computeBalances(ledger.expenses, ledger.settlements);
   const transfers = group.simplifyDebts
@@ -127,6 +128,15 @@ export default function GroupDetailScreen() {
   const openSettle = (params: { from?: string; to?: string; amount?: string } = {}) =>
     router.push({ pathname: '/groups/[groupId]/settle', params: { groupId, ...params } });
 
+  const openPay = (toMemberId: string, amountPaise: number) =>
+    router.push({ pathname: '/groups/[groupId]/pay', params: { groupId, to: toMemberId, amount: String(amountPaise) } });
+
+  const openRequest = (fromMemberId: string, amountPaise: number) =>
+    router.push({
+      pathname: '/groups/[groupId]/request',
+      params: { groupId, from: fromMemberId, amount: String(amountPaise) },
+    });
+
   const confirmDeleteSettlement = (settlement: Settlement) => {
     if (!me) return;
     Alert.alert(
@@ -178,8 +188,10 @@ export default function GroupDetailScreen() {
           <View key={`${t.fromMemberId}-${t.toMemberId}`} style={styles.transferRow}>
             <Pressable
               disabled={!me}
-              onPress={() => openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })}
-              style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.6 : 1 })}
+              onPress={() =>
+                openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })
+              }
+              style={({ pressed }) => [styles.transferMain, { opacity: pressed ? 0.6 : 1 }]}
             >
               <Text style={[styles.transferText, { color: theme.text }]}>
                 {nameOf(t.fromMemberId)} {t.fromMemberId === me ? 'pay' : 'pays'}{' '}
@@ -192,17 +204,30 @@ export default function GroupDetailScreen() {
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={`Pay ${nameOf(t.toMemberId)} with UPI`}
-                onPress={() =>
-                  router.push({
-                    pathname: '/groups/[groupId]/pay',
-                    params: { groupId, to: t.toMemberId, amount: String(t.amountPaise) },
-                  })
-                }
+                onPress={() => openPay(t.toMemberId, t.amountPaise)}
               >
                 <Text style={{ color: theme.primary, fontWeight: '600' }}>Pay UPI</Text>
               </Pressable>
+            ) : me && t.toMemberId === me ? (
+              <Pressable
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Get paid by ${nameOf(t.fromMemberId)}`}
+                onPress={() => openRequest(t.fromMemberId, t.amountPaise)}
+              >
+                <Text style={{ color: theme.primary, fontWeight: '600' }}>Request</Text>
+              </Pressable>
             ) : me ? (
-              <Text style={{ color: theme.primary, fontWeight: '600' }}>Record</Text>
+              <Pressable
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Record payment from ${nameOf(t.fromMemberId)} to ${nameOf(t.toMemberId)}`}
+                onPress={() =>
+                  openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })
+                }
+              >
+                <Text style={{ color: theme.primary, fontWeight: '600' }}>Record</Text>
+              </Pressable>
             ) : null}
           </View>
         ))
@@ -347,7 +372,8 @@ const styles = StyleSheet.create({
   myBalance: { fontSize: 20, fontWeight: '700' },
   section: { fontSize: 13, fontWeight: '600', marginTop: 16, textTransform: 'uppercase' },
   transferRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
-  transferText: { flex: 1, fontSize: 15 },
+  transferMain: { flex: 1 },
+  transferText: { fontSize: 15 },
   linkButton: { paddingVertical: 6 },
   balanceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
   historyRow: {

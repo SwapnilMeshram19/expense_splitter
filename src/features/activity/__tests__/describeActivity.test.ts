@@ -135,3 +135,20 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(new Date(2026, 9, 1, 0, 30).getTime())).toBe('1 Oct 2026, 12:30 am');
   });
 });
+it('describes UPI ID changes with masked IDs', () => {
+  const upi = (patch: Partial<ActivityLogEntry>) =>
+    describeActivity(entry({ entityType: 'member', action: 'update', entityId: 'r', ...patch }), ctx);
+
+  expect(upi({ actorMemberId: 'r', before: { upiVpa: null }, after: { upiVpa: 'ra•••@ybl' } })).toEqual({
+    title: 'Rahul added their UPI ID',
+    detail: 'ra•••@ybl',
+  });
+  expect(upi({ before: { upiVpa: 'ra•••@ybl' }, after: { upiVpa: 'ro•••@ybl' } })).toEqual({
+    title: 'You changed Rahul’s UPI ID',
+    detail: 'ra•••@ybl → ro•••@ybl',
+  });
+  expect(upi({ entityId: 'me', before: { upiVpa: 'as•••@ybl' }, after: { upiVpa: null } })).toEqual({
+    title: 'You removed your UPI ID',
+    detail: 'as•••@ybl',
+  });
+});

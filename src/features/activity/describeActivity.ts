@@ -29,6 +29,9 @@ interface Line {
 const asRecord = (value: unknown): Json | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : null;
 
+/** True when the key is present, even with a null value ("UPI ID removed" is { upiVpa: null }). */
+const hasKey = (record: Json | null, key: string): boolean => record !== null && key in record;
+
 function str(record: Json | null, key: string): string | null {
   const value = record?.[key];
   return typeof value === 'string' ? value : null;
@@ -119,6 +122,20 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
     }
 
     case 'member': {
+      // UPI ID changes. Values are already masked when logged (see repositories/memberUpi.ts).
+      if (entry.action === 'update' && (hasKey(before, 'upiVpa') || hasKey(after, 'upiVpa'))) {
+        const target = entry.entityId;
+        const whose =
+          target === ctx.me ? 'your' : target === entry.actorMemberId ? 'their' : `${ctx.nameOf(target)}’s`;
+        const oldVpa = str(before, 'upiVpa');
+        const newVpa = str(after, 'upiVpa');
+        if (newVpa === null) return { title: `${actor} removed ${whose} UPI ID`, detail: oldVpa };
+        return {
+          title: `${actor} ${oldVpa === null ? 'added' : 'changed'} ${whose} UPI ID`,
+          detail: oldVpa === null ? newVpa : `${oldVpa} → ${newVpa}`,
+        };
+      }
+
       const oldName = str(before, 'displayName');
       const newName = str(after, 'displayName');
       if (entry.action === 'create' && newName) return { title: `${actor} added ${newName}`, detail: null };

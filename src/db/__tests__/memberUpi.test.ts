@@ -2,8 +2,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { createGroup } from '../repositories/groups';
 import { activeMembersQuery } from '../repositories/members';
-import { setMemberUpiVpa } from '../repositories/memberUpi';
-import { getOrCreateDeviceUserId } from '../repositories/profile';
+import { getLastOwnVpa, setMemberUpiVpa } from '../repositories/memberUpi';import { getOrCreateDeviceUserId } from '../repositories/profile';
 import { activityLog, members } from '../schema';
 import { createTestContext, type TestContext } from './testDb';
 
@@ -113,5 +112,16 @@ describe('setMemberUpiVpa', () => {
     expect(
       setMemberUpiVpa(t.ctx, { memberId: g.mom, vpaInput: 'mom@ybl', actorMemberId: g.me }),
     ).toEqual({ ok: false, error: { code: 'MEMBER_NOT_FOUND' } });
+  });
+    it('remembers only your own UPI ID for reuse in other groups', () => {
+    const g = setup();
+    setMemberUpiVpa(t.ctx, { memberId: g.mom, vpaInput: 'mom@ybl', actorMemberId: g.me });
+    expect(getLastOwnVpa(t.ctx)).toBeNull();
+
+    setMemberUpiVpa(t.ctx, { memberId: g.me, vpaInput: 'asha@okaxis', actorMemberId: g.me });
+    expect(getLastOwnVpa(t.ctx)).toBe('asha@okaxis');
+
+    setMemberUpiVpa(t.ctx, { memberId: g.me, vpaInput: null, actorMemberId: g.me });
+    expect(getLastOwnVpa(t.ctx)).toBe('asha@okaxis'); // clearing in one group doesn't forget it
   });
 });
