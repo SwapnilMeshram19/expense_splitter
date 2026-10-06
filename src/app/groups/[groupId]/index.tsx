@@ -27,15 +27,15 @@ const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shar
 
 type HistoryRow =
   | {
-      kind: 'expense';
-      key: string;
-      date: string;
-      createdAt: number;
-      expense: Expense;
-      payers: readonly PayerLine[];
-      myNet: number;
-      involved: boolean;
-    }
+    kind: 'expense';
+    key: string;
+    date: string;
+    createdAt: number;
+    expense: Expense;
+    payers: readonly PayerLine[];
+    myNet: number;
+    involved: boolean;
+  }
   | { kind: 'settlement'; key: string; date: string; createdAt: number; settlement: Settlement };
 
 function loadGroupView(groupId: string) {
@@ -353,13 +353,22 @@ export default function GroupDetailScreen() {
       />
 
       {me ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })}
-          style={[styles.fab, { backgroundColor: theme.primary, bottom: insets.bottom + 24 }]}
-        >
-          <Text style={[styles.fabText, { color: theme.onPrimary }]}>+ Add expense</Text>
-        </Pressable>
+        <View style={[styles.fabRow, { bottom: insets.bottom + 24 }]}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/scan', params: { groupId } })}
+            style={[styles.fab, styles.fabSecondary, { backgroundColor: theme.surface, borderColor: theme.primary }]}
+          >
+            <Text style={[styles.fabText, { color: theme.primary }]}>Scan bill</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })}
+            style={[styles.fab, { backgroundColor: theme.primary }]}
+          >
+            <Text style={[styles.fabText, { color: theme.onPrimary }]}>+ Add expense</Text>
+          </Pressable>
+        </View>
       ) : null}
     </View>
   );
@@ -387,13 +396,9 @@ const styles = StyleSheet.create({
   historyMain: { flex: 1, gap: 2 },
   historyTitle: { fontSize: 16, fontWeight: '500' },
   emptyHistory: { paddingHorizontal: 16 },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 28,
-    elevation: 4,
-  },
+  fabRow: { position: 'absolute', right: 20, flexDirection: 'row', gap: 10 },
+  fab: { paddingHorizontal: 20, paddingVertical: 14, borderRadius: 28, elevation: 4 },
+  fabSecondary: { borderWidth: 1 },
   fabText: { fontSize: 16, fontWeight: '600' },
+
 });
