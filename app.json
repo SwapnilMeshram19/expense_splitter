@@ -9,7 +9,21 @@
     ],
     "userInterfaceStyle": "automatic",
     "android": {
-      "package": "com.expensesplitter.app"
+      "package": "in.ssoftapp.split",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "split.ssoftapp.in",
+              "pathPrefix": "/join"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": [
       "expo-sqlite",
