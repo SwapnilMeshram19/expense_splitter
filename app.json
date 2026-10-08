@@ -23,26 +23,13 @@
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
-      ],
-      "blockedPermissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "plugins": [
       "expo-sqlite",
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "./plugins/with-upi-queries",
-      [
-        "expo-image-picker",
-        {
-          "cameraPermission": "Used to scan bills so you can split them by item."
-        }
-      ]
+      "./plugins/with-upi-queries"
     ]
   }
 }
