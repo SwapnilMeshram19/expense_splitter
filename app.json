@@ -27,6 +27,44 @@
     },
     "plugins": [
       "expo-sqlite",
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Poppins",
+                "fontDefinitions": [
+                  {
+                    "path": "./node_modules/@expo-google-fonts/poppins/400Regular/Poppins_400Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/poppins/500Medium/Poppins_500Medium.ttf",
+                    "weight": 500
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/poppins/600SemiBold/Poppins_600SemiBold.ttf",
+                    "weight": 600
+                  },
+                  {
+                    "path": "./node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf",
+                    "weight": 700
+                  }
+                ]
+              }
+            ]
+          },
+          "ios": {
+            "fonts": [
+              "./node_modules/@expo-google-fonts/poppins/400Regular/Poppins_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/poppins/500Medium/Poppins_500Medium.ttf",
+              "./node_modules/@expo-google-fonts/poppins/600SemiBold/Poppins_600SemiBold.ttf",
+              "./node_modules/@expo-google-fonts/poppins/700Bold/Poppins_700Bold.ttf"
+            ]
+          }
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "./plugins/with-upi-queries"

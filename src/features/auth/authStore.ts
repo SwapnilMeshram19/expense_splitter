@@ -12,11 +12,20 @@ import { getSupabase } from '@/lib/supabase';
 
 import { clearGoogleCredential, getGoogleIdToken } from '../../../modules/google-credential';
 import { describeAuthError, describeGoogleError, type AuthErrorLike } from './messages';
+import { profileFromMetadata } from './profile';
 
 export type AuthState =
   | { status: 'loading' }
   | { status: 'signedOut'; notice: string | null }
-  | { status: 'signedIn'; userId: string; email: string | null };
+  | {
+      status: 'signedIn';
+      userId: string;
+      email: string | null;
+      /** From the identity provider (Google); null for email sign-in. Display only, never trusted. */
+      displayName: string | null;
+      /** https URL from the identity provider, validated before rendering (see Avatar). */
+      avatarUrl: string | null;
+    };
 
 let state: AuthState = { status: 'loading' };
 /** Explanation shown on the sign-in screen (e.g. why a sign-in was refused). */
@@ -77,7 +86,12 @@ function handleSession(session: Session | null, signOutLocally: () => void): voi
 
   clearDeviceUserIdCache();
   notice = null;
-  emit({ status: 'signedIn', userId: session.user.id, email: session.user.email ?? null });
+  emit({
+    status: 'signedIn',
+    userId: session.user.id,
+    email: session.user.email ?? null,
+    ...profileFromMetadata(session.user.user_metadata),
+  });
 }
 
 let started = false;

@@ -1,37 +1,34 @@
-import { useColorScheme } from 'react-native';
+import { Appearance, useColorScheme } from 'react-native';
 
 import type { Tone } from '@/features/balances/describe';
 
-const light = {
-  background: '#ffffff',
-  surface: '#f3f4f6',
-  text: '#111827',
-  muted: '#6b7280',
-  border: '#e5e7eb',
-  primary: '#2563eb',
-  onPrimary: '#ffffff',
-  positive: '#15803d',
-  negative: '#b91c1c',
-  warning: '#b45309',
-};
+import { getTheme, type ColorScheme, type Theme } from './palette';
+import { useThemePreference, type ThemeMode } from './themePreference';
 
-const dark: typeof light = {
-  background: '#0b0f17',
-  surface: '#161b26',
-  text: '#f3f4f6',
-  muted: '#9ca3af',
-  border: '#272e3b',
-  primary: '#60a5fa',
-  onPrimary: '#0b0f17',
-  positive: '#4ade80',
-  negative: '#f87171',
-  warning: '#fbbf24',
-};
+export type { Theme } from './palette';
 
-export type Theme = typeof light;
-
+/**
+ * The active theme: the saved mode (System/Light/Dark) and accent, resolved against the phone's
+ * setting when the mode is System. Same signature as before the redesign, so every screen that
+ * calls useTheme() picks up the new palette without changes.
+ */
 export function useTheme(): Theme {
-  return useColorScheme() === 'dark' ? dark : light;
+  const system = useColorScheme();
+  const { mode, accent } = useThemePreference();
+  return getTheme(resolveScheme(mode, system), accent);
+}
+
+export function resolveScheme(mode: ThemeMode, system: string | null | undefined): ColorScheme {
+  if (mode === 'light' || mode === 'dark') return mode;
+  return system === 'dark' ? 'dark' : 'light';
+}
+
+/**
+ * Make native UI (Alert dialogs, the date picker, the keyboard) follow an explicit Light/Dark
+ * choice instead of the phone's setting. 'unspecified' hands control back to the system.
+ */
+export function applyNativeColorScheme(mode: ThemeMode): void {
+  Appearance.setColorScheme(mode === 'system' ? 'unspecified' : mode);
 }
 
 export function toneColor(theme: Theme, tone: Tone): string {
