@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { createExpense } from '@/db/repositories/expenses';
@@ -9,6 +9,7 @@ import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
 import { useTheme } from '@/ui/theme';
+import { Text } from '@/ui/Text';
 
 export default function NewExpenseScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();

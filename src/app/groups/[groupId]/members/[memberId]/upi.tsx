@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -10,6 +10,7 @@ import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
 import { loadMemberUpiSetup, type MemberUpiSetup } from '@/features/upi/loaders';
 import { describeMemberUpiError } from '@/features/upi/messages';
 import { useTheme } from '@/ui/theme';
+import { Text, TextInput } from '@/ui/Text';
 
 type Ready = Extract<MemberUpiSetup, { ok: true }>;
 
@@ -111,7 +112,7 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
   value: { fontSize: 18, fontWeight: '600' },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
 });

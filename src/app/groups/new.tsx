@@ -1,6 +1,6 @@
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -9,7 +9,11 @@ import { MAX_NAME_LENGTH } from '@/db/repositories/names';
 import { getSetting, SELF_NAME_KEY, setSetting } from '@/db/repositories/profile';
 import { getDeviceUserId } from '@/db/session';
 import { describeGroupError } from '@/features/groups/messages';
-import { useTheme, type Theme } from '@/ui/theme';
+import { AppText } from '@/ui/AppText';
+import { Button } from '@/ui/Button';
+import { FieldLabel, Input } from '@/ui/Field';
+import { Icon } from '@/ui/Icon';
+import { useTheme } from '@/ui/theme';
 
 interface PersonField {
   key: number;
@@ -44,8 +48,6 @@ export default function NewGroupScreen() {
     router.replace({ pathname: '/groups/[groupId]', params: { groupId: result.value.groupId } });
   };
 
-  const input = inputStyle(theme);
-
   return (
     <>
       <Stack.Screen options={{ title: 'New group' }} />
@@ -54,86 +56,69 @@ export default function NewGroupScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
-        <TextInput
+        <FieldLabel>Group name</FieldLabel>
+        <Input
           value={groupName}
           onChangeText={setGroupName}
           placeholder="e.g. Goa trip, Flat 302"
-          placeholderTextColor={theme.muted}
           maxLength={MAX_NAME_LENGTH}
-          style={input}
+          accessibilityLabel="Group name"
           autoFocus
         />
 
-        <Text style={[styles.label, { color: theme.muted }]}>Your name</Text>
-        <TextInput
+        <FieldLabel>Your name</FieldLabel>
+        <Input
           value={selfName}
           onChangeText={setSelfName}
           placeholder="How others see you"
-          placeholderTextColor={theme.muted}
           maxLength={MAX_NAME_LENGTH}
-          style={input}
+          accessibilityLabel="Your name"
         />
 
-        <Text style={[styles.label, { color: theme.muted }]}>People</Text>
-        {people.map((person) => (
+        <FieldLabel>People</FieldLabel>
+        {people.map((person, index) => (
           <View key={person.key} style={styles.personRow}>
-            <TextInput
+            <Input
               value={person.name}
               onChangeText={(name) => updatePerson(person.key, name)}
               placeholder="Name"
-              placeholderTextColor={theme.muted}
               maxLength={MAX_NAME_LENGTH}
-              style={[input, styles.personInput]}
+              accessibilityLabel={`Person ${index + 1} name`}
+              style={styles.personInput}
             />
             <Pressable
+              accessibilityRole="button"
               accessibilityLabel="Remove person"
               onPress={() => removePerson(person.key)}
               style={styles.removeButton}
-              hitSlop={8}
             >
-              <Text style={{ color: theme.muted, fontSize: 18 }}>✕</Text>
+              <Icon name="close" color={theme.muted} size={20} />
             </Pressable>
           </View>
         ))}
-        <Pressable onPress={addPerson} style={styles.addPerson}>
-          <Text style={{ color: theme.primary, fontWeight: '600' }}>+ Add person</Text>
-        </Pressable>
-        <Text style={{ color: theme.muted, fontSize: 13 }}>
+        <Button label="Add person" icon="personAdd" variant="soft" onPress={addPerson} style={styles.addPerson} />
+        <AppText variant="caption" color={theme.muted}>
           People don’t need the app. You can invite them later.
-        </Text>
+        </AppText>
 
-        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+        {error ? (
+          <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+            {error}
+          </AppText>
+        ) : null}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={submit}
-          style={({ pressed }) => [
-            styles.submit,
-            { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
-          ]}
-        >
-          <Text style={[styles.submitText, { color: theme.onPrimary }]}>Create group</Text>
-        </Pressable>
+        <Button label="Create group" size="lg" onPress={submit} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
   );
 }
 
-const inputStyle = (theme: Theme) => [
-  styles.input,
-  { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border },
-];
-
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 8, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  personRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  container: { paddingHorizontal: 20, paddingTop: 8, gap: 8, paddingBottom: 48 },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   personInput: { flex: 1 },
-  removeButton: { padding: 8 },
-  addPerson: { paddingVertical: 10 },
-  submit: { marginTop: 24, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitText: { fontSize: 16, fontWeight: '600' },
+  removeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addPerson: { alignSelf: 'flex-start', marginTop: 4 },
+  submit: { marginTop: 20 },
 });

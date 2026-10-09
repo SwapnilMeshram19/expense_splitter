@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { resolveConflict, type ConflictChoice } from '@/sync/engine';
@@ -8,6 +8,7 @@ import { SyncPanel } from '@/sync/SyncPanel';
 import { refreshSyncStatus, syncNow, useSyncStatus } from '@/sync/syncService';
 import type { VersionedTable } from '@/sync/wire';
 import { useTheme } from '@/ui/theme';
+import { Text } from '@/ui/Text';
 
 function afterAction(): void {
   refreshSyncStatus();
@@ -145,10 +146,10 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, paddingBottom: 48 },
   empty: { textAlign: 'center', marginTop: 24 },
   heading: { fontSize: 16, fontWeight: '600', marginTop: 16 },
-  card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
+  card: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   side: { gap: 2, marginTop: 4 },
-  sideTitle: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  sideTitle: { fontSize: 12, fontWeight: '600' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  action: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  action: { flex: 1, borderRadius: 22, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
 });

@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -14,8 +14,13 @@ import {
 } from '@/domain/money';
 import { loadSettleSetup, type SettleSetup } from '@/features/settlements/loadSettleSetup';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
+import { AppText } from '@/ui/AppText';
+import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
+import { AmountInput, FieldLabel, Input } from '@/ui/Field';
+import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
+import { Text } from '@/ui/Text';
 
 type ReadySetup = Extract<SettleSetup, { ok: true }>;
 
@@ -137,60 +142,57 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.label, { color: theme.muted }]}>Who paid</Text>
+        <FieldLabel>Who paid</FieldLabel>
         {memberChips(fromId, setFromId)}
 
-        <Pressable onPress={swap} style={styles.swap} accessibilityRole="button" accessibilityLabel="Swap">
-          <Text style={{ color: theme.primary, fontWeight: '600' }}>⇅ Swap</Text>
+        <Pressable onPress={swap} style={styles.swap} accessibilityRole="button" accessibilityLabel="Swap payer and receiver" hitSlop={8}>
+          <Icon name="settle" color={theme.onPrimarySoft} size={18} />
+          <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+            Swap
+          </AppText>
         </Pressable>
 
-        <Text style={[styles.label, { color: theme.muted }]}>Who received</Text>
+        <FieldLabel>Who received</FieldLabel>
         {memberChips(toId, setToId)}
 
-        <Text style={[styles.label, { color: theme.muted }]}>Amount</Text>
-        <View style={[styles.amountRow, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-          <Text style={[styles.rupee, { color: theme.muted }]}>₹</Text>
-          <TextInput
-            value={amountText}
-            onChangeText={(text) => {
-              setAmountText(sanitizeAmountInput(text, amountText));
-              setError(null);
-            }}
-            placeholder="0"
-            placeholderTextColor={theme.muted}
-            keyboardType="decimal-pad"
-            style={[styles.amountInput, { color: theme.text }]}
-            autoFocus={initial.amountText === ''}
-          />
-        </View>
-        {hint ? <Text style={{ color: theme.muted }}>{hint}</Text> : null}
+        <FieldLabel>Amount</FieldLabel>
+        <AmountInput
+          value={amountText}
+          onChangeText={(text) => {
+            setAmountText(sanitizeAmountInput(text, amountText));
+            setError(null);
+          }}
+          autoFocus={initial.amountText === ''}
+        />
+        {hint ? (
+          <AppText variant="label" color={theme.muted}>
+            {hint}
+          </AppText>
+        ) : null}
 
-        <Text style={[styles.label, { color: theme.muted }]}>Paid via</Text>
+        <FieldLabel>Paid via</FieldLabel>
         <View style={styles.chips}>
           {SETTLEMENT_METHODS.map((m) => (
             <Chip key={m} label={METHOD_LABELS[m]} selected={method === m} onPress={() => setMethod(m)} />
           ))}
         </View>
 
-        <Text style={[styles.label, { color: theme.muted }]}>Note (optional)</Text>
-        <TextInput
+        <FieldLabel>Note (optional)</FieldLabel>
+        <Input
           value={note}
           onChangeText={setNote}
           placeholder="e.g. GPay ref 1234"
-          placeholderTextColor={theme.muted}
           maxLength={MAX_NOTE_LENGTH}
-          style={[styles.input, { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border }]}
+          accessibilityLabel="Note"
         />
 
-        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+        {error ? (
+          <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+            {error}
+          </AppText>
+        ) : null}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={save}
-          style={({ pressed }) => [styles.submit, { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 }]}
-        >
-          <Text style={[styles.submitText, { color: theme.onPrimary }]}>Record payment</Text>
-        </Pressable>
+        <Button label="Record payment" size="lg" onPress={save} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
@@ -199,14 +201,9 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  container: { padding: 16, gap: 10, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
+  container: { paddingHorizontal: 20, paddingTop: 8, gap: 10, paddingBottom: 48 },
   chips: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  swap: { alignSelf: 'flex-start', paddingVertical: 4 },
-  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10, paddingHorizontal: 12 },
-  rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '600', paddingVertical: 8 },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  submit: { marginTop: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitText: { fontSize: 16, fontWeight: '600' },
+  swap: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 40 },
+  bold: { fontWeight: '600' },
+  submit: { marginTop: 16 },
 });

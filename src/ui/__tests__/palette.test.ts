@@ -22,8 +22,13 @@ describe.each(SCHEMES)('%s theme', (scheme) => {
       ['text on surfaceAlt', t.text, t.surfaceAlt],
       ['muted on background', t.muted, t.background],
       ['muted on surface', t.muted, t.surface],
+      ['muted on surfaceAlt (segment labels)', t.muted, t.surfaceAlt],
       ['onPrimary on primary', t.onPrimary, t.primary],
       ['onPrimarySoft on primarySoft', t.onPrimarySoft, t.primarySoft],
+      // Links and settlement rows use the soft-accent text straight on the page and on cards.
+      ['onPrimarySoft on background', t.onPrimarySoft, t.background],
+      ['onPrimarySoft on surface', t.onPrimarySoft, t.surface],
+      ['warning on background', t.warning, t.background],
       ['positive amount on surface', t.positive, t.surface],
       ['negative amount on surface', t.negative, t.surface],
       ['warning on warningSoft', t.warning, t.warningSoft],

@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Share, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Alert, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -14,6 +14,7 @@ import { isRecentDuplicate } from '@/features/upi/duplicates';
 import { loadRequestSetup, type RequestSetup } from '@/features/upi/loaders';
 import { QrCode } from '@/features/upi/QrCode';
 import { useTheme } from '@/ui/theme';
+import { Text, TextInput } from '@/ui/Text';
 
 type Ready = Extract<RequestSetup, { ok: true }>;
 
@@ -185,10 +186,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
   title: { fontSize: 20, fontWeight: '600' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
-  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10, paddingHorizontal: 12 },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
   rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '600', paddingVertical: 8 },
+  amountInput: { flex: 1, fontSize: 34, fontWeight: '700', paddingVertical: 10 },
   block: { gap: 6, marginTop: 8 },
   qrBlock: { alignItems: 'center', gap: 8, marginTop: 12 },
 });

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Share, StyleSheet, View } from 'react-native';
 
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
@@ -11,6 +11,7 @@ import { createInvite, revokeAllInvites, type CreatedInvite } from '@/features/i
 import { buildShareMessage, describeInviteStatus, formatInviteCode } from '@/features/invites/messages';
 import { syncNow } from '@/sync/syncService';
 import { useTheme } from '@/ui/theme';
+import { Text } from '@/ui/Text';
 
 const readGroup = (groupId: string) => db.select().from(groups).where(eq(groups.id, groupId)).get() ?? null;
 
@@ -146,8 +147,8 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   title: { fontSize: 20, fontWeight: '600' },
-  card: { borderWidth: 1, borderRadius: 12, padding: 16, gap: 8, marginTop: 8 },
+  card: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 10, marginTop: 8 },
   code: { fontSize: 30, fontWeight: '700', letterSpacing: 4, textAlign: 'center' },
-  primaryButton: { borderRadius: 12, paddingVertical: 14, paddingHorizontal: 24, alignItems: 'center', marginTop: 8 },
+  primaryButton: { borderRadius: 25, minHeight: 50, justifyContent: 'center', paddingHorizontal: 24, alignItems: 'center', marginTop: 8 },
   linkButton: { paddingVertical: 12, alignItems: 'center' },
 });
