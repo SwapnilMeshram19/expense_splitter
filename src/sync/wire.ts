@@ -111,6 +111,7 @@ export interface PullResult {
   expenses: Incoming<WireExpense>[];
   settlements: Incoming<WireSettlement>[];
   activity: WireActivity[];
+  more?: boolean;
 }
 
 export function sortLines(lines: readonly WireLine[]): WireLine[] {

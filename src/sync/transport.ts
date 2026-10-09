@@ -5,6 +5,9 @@ import type { PullResult, PushResult } from './wire';
 
 export type SyncErrorCode = 'OFFLINE' | 'UNAUTHENTICATED' | 'BATCH_REFUSED' | 'SERVER';
 
+/** Rows per pull page: ~100–150 KB of JSON, fine on a slow mobile connection. */
+export const PULL_PAGE_SIZE = 300;
+
 export class SyncError extends Error {
   constructor(
     readonly code: SyncErrorCode,
@@ -43,9 +46,10 @@ export const supabaseTransport: SyncTransport = {
   },
 
   async pull(cursor, fullGroupIds) {
-    const { data, error } = await getSupabase().rpc('pull_changes', {
+    const { data, error } = await getSupabase().rpc('pull_page', {
       p_cursor: cursor,
       p_full_group_ids: fullGroupIds,
+      p_limit: PULL_PAGE_SIZE,
     });
     if (error) {
       const code = rpcErrorCode(error);

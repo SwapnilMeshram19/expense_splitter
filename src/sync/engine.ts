@@ -356,12 +356,20 @@ export interface PullStats {
   conflicts: number;
 }
 
+export interface ApplyPullOptions {
+  /**
+   * Save pull.cursor as the sync cursor (default true). runSync passes false for mid-pass pages of
+   * a full fetch, so an interrupted full fetch restarts instead of resuming half-way.
+   */
+  saveCursor?: boolean;
+}
+
 /**
- * Applies one pull_changes response atomically.
+ * Applies one pull page atomically.
  * Clean rows take newer server versions. Dirty rows are never overwritten: identical content is
  * adopted (a lost push response), anything else becomes a conflict for the user to resolve.
  */
-export function applyPull(ctx: RepoContext, pull: PullResult): PullStats {
+export function applyPull(ctx: RepoContext, pull: PullResult, options: ApplyPullOptions = {}): PullStats {
   const now = ctx.now();
   const stats: PullStats = { written: 0, conflicts: 0 };
 
@@ -468,7 +476,8 @@ export function applyPull(ctx: RepoContext, pull: PullResult): PullStats {
       .map((g) => g.id);
 
     writeSetting(tx, SYNC_LOST_GROUPS_KEY, JSON.stringify(lost));
-    writeSetting(tx, SYNC_CURSOR_KEY, pull.cursor);
+    // Mid-pass cursors of a full fetch are not saved: an interrupted full fetch restarts.
+    if (options.saveCursor !== false) writeSetting(tx, SYNC_CURSOR_KEY, pull.cursor);
     writeIssues(tx, issues.values());
   });
 

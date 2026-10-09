@@ -58,6 +58,12 @@ export function clearRefetchGroupIds(ctx: RepoContext, done: readonly string[]):
   writeSetting(ctx, SYNC_REFETCH_GROUPS_KEY, JSON.stringify(remaining));
 }
 
+/** Queue groups for a full fetch on the next sync. They stay queued until a full fetch completes. */
+export function queueRefetchGroupIds(ctx: RepoContext, ids: readonly string[]): void {
+  if (ids.length === 0) return;
+  const next = [...new Set([...getRefetchGroupIds(ctx), ...ids])];
+  writeSetting(ctx, SYNC_REFETCH_GROUPS_KEY, JSON.stringify(next));
+}
 /** Rows waiting to be pushed (including ones blocked by an issue). */
 export function countPendingChanges(ctx: RepoContext): number {
   const count = sql<number>`count(*)`;
