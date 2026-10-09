@@ -1,4 +1,5 @@
 import { db } from '@/db/client';
+import { isGroupLost, LOST_ACCESS_MESSAGE } from '@/db/repositories/access';
 import { getExpense } from '@/db/repositories/expenses';
 import { getGroup } from '@/db/repositories/groups';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
@@ -19,6 +20,7 @@ export type FormSetup =
 /** Everything the add/edit expense screens need, read once when the screen opens. */
 export function loadFormSetup(groupId: string, expenseId: string | null): FormSetup {
   if (!getGroup(db, groupId)) return { ok: false, message: 'This group no longer exists.' };
+  if (isGroupLost(db, groupId)) return { ok: false, message: LOST_ACCESS_MESSAGE };
 
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return { ok: false, message: 'You’re not a member of this group.' };

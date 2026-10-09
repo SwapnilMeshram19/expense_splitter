@@ -6,6 +6,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
 import { activityLog, groups, members } from '../schema';
+import { isGroupLost } from './access';
 import { loadGroupLedger } from './ledger';
 import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
 
@@ -33,7 +34,12 @@ export const groupMembersQuery = (db: AppDb, groupId: string) =>
     .where(eq(members.groupId, groupId))
     .orderBy(asc(members.createdAt), asc(members.id));
 
+/**
+ * Members allowed to act in this group. Every write checks its actor against this set, so it is
+ * empty for a group this phone has lost access to: the group becomes read-only everywhere.
+ */
 export function activeMemberIds(db: AppDb, groupId: string): Set<string> {
+  if (isGroupLost(db, groupId)) return new Set();
   return new Set(
     activeMembersQuery(db, groupId)
       .all()
@@ -69,8 +75,8 @@ export function addMember(
     .get();
   if (!group) return err({ code: 'GROUP_NOT_FOUND' });
 
+  if (!activeMemberIds(ctx.db, input.groupId).has(input.actorMemberId)) return err({ code: 'NOT_A_MEMBER' });
   const existing = activeMembersQuery(ctx.db, input.groupId).all();
-  if (!existing.some((m) => m.id === input.actorMemberId)) return err({ code: 'NOT_A_MEMBER' });
 
   const displayName = normalizeName(input.displayName);
   const nameError = validateName(displayName);
@@ -113,8 +119,8 @@ export function renameMember(
     .get();
   if (!member) return err({ code: 'MEMBER_NOT_FOUND' });
 
+  if (!activeMemberIds(ctx.db, member.groupId).has(input.actorMemberId)) return err({ code: 'NOT_A_MEMBER' });
   const others = activeMembersQuery(ctx.db, member.groupId).all();
-  if (!others.some((m) => m.id === input.actorMemberId)) return err({ code: 'NOT_A_MEMBER' });
 
   const displayName = normalizeName(input.displayName);
   const nameError = validateName(displayName);
@@ -152,7 +158,7 @@ export function renameMember(
 /**
  * Remove a member from the group (soft delete). Only allowed when their balance is exactly
  * zero, otherwise money would silently vanish from everyone else's balances. Old expenses
- * keep referencing the member, so history and names stay intact.
+ * keep referencing the member, so history and names stay intact. (The server enforces the same.)
  */
 export function removeMember(
   ctx: RepoContext,

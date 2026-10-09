@@ -102,6 +102,16 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
 
   switch (entry.entityType) {
     case 'group': {
+      // Written by the server when a deletion was undone (Phase 6.2 balance rule).
+      if (entry.action === 'restore') {
+        return {
+          title: 'The group was restored',
+          detail:
+            str(after, 'reason') === 'GROUP_HAS_BALANCES'
+              ? 'It can’t be deleted while balances aren’t settled.'
+              : null,
+        };
+      }
       if (entry.action === 'create') {
         const name = str(after, 'name');
         return { title: `${actor} created the group${name ? ` “${name}”` : ''}`, detail: null };
@@ -122,6 +132,18 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
     }
 
     case 'member': {
+      // Written by the server when a removal was undone (Phase 6.2 balance rule).
+      if (entry.action === 'restore') {
+        const name = str(after, 'displayName') ?? ctx.nameOf(entry.entityId);
+        return {
+          title: `${name} was added back`,
+          detail:
+            str(after, 'reason') === 'MEMBER_HAS_BALANCE'
+              ? 'They can’t be removed while they still owe or are owed money.'
+              : null,
+        };
+      }
+
       // UPI ID changes. Values are already masked when logged (see repositories/memberUpi.ts).
       if (entry.action === 'update' && (hasKey(before, 'upiVpa') || hasKey(after, 'upiVpa'))) {
         const target = entry.entityId;

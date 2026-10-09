@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
+import { isGroupLost } from '@/db/repositories/access';
 import { groupExpensesQuery } from '@/db/repositories/expenses';
 import { getGroup } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
@@ -18,12 +19,14 @@ import { computeBalances, computePairwiseDebts, type PayerLine } from '@/domain/
 import { formatPaise } from '@/domain/money';
 import { simplifyDebts } from '@/domain/simplify';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
+import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { toneColor, useTheme } from '@/ui/theme';
 
-const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
+// 'settings' too: the lost-access flag lives there and should show the banner right after a sync.
+const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements', 'settings'];
 
 type HistoryRow =
   | {
@@ -97,6 +100,7 @@ function loadGroupView(groupId: string) {
   return {
     group,
     me,
+    lost: isGroupLost(db, groupId),
     names,
     invalidCount: invalidIds.length,
     transfers,
@@ -123,6 +127,8 @@ export default function GroupDetailScreen() {
   }
 
   const me = view.me;
+  /** Read-only when we're not a member here, or the server no longer gives us access. */
+  const canEdit = me !== null && !view.lost;
   const nameOf = (id: string) => (id === me ? 'You' : (view.names.get(id) ?? 'Unknown member'));
 
   const openSettle = (params: { from?: string; to?: string; amount?: string } = {}) =>
@@ -138,7 +144,7 @@ export default function GroupDetailScreen() {
     });
 
   const confirmDeleteSettlement = (settlement: Settlement) => {
-    if (!me) return;
+    if (!canEdit || !me) return;
     Alert.alert(
       'Delete this payment?',
       `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${formatPaise(settlement.amountPaise)}. Balances will go back to how they were before it.`,
@@ -160,13 +166,14 @@ export default function GroupDetailScreen() {
 
   const header = (
     <View style={styles.header}>
-      {!me ? (
+      {view.lost ? <LostAccessBanner groupId={groupId} groupName={view.group.name} /> : null}
+      {!me && !view.lost ? (
         <Text style={{ color: theme.warning }}>
           You’re not a member of this group, so you can’t add expenses here. Open Settings to
           delete it.
         </Text>
       ) : null}
-      {me ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
+      {canEdit ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
       <Text style={[styles.myBalance, { color: toneColor(theme, myBalance.tone) }]}>
         {myBalance.label.charAt(0).toUpperCase() + myBalance.label.slice(1)}
       </Text>
@@ -187,7 +194,7 @@ export default function GroupDetailScreen() {
         view.transfers.map((t) => (
           <View key={`${t.fromMemberId}-${t.toMemberId}`} style={styles.transferRow}>
             <Pressable
-              disabled={!me}
+              disabled={!canEdit}
               onPress={() =>
                 openSettle({ from: t.fromMemberId, to: t.toMemberId, amount: String(t.amountPaise) })
               }
@@ -199,7 +206,7 @@ export default function GroupDetailScreen() {
                 <Text style={{ fontWeight: '600' }}>{formatPaise(t.amountPaise)}</Text>
               </Text>
             </Pressable>
-            {me && t.fromMemberId === me ? (
+            {canEdit && t.fromMemberId === me ? (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
@@ -208,7 +215,7 @@ export default function GroupDetailScreen() {
               >
                 <Text style={{ color: theme.primary, fontWeight: '600' }}>Pay UPI</Text>
               </Pressable>
-            ) : me && t.toMemberId === me ? (
+            ) : canEdit && t.toMemberId === me ? (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
@@ -217,7 +224,7 @@ export default function GroupDetailScreen() {
               >
                 <Text style={{ color: theme.primary, fontWeight: '600' }}>Request</Text>
               </Pressable>
-            ) : me ? (
+            ) : canEdit ? (
               <Pressable
                 hitSlop={8}
                 accessibilityRole="button"
@@ -232,7 +239,7 @@ export default function GroupDetailScreen() {
           </View>
         ))
       )}
-      {me ? (
+      {canEdit ? (
         <Pressable onPress={() => openSettle()} style={styles.linkButton}>
           <Text style={{ color: theme.primary, fontWeight: '600' }}>Record a payment</Text>
         </Pressable>
@@ -282,7 +289,7 @@ export default function GroupDetailScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         ListEmptyComponent={
           <Text style={[styles.emptyHistory, { color: theme.muted }]}>
-            No expenses yet. Tap “+ Add expense” to add the first one.
+            {canEdit ? 'No expenses yet. Tap “+ Add expense” to add the first one.' : 'No expenses yet.'}
           </Text>
         }
         renderItem={({ item }) => {
@@ -296,7 +303,7 @@ export default function GroupDetailScreen() {
                   : `${nameOf(s.fromMemberId)} paid ${nameOf(s.toMemberId)}`;
             return (
               <Pressable
-                disabled={!me}
+                disabled={!canEdit}
                 onPress={() => confirmDeleteSettlement(s)}
                 style={({ pressed }) => [
                   styles.historyRow,
@@ -352,7 +359,7 @@ export default function GroupDetailScreen() {
         }}
       />
 
-      {me ? (
+      {canEdit ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })}

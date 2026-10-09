@@ -26,6 +26,8 @@ import {
   describeMemberError,
 } from '@/features/groups/messages';
 import { useTheme, type Theme } from '@/ui/theme';
+import { isGroupLost } from '@/db/repositories/access';
+import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
 
@@ -44,7 +46,7 @@ function loadSettingsView(groupId: string) {
   const members: MemberRow[] = activeMembersQuery(db, groupId)
     .all()
     .map((m) => ({ id: m.id, displayName: m.displayName, balance: balances.get(m.id) ?? 0 }));
-  return { group, me, members };
+   return { group, me, members, lost: isGroupLost(db, groupId) };
 }
 
 function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
@@ -77,6 +79,14 @@ export default function GroupSettingsScreen() {
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Group settings' }} />
         <Text style={{ color: theme.muted }}>This group no longer exists.</Text>
+      </View>
+    );
+  }
+    if (view.lost) {
+    return (
+      <View style={[styles.center, { padding: 16 }]}>
+        <Stack.Screen options={{ title: 'Group settings' }} />
+        <LostAccessBanner groupId={groupId} groupName={view.group.name} />
       </View>
     );
   }

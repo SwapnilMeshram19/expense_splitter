@@ -132,6 +132,8 @@ describe('describeIssue', () => {
     expect(rejectionReason('FORBIDDEN')).toMatch(/access/);
     expect(rejectionReason('SHARES_MISMATCH')).toMatch(/update the app/);
     expect(rejectionReason(undefined)).toMatch(/couldn’t accept/);
+        expect(rejectionReason('MEMBER_HAS_BALANCE')).toMatch(/Settle up first/);
+    expect(rejectionReason('GROUP_HAS_BALANCES')).toMatch(/wasn’t deleted/);
   });
 });
 

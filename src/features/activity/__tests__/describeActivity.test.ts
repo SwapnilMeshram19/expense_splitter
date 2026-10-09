@@ -152,3 +152,24 @@ it('describes UPI ID changes with masked IDs', () => {
     detail: 'as•••@ybl',
   });
 });
+
+  it('describes restores made by the server', () => {
+    expect(
+      describeActivity(
+        entry({
+          entityType: 'member',
+          action: 'restore',
+          entityId: 'r',
+          actorMemberId: null,
+          after: { displayName: 'Rahul', reason: 'MEMBER_HAS_BALANCE' },
+        }),
+        ctx,
+      ),
+    ).toEqual({ title: 'Rahul was added back', detail: 'They can’t be removed while they still owe or are owed money.' });
+    expect(
+      describeActivity(
+        entry({ entityType: 'group', action: 'restore', actorMemberId: null, after: { reason: 'GROUP_HAS_BALANCES' } }),
+        ctx,
+      ),
+    ).toEqual({ title: 'The group was restored', detail: 'It can’t be deleted while balances aren’t settled.' });
+  });

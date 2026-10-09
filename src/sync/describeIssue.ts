@@ -103,6 +103,10 @@ export function rejectionReason(code: string | undefined, detail?: string): stri
       return 'The amounts or the split don’t add up.';
     case 'SHARES_MISMATCH':
       return 'This version of the app calculated the split differently. Please update the app.';
+    case 'MEMBER_HAS_BALANCE':
+      return 'This person still owes or is owed money in the group, so they weren’t removed. Settle up first.';
+    case 'GROUP_HAS_BALANCES':
+      return 'Some balances in this group aren’t settled yet, so it wasn’t deleted. Settle up first.';
     default:
       return 'The server couldn’t accept this change.';
   }

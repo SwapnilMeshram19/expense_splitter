@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
+import { isGroupLost, LOST_ACCESS_MESSAGE } from '@/db/repositories/access';
 import { getGroup } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId } from '@/db/repositories/members';
@@ -46,6 +47,7 @@ export type PaySetup =
 export function loadPaySetup(groupId: string, toMemberId: string | undefined): PaySetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
+  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
   if (!toMemberId || toMemberId === me) return fail('Choose who to pay.');
@@ -86,6 +88,7 @@ export type RequestSetup =
 export function loadRequestSetup(groupId: string, fromMemberId: string | undefined): RequestSetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
+  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
   if (!fromMemberId || fromMemberId === me) return fail('Choose who is paying you.');
@@ -122,6 +125,7 @@ export type MemberUpiSetup =
 export function loadMemberUpiSetup(groupId: string, memberId: string | undefined): MemberUpiSetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
+  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
   const row = loadMember(groupId, memberId);
