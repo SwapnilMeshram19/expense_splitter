@@ -75,5 +75,12 @@
     "domain:sync": "node scripts/sync-domain.mjs",
     "functions:deploy": "supabase functions deploy sync-push --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true
+  }
 }
