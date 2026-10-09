@@ -158,7 +158,9 @@ do $$
 begin
   assert not exists (select 1 from public.invites where code_hash = current_setting('test.code')),
     'plaintext codes must never be stored';
-  assert (select use_count from public.invites order by created_at limit 1) = 2,
+  -- created_at is now() = transaction start for both invites, so "order by created_at" is
+  -- ambiguous here. The first invite is the one used twice (Bala + Chetan); no invite more.
+  assert (select max(use_count) from public.invites) = 2,
     'first invite used twice (Bala + Chetan)';
   assert (select version from public.members where id = 'b0000000-0000-0000-0000-0000000000f1') = 2,
     'claiming bumps the version so other phones pull it';
