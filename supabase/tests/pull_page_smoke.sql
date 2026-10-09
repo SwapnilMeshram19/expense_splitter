@@ -40,7 +40,8 @@ begin
   loop
     res := public.pull_page(v_cursor, array[g], 2);
     pages := pages + 1;
-    page_rows := res->'groups' || res->'members' || res->'expenses' || res->'settlements' || res->'activity';
+    -- Parenthesised: -> and || have the same precedence in Postgres and associate left.
+    page_rows := (res->'groups') || (res->'members') || (res->'expenses') || (res->'settlements') || (res->'activity');
     assert jsonb_array_length(page_rows) <= 2, format('page %s too big: %s', pages, page_rows);
     ids := ids || array(select r->>'id' from jsonb_array_elements(page_rows) r);
     v_cursor := res->>'cursor';
