@@ -29,6 +29,7 @@ import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Banner } from '@/ui/Banner';
+import { BudgetBar } from '@/ui/BudgetBar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CategoryTile } from '@/ui/CategoryTile';
@@ -451,6 +452,16 @@ function SummaryCard({
           ) : null}
         </View>
       </View>
+
+      {view.budget ? (
+        <Pressable
+          onPress={() => router.push({ pathname: '/groups/[groupId]/settings', params: { groupId: view.group.id } })}
+          accessibilityRole="button"
+          accessibilityHint="Opens group settings to change the budget"
+        >
+          <BudgetBar status={view.budget} currency={view.group.currency} />
+        </Pressable>
+      ) : null}
 
       {mine.length > 0 ? (
         <View style={styles.lines}>

@@ -60,6 +60,11 @@ export function summarizeRow(
     case 'groups':
       out.push(`Name: ${str(row.name)}`);
       if (typeof row.currency === 'string') out.push(`Currency: ${row.currency}`);
+      if (typeof row.budget_paise === 'number' && typeof row.currency === 'string') {
+        out.push(
+          `Budget: ${formatMoney(row.budget_paise, row.currency)}${row.budget_period === 'monthly' ? ' a month' : ''}`,
+        );
+      }
       break;
     case 'members': {
       out.push(`Name: ${str(row.display_name)}`);

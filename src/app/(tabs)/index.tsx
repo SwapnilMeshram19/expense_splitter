@@ -16,6 +16,7 @@ import {
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
+import { BudgetBar } from '@/ui/BudgetBar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { GradientSurface } from '@/ui/GradientSurface';
@@ -261,6 +262,11 @@ function GroupRow({
               {me ? members : `${members} · you’re not a member`}
             </AppText>
           )}
+          {summary.budget ? (
+            <View style={styles.budget}>
+              <BudgetBar status={summary.budget} currency={group.currency} compact />
+            </View>
+          ) : null}
         </View>
         {balanceLabel ? (
           <View style={styles.balance}>
@@ -341,6 +347,7 @@ const styles = StyleSheet.create({
   },
   chipText: { fontWeight: '500' },
   balance: { alignItems: 'flex-end' },
+  budget: { marginTop: 6 },
   separator: { height: 10 },
   emptyBlock: { gap: 16, paddingTop: 4 },
   empty: { gap: 10 },

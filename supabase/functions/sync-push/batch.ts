@@ -1,4 +1,5 @@
-import { isSupportedCurrency } from '../_shared/domain/currency.ts';
+import { isBudgetPeriod } from '../_shared/domain/budget.ts';
+import { isSupportedCurrency, maxAmountMinor } from '../_shared/domain/currency.ts';
 import { validateExpense } from '../_shared/domain/expenseValidation.ts';
 import type { ForeignAmount } from '../_shared/domain/fx.ts';
 import { isCanonicalNote, isReceiptId } from '../_shared/domain/note.ts';
@@ -98,13 +99,27 @@ function asForeign(row: Row): ForeignAmount | null | 'INVALID' {
   return { currency, amountMinor, rate };
 }
 
-/** Group rows may carry a currency; the database checks the format, this checks it's one we support. */
+/**
+ * Group rows may carry a currency (supported?) and a budget (positive, within the currency's cap,
+ * with a known period). The database checks the same shapes again.
+ */
 export function checkGroups(batch: Batch): { batch: Batch; rejected: Rejection[] } {
   const rejected: Rejection[] = [];
   const groups = batch.groups.filter((row) => {
-    if (row.currency === undefined || isSupportedCurrency(row.currency)) return true;
-    rejected.push({ table: 'groups', id: String(row.id), code: 'INVALID_GROUP', detail: 'UNKNOWN_CURRENCY' });
-    return false;
+    const reject = (detail: string) => {
+      rejected.push({ table: 'groups', id: String(row.id), code: 'INVALID_GROUP', detail });
+      return false;
+    };
+    if (row.currency !== undefined && !isSupportedCurrency(row.currency)) return reject('UNKNOWN_CURRENCY');
+    if ('budget_paise' in row && row.budget_paise !== null) {
+      const limit = row.budget_paise;
+      const currency = typeof row.currency === 'string' ? row.currency : 'INR';
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit <= 0 || limit > maxAmountMinor(currency)) {
+        return reject('BUDGET');
+      }
+      if (!isBudgetPeriod(row.budget_period)) return reject('BUDGET');
+    }
+    return true;
   });
   return { batch: { ...batch, groups }, rejected };
 }

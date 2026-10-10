@@ -34,6 +34,7 @@ import {
   describeMemberError,
 } from '@/features/groups/messages';
 import { getRegionPreference } from '@/features/region/regionPreference';
+import { BudgetEditor } from '@/features/groups/BudgetEditor';
 import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { useTheme, type Theme } from '@/ui/theme';
 import { Text, TextInput } from '@/ui/Text';
@@ -286,8 +287,11 @@ function SettingsForm({
         <Text style={{ color: theme.muted, fontSize: 13 }}>
           {currencyLocked
             ? 'Balances are kept in this currency, so it can’t change once there are expenses or payments. Bills in other currencies are converted when you add them.'
-            : 'Every balance in the group is kept in this currency. You can change it until the first expense or payment.'}
+            : 'Every balance in the group is kept in this currency. You can change it until the first expense or payment. Changing it removes the budget.'}
         </Text>
+
+        <Text style={[styles.label, { color: theme.muted }]}>Budget</Text>
+        <BudgetEditor key={`${group.budgetPaise}-${group.budgetPeriod}-${group.currency}`} group={group} me={me} />
 
         <View style={[styles.row, styles.switchRow]}>
           <View style={styles.flex}>

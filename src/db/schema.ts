@@ -75,6 +75,12 @@ export const groups = sqliteTable(
      * group has no expenses or payments at all (the server enforces the same).
      */
     currency: text('currency').notNull().default('INR'),
+    /**
+     * Spending limit in minor units of `currency`, for the whole trip ('total') or each calendar
+     * month ('monthly'). Both set or both null. Cleared when the currency changes.
+     */
+    budgetPaise: integer('budget_paise'),
+    budgetPeriod: text('budget_period', { enum: ['total', 'monthly'] }),
     ...syncColumns(),
   },
   (t) => [check('groups_name_not_blank', sql`length(trim(${t.name})) > 0`)],

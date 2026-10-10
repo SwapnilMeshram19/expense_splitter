@@ -181,6 +181,17 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         if (oldName !== null && newName !== null) {
           return { title: `${actor} renamed the group`, detail: `${oldName} → ${newName}` };
         }
+        if (hasKey(after, 'budget')) {
+          const budget = asRecord(after?.budget ?? null);
+          const limit = num(budget, 'limit');
+          const period = str(budget, 'period');
+          if (limit === null) return { title: `${actor} removed the budget`, detail: null };
+          const amount = `${money(limit)}${period === 'monthly' ? ' a month' : ''}`;
+          return {
+            title: `${actor} ${asRecord(before?.budget ?? null) ? 'changed' : 'set'} the budget`,
+            detail: amount,
+          };
+        }
         const oldCurrency = str(before, 'currency');
         const newCurrency = str(after, 'currency');
         if (oldCurrency !== null && newCurrency !== null) {

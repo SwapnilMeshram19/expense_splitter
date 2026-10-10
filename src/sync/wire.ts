@@ -40,6 +40,9 @@ export interface WireGroup extends Lifecycle {
   simplify_debts: boolean;
   /** ISO 4217. Absent from servers before multi-currency (= INR). */
   currency?: string;
+  /** Budget in minor units of `currency` + 'total' | 'monthly' (both or neither). */
+  budget_paise?: number | null;
+  budget_period?: string | null;
 }
 
 export interface WireMember extends Lifecycle {
@@ -198,6 +201,8 @@ export const groupToWire = (g: Group): WireGroup => ({
   name: g.name,
   simplify_debts: g.simplifyDebts,
   currency: g.currency,
+  budget_paise: g.budgetPaise ?? null,
+  budget_period: g.budgetPeriod ?? null,
   created_at: g.createdAt,
   updated_at: g.updatedAt,
   deleted_at: g.deletedAt ?? null,

@@ -1,7 +1,8 @@
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 
 import { computeBalances } from '@/domain/balances';
-import { DEFAULT_CURRENCY, isSupportedCurrency, type CurrencyCode } from '@/domain/currency';
+import { budgetStatus, isBudgetPeriod, monthOf, parseBudget, type Budget, type BudgetStatus } from '@/domain/budget';
+import { DEFAULT_CURRENCY, isSupportedCurrency, maxAmountMinor, type CurrencyCode } from '@/domain/currency';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
@@ -33,6 +34,11 @@ export type GroupCurrencyError =
   | { code: 'CURRENCY_LOCKED' };
 
 export type GroupUpdateError = NameError | { code: 'GROUP_NOT_FOUND' } | { code: 'NOT_A_MEMBER' };
+
+export type GroupBudgetError =
+  | { code: 'GROUP_NOT_FOUND' }
+  | { code: 'NOT_A_MEMBER' }
+  | { code: 'INVALID_BUDGET'; max: number };
 
 export type GroupDeleteError =
   | { code: 'GROUP_NOT_FOUND' }
@@ -230,8 +236,9 @@ export function setGroupCurrency(
 
   const t = ctx.now();
   ctx.db.transaction((tx) => {
+    // A budget is an amount in the old currency: it doesn't carry over (the server does the same).
     tx.update(groups)
-      .set({ currency: input.currency, updatedAt: t, dirty: true })
+      .set({ currency: input.currency, budgetPaise: null, budgetPeriod: null, updatedAt: t, dirty: true })
       .where(eq(groups.id, group.id))
       .run();
     tx.insert(activityLog)
@@ -250,6 +257,72 @@ export function setGroupCurrency(
   });
 
   return ok(undefined);
+}
+
+/** The group's budget as stored, or null. */
+export const groupBudget = (group: Pick<Group, 'budgetPaise' | 'budgetPeriod'>): Budget | null =>
+  parseBudget(group.budgetPaise, group.budgetPeriod);
+
+/** Set, change or remove (null) the group's budget. Amounts in the group currency. */
+export function setGroupBudget(
+  ctx: RepoContext,
+  input: { groupId: string; budget: Budget | null; actorMemberId: string },
+): Result<void, GroupBudgetError> {
+  const group = checkAccess(ctx, input.groupId, input.actorMemberId);
+  if (isError(group)) return err(group as Extract<GroupBudgetError, { code: 'GROUP_NOT_FOUND' | 'NOT_A_MEMBER' }>);
+  const max = maxAmountMinor(group.currency);
+  const { budget } = input;
+  if (
+    budget &&
+    (!Number.isSafeInteger(budget.limit) || budget.limit <= 0 || budget.limit > max || !isBudgetPeriod(budget.period))
+  ) {
+    return err({ code: 'INVALID_BUDGET', max });
+  }
+  const before = groupBudget(group);
+  if (before?.limit === budget?.limit && before?.period === budget?.period) return ok(undefined);
+
+  const t = ctx.now();
+  ctx.db.transaction((tx) => {
+    tx.update(groups)
+      .set({ budgetPaise: budget?.limit ?? null, budgetPeriod: budget?.period ?? null, updatedAt: t, dirty: true })
+      .where(eq(groups.id, group.id))
+      .run();
+    tx.insert(activityLog)
+      .values({
+        id: ctx.newId(),
+        groupId: group.id,
+        entityType: 'group',
+        entityId: group.id,
+        action: 'update',
+        actorMemberId: input.actorMemberId,
+        before: { budget: before },
+        after: { budget },
+        createdAt: t,
+      })
+      .run();
+  });
+  return ok(undefined);
+}
+
+/**
+ * How the group is doing against its budget on `today` ('YYYY-MM-DD'), or null without one.
+ * Spent = expenses (not payments) in the group currency, deleted ones excluded.
+ */
+export function groupBudgetStatus(db: AppDb, group: Group, today: string): BudgetStatus | null {
+  const budget = groupBudget(group);
+  if (!budget) return null;
+  const conditions = [eq(expenses.groupId, group.id), isNull(expenses.deletedAt)];
+  if (budget.period === 'monthly') {
+    // Calendar dates are 'YYYY-MM-DD' text: one month is a simple range.
+    const month = monthOf(today);
+    conditions.push(gte(expenses.expenseDate, `${month}-01`), lte(expenses.expenseDate, `${month}-31`));
+  }
+  const row = db
+    .select({ spent: sql<number>`coalesce(sum(${expenses.amountPaise}), 0)` })
+    .from(expenses)
+    .where(and(...conditions))
+    .get();
+  return budgetStatus(budget, Number(row?.spent ?? 0), today);
 }
 
 /**

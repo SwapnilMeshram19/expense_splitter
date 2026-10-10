@@ -18,6 +18,7 @@ import {
   type StoredSplitInput,
 } from '@/db/schema';
 import { isPristineOccurrence } from '@/db/repositories/recurring';
+import { isBudgetPeriod } from '@/domain/budget';
 import { err, ok, type Result } from '@/lib/result';
 
 import {
@@ -302,6 +303,8 @@ function writeGroup(tx: Tx, g: Incoming<WireGroup>, mode: WriteMode): void {
     simplifyDebts: g.simplify_debts,
     // A server from before multi-currency doesn't send it: every group there is INR.
     currency: typeof g.currency === 'string' ? g.currency : 'INR',
+    budgetPaise: typeof g.budget_paise === 'number' ? g.budget_paise : null,
+    budgetPeriod: isBudgetPeriod(g.budget_period) ? g.budget_period : null,
     createdAt: g.created_at,
     updatedAt: g.updated_at,
     deletedAt: g.deleted_at,

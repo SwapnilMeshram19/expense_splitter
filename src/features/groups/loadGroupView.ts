@@ -2,12 +2,13 @@ import type { AppDb } from '@/db/context';
 import { isGroupLost } from '@/db/repositories/access';
 import { groupActivityQuery } from '@/db/repositories/activity';
 import { groupExpensesQuery } from '@/db/repositories/expenses';
-import { getGroup } from '@/db/repositories/groups';
+import { getGroup, groupBudgetStatus } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
 import { groupSettlementsQuery } from '@/db/repositories/settlements';
 import type { Expense, Group, Settlement } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt, type PayerLine } from '@/domain/balances';
+import type { BudgetStatus } from '@/domain/budget';
 import { simplifyDebts } from '@/domain/simplify';
 import { describeActivity, formatTimestamp } from '@/features/activity/describeActivity';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
@@ -51,6 +52,8 @@ export interface GroupView {
   memberBalances: { id: string; balance: number }[];
   myBalance: number;
   activity: ActivityRow[];
+  /** Progress against the group's budget, or null without one. */
+  budget: BudgetStatus | null;
 }
 
 /** "Today" / "Yesterday" / "7 Oct 2026", against the phone's local calendar day. */
@@ -154,6 +157,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
       .map((m) => ({ id: m.id, balance: balances.get(m.id) ?? 0 })),
     myBalance: me ? (balances.get(me) ?? 0) : 0,
     activity,
+    budget: groupBudgetStatus(db, group, todayIso),
   };
 }
 

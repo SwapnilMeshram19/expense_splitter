@@ -108,3 +108,19 @@ describe('describeActivity for repeating expenses', () => {
     });
   });
 });
+
+describe('describeActivity for budgets', () => {
+  it('describes setting, changing and removing a budget', () => {
+    const update = (before: unknown, after: unknown) =>
+      describeActivity(entry({ entityType: 'group', action: 'update', before, after }), usd);
+    expect(update({ budget: null }, { budget: { limit: 200000, period: 'total' } })).toEqual({
+      title: 'You set the budget',
+      detail: '$2,000',
+    });
+    expect(update({ budget: { limit: 200000, period: 'total' } }, { budget: { limit: 50000, period: 'monthly' } })).toEqual({
+      title: 'You changed the budget',
+      detail: '$500 a month',
+    });
+    expect(update({ budget: { limit: 1, period: 'total' } }, { budget: null }).title).toBe('You removed the budget');
+  });
+});

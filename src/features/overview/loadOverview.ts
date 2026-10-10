@@ -1,13 +1,15 @@
 import type { AppDb } from '@/db/context';
 import { isGroupLost } from '@/db/repositories/access';
-import { activeGroupsQuery } from '@/db/repositories/groups';
+import { activeGroupsQuery, groupBudgetStatus } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
 import type { Group } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt } from '@/domain/balances';
+import type { BudgetStatus } from '@/domain/budget';
 import { DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
 import type { Paise } from '@/domain/money';
 import { simplifyDebts } from '@/domain/simplify';
+import { todayIsoDate } from '@/lib/dates';
 
 export interface GroupSummary {
   group: Group;
@@ -18,6 +20,8 @@ export interface GroupSummary {
   lost: boolean;
   /** Writes allowed: I'm a member and the server hasn't revoked access. */
   canEdit: boolean;
+  /** Progress against the group's budget, or null without one. */
+  budget: BudgetStatus | null;
 }
 
 export interface MyTransfer {
@@ -70,7 +74,7 @@ export const compareCurrencies = (a: CurrencyCode, b: CurrencyCode): number =>
  * converted figure would move every day with the rate and match nothing anyone actually pays.
  * Within one currency the totals are plain integer sums (no rounding involved).
  */
-export function loadOverview(db: AppDb, deviceUserId: string): Overview {
+export function loadOverview(db: AppDb, deviceUserId: string, today: string = todayIsoDate()): Overview {
   const groups: GroupSummary[] = [];
   const transfers: MyTransfer[] = [];
   const totals = new Map<CurrencyCode, CurrencyTotal>();
@@ -91,6 +95,7 @@ export function loadOverview(db: AppDb, deviceUserId: string): Overview {
       activeMemberCount: members.filter((m) => m.deletedAt === null).length,
       lost,
       canEdit,
+      budget: groupBudgetStatus(db, group, today),
     });
 
     if (!me || myBalance === 0) continue;

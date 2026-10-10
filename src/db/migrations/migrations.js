@@ -6,6 +6,7 @@ import m0001 from './0001_custom_category_label.sql';
 import m0002 from './0002_multi_currency.sql';
 import m0003 from './0003_notes_receipts.sql';
 import m0004 from './0004_recurring.sql';
+import m0005 from './0005_budget.sql';
 
   export default {
     journal,
@@ -14,7 +15,8 @@ import m0004 from './0004_recurring.sql';
 m0001,
 m0002,
 m0003,
-m0004
+m0004,
+m0005
     }
   }
   
