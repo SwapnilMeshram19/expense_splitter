@@ -33,6 +33,8 @@ const expenseRow = (patch: Partial<Expense>): Expense => ({
   fxRate: null,
   note: null,
   receiptId: null,
+  recurringRuleId: null,
+  occurrenceDate: null,
   createdByMemberId: 'a',
   createdAt: 0,
   updatedAt: 0,

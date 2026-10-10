@@ -8,6 +8,7 @@ import {
   expenses,
   groups,
   members,
+  recurringRules,
   settings,
   settlements,
 } from '@/db/schema';
@@ -39,6 +40,7 @@ export function forgetGroupLocally(ctx: RepoContext, groupId: string): Result<vo
     ...ids(db.select({ id: expenses.id }).from(expenses).where(eq(expenses.groupId, groupId)).all()),
     ...ids(db.select({ id: settlements.id }).from(settlements).where(eq(settlements.groupId, groupId)).all()),
     ...ids(db.select({ id: activityLog.id }).from(activityLog).where(eq(activityLog.groupId, groupId)).all()),
+    ...ids(db.select({ id: recurringRules.id }).from(recurringRules).where(eq(recurringRules.groupId, groupId)).all()),
   ]);
   const issues = getSyncIssues(ctx).filter((i) => !rowIds.has(i.id));
   const refetch = getRefetchGroupIds(ctx).filter((id) => id !== groupId);
@@ -51,6 +53,7 @@ export function forgetGroupLocally(ctx: RepoContext, groupId: string): Result<vo
     tx.delete(expenses).where(eq(expenses.groupId, groupId)).run();
     tx.delete(settlements).where(eq(settlements.groupId, groupId)).run();
     tx.delete(activityLog).where(eq(activityLog.groupId, groupId)).run();
+    tx.delete(recurringRules).where(eq(recurringRules.groupId, groupId)).run();
     tx.delete(members).where(eq(members.groupId, groupId)).run();
     tx.delete(groups).where(eq(groups.id, groupId)).run();
 

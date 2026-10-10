@@ -26,6 +26,8 @@ export type FormSetup =
       groupCurrency: CurrencyCode;
       /** Foreign currencies already used for bills in this group, most recent first. */
       recentCurrencies: CurrencyCode[];
+      /** Editing an occurrence of a repeating expense: its rule (for the "Repeats" link). */
+      recurringRuleId: string | null;
     }
   | { ok: false; message: string };
 
@@ -64,5 +66,6 @@ export function loadFormSetup(groupId: string, expenseId: string | null): FormSe
     categorySuggestions: groupCategoryLabels(db, groupId),
     groupCurrency: group.currency,
     recentCurrencies: groupBillCurrencies(db, groupId),
+    recurringRuleId: detail?.expense.recurringRuleId ?? null,
   };
 }

@@ -204,7 +204,7 @@ export default function GroupDetailScreen() {
               })
             }
             accessibilityRole="button"
-            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}${item.expense.note ? ', has a note' : ''}${item.expense.receiptId ? ', has a receipt' : ''}`}
+            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}${item.expense.note ? ', has a note' : ''}${item.expense.receiptId ? ', has a receipt' : ''}${item.expense.recurringRuleId ? ', repeats' : ''}`}
             style={({ pressed }) => [styles.historyRow, { opacity: pressed ? 0.7 : 1 }]}
           >
             <CategoryTile category={item.expense.category} />
@@ -215,6 +215,7 @@ export default function GroupDetailScreen() {
                 </AppText>
                 {item.expense.note ? <Icon name="note" color={theme.muted} size={16} /> : null}
                 {item.expense.receiptId ? <Icon name="receipt" color={theme.muted} size={16} /> : null}
+                {item.expense.recurringRuleId ? <Icon name="repeat" color={theme.muted} size={16} /> : null}
               </View>
               <AppText variant="caption" color={theme.muted} numberOfLines={1}>
                 {item.expense.categoryLabel ? `${item.expense.categoryLabel} · ${paidBy}` : paidBy}

@@ -75,7 +75,21 @@ export default function EditExpenseScreen() {
         options={{
           title: 'Edit expense',
           headerRight: () => (
-            <HeaderIconButton icon="delete" label="Delete expense" color={theme.negative} onPress={confirmDelete} />
+            <View style={styles.headerActions}>
+              {setup.recurringRuleId ? (
+                <HeaderIconButton
+                  icon="repeat"
+                  label="Repeating expense settings"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/groups/[groupId]/recurring/[ruleId]',
+                      params: { groupId, ruleId: setup.recurringRuleId! },
+                    })
+                  }
+                />
+              ) : null}
+              <HeaderIconButton icon="delete" label="Delete expense" color={theme.negative} onPress={confirmDelete} />
+            </View>
           ),
         }}
       />
@@ -95,5 +109,6 @@ export default function EditExpenseScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
 });

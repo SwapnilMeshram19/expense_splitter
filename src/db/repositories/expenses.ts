@@ -5,6 +5,7 @@ import { categoryLabelKey, normalizeCategoryLabel } from '@/domain/categoryLabel
 import { validateExpense, type ExpenseValidationError } from '@/domain/expenseValidation';
 import type { ForeignAmount } from '@/domain/fx';
 import { isReceiptId, normalizeNote } from '@/domain/note';
+import { occurrenceId } from '@/domain/recurrence';
 import type { ShareLine } from '@/domain/splits';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -46,6 +47,11 @@ export interface ExpenseDraft {
    * for upload in the same transaction as the expense.
    */
   newReceipt?: { receiptId: string; bytes: number } | null;
+  /**
+   * Create only: this expense is an occurrence of a recurring rule. Its id is then
+   * occurrenceId(ruleId, occurrenceDate), the same one every phone and the server derive.
+   */
+  recurring?: { ruleId: string; occurrenceDate: string } | null;
   /** Member performing the change (recorded in the activity log). */
   actorMemberId: string;
 }
@@ -164,7 +170,7 @@ const foreignColumns = (foreign: ForeignAmount | null | undefined) => ({
  * The label to store: only with 'other', normalised. `requested` undefined means "unchanged"
  * (keep `current`), null or '' means "plain Other".
  */
-function resolveCategoryLabel(
+export function resolveCategoryLabel(
   category: ExpenseCategory,
   requested: string | null | undefined,
   current: string | null,
@@ -283,7 +289,9 @@ export function createExpense(
   const extras = resolveExtras(draft, { note: null, receiptId: null });
   if (!extras.ok) return extras;
 
-  const expenseId = ctx.newId();
+  const expenseId = draft.recurring
+    ? occurrenceId(draft.recurring.ruleId, draft.recurring.occurrenceDate)
+    : ctx.newId();
   const t = ctx.now();
   const row = {
     description: valid.description,
@@ -304,6 +312,8 @@ export function createExpense(
         createdByMemberId: draft.actorMemberId,
         createdAt: t,
         updatedAt: t,
+        recurringRuleId: draft.recurring?.ruleId ?? null,
+        occurrenceDate: draft.recurring?.occurrenceDate ?? null,
         ...row,
       })
       .run();

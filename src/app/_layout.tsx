@@ -14,6 +14,7 @@ import migrations from '@/db/migrations/migrations';
 import { startAuth } from '@/features/auth/authStore';
 import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startReceiptQueue } from '@/features/receipts/receiptStorage';
+import { startRecurringGenerator } from '@/features/recurring/runRecurring';
 import { startSyncScheduler } from '@/sync/scheduler';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
@@ -36,11 +37,14 @@ export default function RootLayout() {
     startAuth();
     // Receipt photos follow their expenses: upload/clean up after each successful sync.
     const stopReceipts = startReceiptQueue();
+    // Repeating expenses due today (also offline); the server's hourly job does the same.
+    const stopRecurring = startRecurringGenerator();
     startSyncScheduler();
     return () => {
       unsubscribe();
       stopRegion();
       stopReceipts();
+      stopRecurring();
     };
   }, [success]);
 

@@ -11,6 +11,7 @@ import {
   isSupportedCurrency,
   type CurrencyCode,
 } from '@/domain/currency';
+import { describeSchedule, isFrequency } from '@/domain/recurrence';
 import { METHOD_LABELS } from '@/features/settlements/messages';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 
@@ -95,6 +96,8 @@ const SPLIT_LABELS: Record<string, string> = {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+const EVERY: Record<string, string> = { weekly: 'every week', monthly: 'every month', yearly: 'every year' };
+
 /** '1 Oct 2026, 2:05 pm' in the device's local time. */
 export function formatTimestamp(ms: number): string {
   const date = new Date(ms);
@@ -153,6 +156,25 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         };
       }
       if (entry.action === 'delete') return { title: `${actor} deleted the group`, detail: null };
+      // Recurring rules are logged on the group (see repositories/recurring.ts).
+      const rule = asRecord(after?.recurringRule);
+      if (entry.action === 'update' && rule) {
+        const description = str(rule, 'description') ?? 'an expense';
+        const frequency = str(rule, 'frequency');
+        const startDate = str(rule, 'startDate');
+        const schedule = isFrequency(frequency) && startDate ? describeSchedule(frequency, startDate) : null;
+        switch (str(after, 'ruleAction')) {
+          case 'create':
+            return {
+              title: `${actor} set “${description}” to repeat${frequency && EVERY[frequency] ? ` ${EVERY[frequency]}` : ''}`,
+              detail: schedule,
+            };
+          case 'delete':
+            return { title: `${actor} stopped repeating “${description}”`, detail: null };
+          default:
+            return { title: `${actor} changed the repeating “${description}”`, detail: 'Applies to future ones' };
+        }
+      }
       if (entry.action === 'update') {
         const oldName = str(before, 'name');
         const newName = str(after, 'name');
@@ -210,6 +232,18 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
     }
 
     case 'expense': {
+      // Added by a repeating schedule (on a phone or by the server): nobody "did" it.
+      if (entry.action === 'create' && str(after, 'recurringRuleId') !== null) {
+        const description = str(after, 'description');
+        const amount = num(after, 'amountPaise');
+        const frequency = str(after, 'frequency');
+        if (description !== null && amount !== null) {
+          return {
+            title: `“${description}” was added automatically`,
+            detail: `${expenseAmount(after, amount)}${frequency && EVERY[frequency] ? ` · repeats ${EVERY[frequency]}` : ''}`,
+          };
+        }
+      }
       if (entry.action === 'create' || entry.action === 'delete') {
         const snapshot = entry.action === 'create' ? after : before;
         const description = str(snapshot, 'description');

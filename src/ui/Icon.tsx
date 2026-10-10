@@ -60,6 +60,7 @@ const ICONS = {
   note: { ios: 'note.text', android: 0xe26c }, // notes
   cloudUpload: { ios: 'icloud.and.arrow.up', android: 0xe2c3 }, // cloud_upload
   download: { ios: 'arrow.down.circle', android: 0xe171 }, // download
+  repeat: { ios: 'repeat', android: 0xe040 }, // repeat
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

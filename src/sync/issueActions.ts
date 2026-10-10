@@ -8,6 +8,7 @@ import {
   expenses,
   groups,
   members,
+  recurringRules,
   settings,
   settlements,
 } from '@/db/schema';
@@ -20,6 +21,7 @@ import {
   expenseToWire,
   groupToWire,
   memberToWire,
+  ruleToWire,
   settlementToWire,
   type VersionedTable,
   type WireTable,
@@ -73,6 +75,7 @@ export function countPendingChanges(ctx: RepoContext): number {
     (db.select({ n: count }).from(members).where(eq(members.dirty, true)).get()?.n ?? 0) +
     (db.select({ n: count }).from(expenses).where(eq(expenses.dirty, true)).get()?.n ?? 0) +
     (db.select({ n: count }).from(settlements).where(eq(settlements.dirty, true)).get()?.n ?? 0) +
+    (db.select({ n: count }).from(recurringRules).where(eq(recurringRules.dirty, true)).get()?.n ?? 0) +
     (db.select({ n: count }).from(activityLog).where(eq(activityLog.dirty, true)).get()?.n ?? 0)
   );
 }
@@ -92,6 +95,14 @@ function rowState(ctx: RepoContext, table: VersionedTable, id: string): { groupI
       return (
         db.select({ groupId: settlements.groupId, version: settlements.version }).from(settlements).where(eq(settlements.id, id)).get() ??
         null
+      );
+    case 'recurring_rules':
+      return (
+        db
+          .select({ groupId: recurringRules.groupId, version: recurringRules.version })
+          .from(recurringRules)
+          .where(eq(recurringRules.id, id))
+          .get() ?? null
       );
   }
 }
@@ -133,6 +144,12 @@ export function discardLocalChange(ctx: RepoContext, table: VersionedTable, id: 
         tx.update(settlements)
           .set({ version: 0, dirty: false, updatedAt: sql`${settlements.updatedAt}` })
           .where(eq(settlements.id, id))
+          .run();
+        break;
+      case 'recurring_rules':
+        tx.update(recurringRules)
+          .set({ version: 0, dirty: false, updatedAt: sql`${recurringRules.updatedAt}` })
+          .where(eq(recurringRules.id, id))
           .run();
         break;
     }
@@ -190,6 +207,10 @@ function localWire(ctx: RepoContext, table: WireTable, id: string): Record<strin
     case 'settlements': {
       const r = db.select().from(settlements).where(eq(settlements.id, id)).get();
       return asRecord(r ? settlementToWire(r) : null);
+    }
+    case 'recurring_rules': {
+      const r = db.select().from(recurringRules).where(eq(recurringRules.id, id)).get();
+      return asRecord(r ? ruleToWire(r) : null);
     }
     case 'activity': {
       const r = db.select().from(activityLog).where(eq(activityLog.id, id)).get();

@@ -142,6 +142,13 @@ export const expenses = sqliteTable(
      * Supabase Storage and/or on this phone (see receiptFiles).
      */
     receiptId: text('receipt_id'),
+    /**
+     * Occurrence of a recurring rule: both set, or both null. The expense id is then derived from
+     * them (src/domain/recurrence.ts occurrenceId), so every phone and the server create the same
+     * row for the same month instead of duplicates.
+     */
+    recurringRuleId: text('recurring_rule_id'),
+    occurrenceDate: text('occurrence_date'),
     createdByMemberId: text('created_by_member_id')
       .notNull()
       .references(() => members.id),
@@ -246,6 +253,49 @@ export const activityLog = sqliteTable(
   (t) => [index('activity_group_created_idx').on(t.groupId, t.createdAt)],
 );
 
+/** One line of a recurring rule's template, in minor units of the group currency. */
+export interface RuleLine {
+  memberId: string;
+  amountPaise: number;
+}
+
+/**
+ * Recurring expense rules ("Rent, every month on the 1st"), shared with the group. The template is
+ * stored fully computed (payers and shares, group currency), so creating an occurrence is a copy:
+ * the server's daily job needs no split engine and can never round differently from the app.
+ * Group currency only (a foreign bill's rate changes every time).
+ */
+export const recurringRules = sqliteTable(
+  'recurring_rules',
+  {
+    id: text('id').primaryKey(),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id),
+    description: text('description').notNull(),
+    amountPaise: integer('amount_paise').notNull(),
+    category: text('category', { enum: EXPENSE_CATEGORIES }).notNull().default('general'),
+    categoryLabel: text('category_label'),
+    note: text('note'),
+    /** Split as entered, so the rule can be edited exactly like an expense. */
+    splitInput: text('split_input', { mode: 'json' }).$type<StoredSplitInput>().notNull(),
+    payers: text('payers', { mode: 'json' }).$type<RuleLine[]>().notNull(),
+    shares: text('shares', { mode: 'json' }).$type<RuleLine[]>().notNull(),
+    frequency: text('frequency', { enum: ['weekly', 'monthly', 'yearly'] }).notNull(),
+    /** First occurrence, 'YYYY-MM-DD'. Fixed once an occurrence exists. */
+    startDate: text('start_date').notNull(),
+    /** Last day an occurrence may fall on, or null for no end. */
+    endDate: text('end_date'),
+    /** IANA zone of the phone that created it: the server's job uses its calendar day. */
+    timeZone: text('time_zone').notNull(),
+    createdByMemberId: text('created_by_member_id')
+      .notNull()
+      .references(() => members.id),
+    ...syncColumns(),
+  },
+  (t) => [index('recurring_rules_group_idx').on(t.groupId)],
+);
+
 export const RECEIPT_FILE_STATES = ['upload', 'synced', 'discard'] as const;
 export type ReceiptFileState = (typeof RECEIPT_FILE_STATES)[number];
 
@@ -291,3 +341,4 @@ export type Settlement = typeof settlements.$inferSelect;
 export type NewSettlement = typeof settlements.$inferInsert;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
 export type ReceiptFile = typeof receiptFiles.$inferSelect;
+export type RecurringRule = typeof recurringRules.$inferSelect;

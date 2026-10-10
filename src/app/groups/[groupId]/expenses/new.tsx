@@ -9,6 +9,9 @@ import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
 import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
+import { createRule, discardNewRule } from '@/db/repositories/recurring';
+import { deviceTimeZone } from '@/features/recurring/deviceTimeZone';
+import { describeRuleError } from '@/features/recurring/messages';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
 
@@ -29,15 +32,41 @@ export default function NewExpenseScreen() {
   const nameOf = (id: string) => setup.members.find((m) => m.id === id)?.name ?? 'Someone';
 
   const save = (draft: DraftParts): string | null => {
-    const { stagedReceipt, ...fields } = draft;
+    const { stagedReceipt, repeat, ...fields } = draft;
+
+    // A repeating expense: the rule first, then this expense as its first occurrence (same id the
+    // server and other phones derive, so nobody adds it twice).
+    let ruleId: string | null = null;
+    if (repeat) {
+      const rule = createRule(appContext, {
+        groupId,
+        description: fields.description,
+        amountPaise: fields.amountPaise,
+        category: fields.category,
+        categoryLabel: fields.categoryLabel,
+        note: fields.note,
+        payers: fields.payers,
+        splitInput: fields.splitInput,
+        frequency: repeat.frequency,
+        startDate: fields.expenseDate,
+        endDate: repeat.endDate,
+        timeZone: deviceTimeZone(),
+        actorMemberId: setup.me,
+      });
+      if (!rule.ok) return describeRuleError(rule.error, nameOf, setup.groupCurrency);
+      ruleId = rule.value.ruleId;
+    }
+
     const result = saveWithReceipt(stagedReceipt, (newReceipt) =>
       createExpense(appContext, {
         ...fields,
         groupId,
         actorMemberId: setup.me,
         newReceipt,
+        recurring: ruleId ? { ruleId, occurrenceDate: fields.expenseDate } : null,
       }),
     );
+    if (!result.ok && ruleId) discardNewRule(appContext, ruleId);
     if (!result.ok) {
       if ('fileError' in result) return result.fileError;
       return describeExpenseError(result.error, nameOf, {
@@ -60,6 +89,7 @@ export default function NewExpenseScreen() {
         recentCurrencies={setup.recentCurrencies}
         groupId={groupId}
         expenseId={null}
+        repeatMode="optional"
         submitLabel="Save expense"
         onSubmit={save}
       />

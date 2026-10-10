@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 import { changedGroupIds, GROUP_CHANGED_EVENT, groupTopic, parseOrigin } from '../_shared/domain/changeSignals.ts';
-import { checkExpenses, checkGroups, parseBatch } from './batch.ts';
+import { checkExpenses, checkGroups, checkRules, parseBatch } from './batch.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
 
@@ -91,8 +91,9 @@ Deno.serve(async (req) => {
   const parsed = parseBatch(body);
   if (!parsed.ok) return json(400, { error: parsed.error });
   const groupsChecked = checkGroups(parsed.batch);
-  const { batch, rejected: expenseRejections } = checkExpenses(groupsChecked.batch);
-  const rejected = [...groupsChecked.rejected, ...expenseRejections];
+  const expensesChecked = checkExpenses(groupsChecked.batch);
+  const { batch, rejected: ruleRejections } = checkRules(expensesChecked.batch);
+  const rejected = [...groupsChecked.rejected, ...expensesChecked.rejected, ...ruleRejections];
 
   const { data, error } = await adminClient.rpc('apply_push', { p_user: auth.user.id, p_batch: batch });
   if (error) {

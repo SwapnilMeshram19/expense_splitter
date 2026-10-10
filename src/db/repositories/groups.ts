@@ -5,7 +5,7 @@ import { DEFAULT_CURRENCY, isSupportedCurrency, type CurrencyCode } from '@/doma
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
-import { activityLog, expenses, groups, members, settlements, type Group } from '../schema';
+import { activityLog, expenses, groups, members, recurringRules, settlements, type Group } from '../schema';
 import { loadGroupLedger } from './ledger';
 import { activeMemberIds } from './members';
 import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
@@ -62,8 +62,9 @@ export function groupCurrency(db: AppDb, groupId: string): CurrencyCode {
 }
 
 /**
- * True once the group has any expense or payment, including deleted ones: a deleted expense can be
- * restored, and its amounts are in the currency it was recorded in. Same rule as the server.
+ * True once the group has any expense, payment or recurring rule, including deleted ones: a deleted
+ * expense can be restored, and its amounts are in the currency it was recorded in. Same rule as
+ * the server.
  */
 export function isCurrencyLocked(db: AppDb, groupId: string): boolean {
   const expense = db
@@ -72,6 +73,9 @@ export function isCurrencyLocked(db: AppDb, groupId: string): boolean {
     .where(eq(expenses.groupId, groupId))
     .get();
   if (expense) return true;
+  if (db.select({ id: recurringRules.id }).from(recurringRules).where(eq(recurringRules.groupId, groupId)).get()) {
+    return true;
+  }
   return !!db
     .select({ id: settlements.id })
     .from(settlements)

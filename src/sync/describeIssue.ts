@@ -32,6 +32,8 @@ export function issueTitle(table: WireTable, row: Record<string, unknown> | null
       return `Expense “${str(row?.description)}”`;
     case 'settlements':
       return 'Payment';
+    case 'recurring_rules':
+      return `Repeating “${str(row?.description)}”`;
     case 'activity':
       return 'History entry';
   }
@@ -92,6 +94,11 @@ export function summarizeRow(
         `${nameOf(str(row.from_member_id))} paid ${nameOf(str(row.to_member_id))} ${money(num(row.amount_paise))}`,
       );
       break;
+    case 'recurring_rules':
+      out.push(`${str(row.description)} · ${money(num(row.amount_paise))}`);
+      out.push(`Repeats ${str(row.frequency)} from ${formatIsoDate(str(row.start_date))}`);
+      if (str(row.end_date)) out.push(`Until ${formatIsoDate(str(row.end_date))}`);
+      break;
     case 'activity':
       out.push('History entry');
       break;
@@ -117,6 +124,7 @@ export function rejectionReason(code: string | undefined, detail?: string): stri
       return 'It refers to someone who isn’t in this group.';
     case 'INVALID_EXPENSE':
       // FX, FX_SHAPE, FX_TOTAL_MISMATCH (sync-push) or an unknown group currency.
+      if (detail === 'OCCURRENCE') return 'This repeating expense doesn’t match its schedule. Discard it; the next sync brings the right one.';
       if (detail === 'NOTE') return 'The note on this expense isn’t valid. Open it, check the note and save again.';
       if (detail === 'RECEIPT') return 'The receipt photo on this expense isn’t valid. Open it and attach the photo again.';
       if (detail === 'UNKNOWN_CURRENCY' || detail?.startsWith('FX')) {
@@ -132,6 +140,8 @@ export function rejectionReason(code: string | undefined, detail?: string): stri
       return 'The group’s currency was changed on another phone. Check the amounts, then save this again.';
     case 'UPGRADE_REQUIRED':
       return 'This group uses a currency or bill that this version of the app doesn’t support. Please update the app.';
+    case 'INVALID_RULE':
+      return 'This repeating expense isn’t valid (schedule, amounts or time zone). Open it and save it again.';
     case 'INVALID_GROUP':
       return detail === 'UNKNOWN_CURRENCY'
         ? 'This version of the server doesn’t know the group’s currency.'

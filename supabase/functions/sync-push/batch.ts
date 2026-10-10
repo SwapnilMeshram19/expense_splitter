@@ -2,9 +2,10 @@ import { isSupportedCurrency } from '../_shared/domain/currency.ts';
 import { validateExpense } from '../_shared/domain/expenseValidation.ts';
 import type { ForeignAmount } from '../_shared/domain/fx.ts';
 import { isCanonicalNote, isReceiptId } from '../_shared/domain/note.ts';
+import { isIsoDate, occurrenceId, validateSchedule } from '../_shared/domain/recurrence.ts';
 import type { SplitInput } from '../_shared/domain/splits.ts';
 
-export const TABLES = ['groups', 'members', 'expenses', 'settlements', 'activity'] as const;
+export const TABLES = ['groups', 'members', 'expenses', 'settlements', 'recurring_rules', 'activity'] as const;
 export type Table = (typeof TABLES)[number];
 export type Row = Record<string, unknown>;
 export type Batch = Record<Table, Row[]>;
@@ -27,7 +28,7 @@ export type ParseResult = { ok: true; batch: Batch } | { ok: false; error: strin
 export function parseBatch(body: unknown): ParseResult {
   if (!isObject(body)) return { ok: false, error: 'INVALID_BATCH' };
 
-  const batch: Batch = { groups: [], members: [], expenses: [], settlements: [], activity: [] };
+  const batch: Batch = { groups: [], members: [], expenses: [], settlements: [], recurring_rules: [], activity: [] };
   let total = 0;
 
   for (const table of TABLES) {
@@ -159,6 +160,16 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
       continue;
     }
 
+    // Occurrence of a recurring rule: the id must be the one every phone and the server derive.
+    if ('recurring_rule_id' in row && row.recurring_rule_id !== null) {
+      const rule = row.recurring_rule_id;
+      const date = row.occurrence_date;
+      if (typeof rule !== 'string' || !isUuid(rule) || !isIsoDate(date) || occurrenceId(rule, date) !== id.toLowerCase()) {
+        reject('INVALID_EXPENSE', 'OCCURRENCE');
+        continue;
+      }
+    }
+
     const foreign = asForeign(row);
     if (foreign === 'INVALID' || (foreign && payers.some((p) => p.original_amount_minor === undefined))) {
       reject('INVALID_EXPENSE', 'FX_SHAPE');
@@ -223,4 +234,81 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
   const activity = batch.activity.filter((a) => !rejectedIds.has(String(a.entity_id).toLowerCase()));
 
   return { batch: { ...batch, expenses: accepted, activity }, rejected };
+}
+const TIME_ZONE_RE = /^([A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}|UTC)$/;
+
+/**
+ * Re-validates recurring rules like expenses: the template must split exactly as the app computed
+ * (the server's job copies these lines into every occurrence), in the group currency.
+ */
+export function checkRules(batch: Batch): { batch: Batch; rejected: Rejection[] } {
+  const rejected: Rejection[] = [];
+  const accepted: Row[] = [];
+
+  for (const row of batch.recurring_rules) {
+    const id = String(row.id);
+    const reject = (detail: string) => rejected.push({ table: 'recurring_rules', id, code: 'INVALID_RULE', detail });
+
+    const payers = asLines(row.payers);
+    const shares = asLines(row.shares);
+    if (!payers || !shares || typeof row.amount_paise !== 'number') {
+      reject('SHAPE');
+      continue;
+    }
+    if (!isSupportedCurrency(row.group_currency)) {
+      reject('UNKNOWN_CURRENCY');
+      continue;
+    }
+    if (validateSchedule({ startDate: row.start_date, endDate: row.end_date ?? null, frequency: row.frequency })) {
+      reject('SCHEDULE');
+      continue;
+    }
+    if (typeof row.time_zone !== 'string' || !TIME_ZONE_RE.test(row.time_zone)) {
+      reject('TIME_ZONE');
+      continue;
+    }
+    if (!isCanonicalNote(row.note ?? null)) {
+      reject('NOTE');
+      continue;
+    }
+
+    let result: ReturnType<typeof validateExpense>;
+    try {
+      result = validateExpense(
+        {
+          description: typeof row.description === 'string' ? row.description : '',
+          amountPaise: row.amount_paise,
+          expenseDate: String(row.start_date),
+          payers: payers.map((p) => ({ memberId: p.member_id, amountPaise: p.amount_paise })),
+          splitInput: row.split_input as SplitInput,
+          currency: row.group_currency as string,
+        },
+        ANY_MEMBER,
+      );
+    } catch {
+      reject('SPLIT_INPUT');
+      continue;
+    }
+    if (!result.ok) {
+      reject(result.error.code);
+      continue;
+    }
+    const clientShares = shares.map((l) => ({ memberId: l.member_id, amountPaise: l.amount_paise }));
+    const clientPayers = payers
+      .filter((l) => l.amount_paise > 0)
+      .map((l) => ({ memberId: l.member_id, amountPaise: l.amount_paise }));
+    if (lineKey(result.shares) !== lineKey(clientShares) || lineKey(result.payers) !== lineKey(clientPayers)) {
+      rejected.push({ table: 'recurring_rules', id, code: 'SHARES_MISMATCH' });
+      continue;
+    }
+
+    accepted.push({
+      ...row,
+      description: result.description,
+      payers: result.payers.map((l) => ({ member_id: l.memberId, amount_paise: l.amountPaise })),
+      shares: result.shares.map((l) => ({ member_id: l.memberId, amount_paise: l.amountPaise })),
+    });
+  }
+
+  return { batch: { ...batch, recurring_rules: accepted }, rejected };
 }

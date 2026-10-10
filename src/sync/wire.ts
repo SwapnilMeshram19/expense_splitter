@@ -8,10 +8,17 @@ import type {
   Expense,
   Group,
   Member,
+  RecurringRule,
   Settlement,
 } from '@/db/schema';
 
-export type WireTable = 'groups' | 'members' | 'expenses' | 'settlements' | 'activity';
+export type WireTable =
+  | 'groups'
+  | 'members'
+  | 'expenses'
+  | 'settlements'
+  | 'recurring_rules'
+  | 'activity';
 export type VersionedTable = Exclude<WireTable, 'activity'>;
 
 export interface WireLine {
@@ -62,6 +69,9 @@ export interface WireExpense extends Lifecycle {
   note?: string | null;
   /** Lowercase UUID naming the receipt photo in storage, or null. */
   receipt_id?: string | null;
+  /** Occurrence of a recurring rule (both or neither). Absent from servers before recurring. */
+  recurring_rule_id?: string | null;
+  occurrence_date?: string | null;
   /**
    * Push only, never stored: the group currency this row's amounts are in. The server refuses the
    * row if the group's currency differs, and refuses rows WITHOUT it in non-INR groups (builds
@@ -98,6 +108,26 @@ export interface WireActivity {
   created_at: number;
 }
 
+export interface WireRecurringRule extends Lifecycle {
+  id: string;
+  group_id: string;
+  description: string;
+  amount_paise: number;
+  category: string;
+  category_label: string | null;
+  note: string | null;
+  split_input: unknown;
+  payers: WireLine[];
+  shares: WireLine[];
+  frequency: string;
+  start_date: string;
+  end_date: string | null;
+  time_zone: string;
+  created_by_member_id: string;
+  /** Push only, never stored: see WireExpense.group_currency. */
+  group_currency?: string;
+}
+
 /** Sent to the server: the server version this change was made on top of (0 = new). */
 export type Outgoing<T> = T & { base_version: number };
 /** Received from the server. */
@@ -108,6 +138,7 @@ export interface PushBatch {
   members: Outgoing<WireMember>[];
   expenses: Outgoing<WireExpense>[];
   settlements: Outgoing<WireSettlement>[];
+  recurring_rules: Outgoing<WireRecurringRule>[];
   activity: WireActivity[];
 }
 
@@ -133,6 +164,8 @@ export interface PullResult {
   members: Incoming<WireMember>[];
   expenses: Incoming<WireExpense>[];
   settlements: Incoming<WireSettlement>[];
+  /** Absent from servers before recurring expenses. */
+  recurring_rules?: Incoming<WireRecurringRule>[];
   activity: WireActivity[];
   more?: boolean;
 }
@@ -200,12 +233,35 @@ export const expenseToWire = (
   fx_rate: e.fxRate ?? null,
   note: e.note ?? null,
   receipt_id: e.receiptId ?? null,
+  recurring_rule_id: e.recurringRuleId ?? null,
+  occurrence_date: e.occurrenceDate ?? null,
   created_at: e.createdAt,
   updated_at: e.updatedAt,
   deleted_at: e.deletedAt ?? null,
   payers: toWireLines(payers),
   // Shares never carry original amounts: they are recomputed from split_input.
   shares: toWireLines(shares.map((l) => ({ memberId: l.memberId, amountPaise: l.amountPaise }))),
+});
+
+export const ruleToWire = (r: RecurringRule): WireRecurringRule => ({
+  id: r.id,
+  group_id: r.groupId,
+  description: r.description,
+  amount_paise: r.amountPaise,
+  category: r.category,
+  category_label: r.categoryLabel ?? null,
+  note: r.note ?? null,
+  split_input: r.splitInput,
+  payers: toWireLines(r.payers),
+  shares: toWireLines(r.shares),
+  frequency: r.frequency,
+  start_date: r.startDate,
+  end_date: r.endDate ?? null,
+  time_zone: r.timeZone,
+  created_by_member_id: r.createdByMemberId,
+  created_at: r.createdAt,
+  updated_at: r.updatedAt,
+  deleted_at: r.deletedAt ?? null,
 });
 
 export const settlementToWire = (s: Settlement): WireSettlement => ({

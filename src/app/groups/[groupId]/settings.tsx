@@ -248,6 +248,15 @@ function SettingsForm({
           <Text style={{ color: theme.muted }}>Share a link ›</Text>
         </Pressable>
 
+        <Pressable
+          onPress={() => router.push({ pathname: '/groups/[groupId]/recurring', params: { groupId: group.id } })}
+          style={[styles.row, styles.linkRow, { borderColor: theme.border }]}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Repeating expenses</Text>
+          <Text style={{ color: theme.muted }}>Rent, Wi-Fi… ›</Text>
+        </Pressable>
+
         <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
         <View style={styles.row}>
           <TextInput

@@ -84,3 +84,27 @@ describe('describeActivity with currencies', () => {
     ).toEqual({ title: 'You changed the group’s currency', detail: 'INR → THB' });
   });
 });
+
+describe('describeActivity for repeating expenses', () => {
+  it('describes rule changes logged on the group', () => {
+    const rule = { id: 'r1', description: 'Rent', frequency: 'monthly', startDate: '2026-10-01' };
+    expect(describeActivity(entry({ entityType: 'group', action: 'update', after: { recurringRule: rule, ruleAction: 'create' } }), inr)).toEqual({
+      title: 'You set “Rent” to repeat every month',
+      detail: 'Every month on the 1st',
+    });
+    expect(
+      describeActivity(entry({ entityType: 'group', action: 'update', after: { recurringRule: rule, ruleAction: 'delete' } }), inr).title,
+    ).toBe('You stopped repeating “Rent”');
+    expect(
+      describeActivity(entry({ entityType: 'group', action: 'update', after: { recurringRule: rule, ruleAction: 'update' } }), inr).title,
+    ).toBe('You changed the repeating “Rent”');
+  });
+
+  it('describes an occurrence added automatically', () => {
+    const after = { description: 'Rent', amountPaise: 3_000_000, recurringRuleId: 'r1', frequency: 'monthly', payers: [] };
+    expect(describeActivity(entry({ actorMemberId: null, after }), inr)).toEqual({
+      title: '“Rent” was added automatically',
+      detail: '₹30,000 · repeats every month',
+    });
+  });
+});

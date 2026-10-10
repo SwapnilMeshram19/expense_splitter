@@ -21,6 +21,7 @@ const SYNCED_TABLES = new Set([
   'expense_payers',
   'expense_shares',
   'settlements',
+  'recurring_rules',
   'activity_log',
 ]);
 

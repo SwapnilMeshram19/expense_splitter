@@ -27,6 +27,7 @@ import {
 import { foreignTotal, parseRate, type ForeignAmount } from '@/domain/fx';
 import type { Paise } from '@/domain/money';
 import { MAX_NOTE_LENGTH, normalizeNote } from '@/domain/note';
+import type { Frequency } from '@/domain/recurrence';
 import {
   BASIS_POINTS_TOTAL,
   computeSplit,
@@ -75,6 +76,10 @@ export interface ExpenseFormState {
   receiptId: string | null;
   /** A newly picked photo, not saved yet. */
   stagedReceipt: StagedReceipt | null;
+  /** 'none', or how often it repeats (expenseDate is then the first occurrence). */
+  repeat: 'none' | Frequency;
+  /** Last day an occurrence may fall on, or null for no end. */
+  repeatEndDate: string | null;
 }
 
 export interface DraftParts {
@@ -97,6 +102,8 @@ export interface DraftParts {
   receiptId: string | null;
   /** Set when receiptId is a new photo: the screen moves the file into place before saving. */
   stagedReceipt?: StagedReceipt;
+  /** Set when the expense repeats: saved as a recurring rule starting on expenseDate. */
+  repeat?: { frequency: Frequency; endDate: string | null };
 }
 
 export interface FormAnalysis {
@@ -146,6 +153,8 @@ export function initialFormState(
     note: '',
     receiptId: null,
     stagedReceipt: null,
+    repeat: 'none',
+    repeatEndDate: null,
   };
 }
 
@@ -509,6 +518,14 @@ export function analyzeForm(
   if (!label.ok) problems.push(`Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`);
   const note = normalizeNote(state.note);
   if (!note.ok) problems.push(`Keep the note under ${MAX_NOTE_LENGTH} characters.`);
+  const repeating = state.repeat !== 'none';
+  if (repeating && isForeign) {
+    // A foreign bill's rate changes every time: a repeat would lock today's rate forever.
+    problems.push('A repeating expense must be in the group’s currency.');
+  }
+  if (repeating && state.repeatEndDate !== null && state.repeatEndDate < state.expenseDate) {
+    problems.push('The end date is before the first date.');
+  }
 
   const groupTotal = isForeign ? convertedTotal : totalPaise;
   const draft: DraftParts | null =
@@ -525,6 +542,9 @@ export function analyzeForm(
           note: note.ok ? note.note : null,
           receiptId: state.stagedReceipt?.receiptId ?? state.receiptId,
           ...(state.stagedReceipt ? { stagedReceipt: state.stagedReceipt } : {}),
+          ...(state.repeat !== 'none'
+            ? { repeat: { frequency: state.repeat, endDate: state.repeatEndDate } }
+            : {}),
         }
       : null;
 

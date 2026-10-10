@@ -36,6 +36,7 @@ export interface SignalBatch {
   members?: readonly BatchRow[];
   expenses?: readonly BatchRow[];
   settlements?: readonly BatchRow[];
+  recurring_rules?: readonly BatchRow[];
 }
 
 export interface AppliedRow {
@@ -43,7 +44,7 @@ export interface AppliedRow {
   id?: unknown;
 }
 
-const SIGNAL_TABLES = ['groups', 'members', 'expenses', 'settlements'] as const;
+const SIGNAL_TABLES = ['groups', 'members', 'expenses', 'settlements', 'recurring_rules'] as const;
 
 /**
  * Groups that really changed in a push: those owning at least one applied row. Rows that were

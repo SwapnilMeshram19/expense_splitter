@@ -8,13 +8,16 @@ import {
   expenses,
   groups,
   members,
+  recurringRules,
   settings,
   settlements,
   type ActivityLogEntry,
   type ExpenseCategory,
+  type RecurringRule,
   type SettlementMethod,
   type StoredSplitInput,
 } from '@/db/schema';
+import { isPristineOccurrence } from '@/db/repositories/recurring';
 import { err, ok, type Result } from '@/lib/result';
 
 import {
@@ -22,6 +25,7 @@ import {
   expenseToWire,
   groupToWire,
   memberToWire,
+  ruleToWire,
   sameContent,
   settlementToWire,
   type Incoming,
@@ -32,6 +36,7 @@ import {
   type WireExpense,
   type WireGroup,
   type WireMember,
+  type WireRecurringRule,
   type WireSettlement,
   type WireTable,
 } from './wire';
@@ -40,6 +45,8 @@ export const MAX_BATCH_ROWS = 400;
 export const SYNC_CURSOR_KEY = 'sync_cursor';
 export const SYNC_ISSUES_KEY = 'sync_issues';
 export const SYNC_LOST_GROUPS_KEY = 'sync_lost_group_ids';
+/** Same key as issueActions.SYNC_REFETCH_GROUPS_KEY (kept here to avoid an import cycle). */
+const REFETCH_GROUPS_KEY = 'sync_refetch_group_ids';
 
 /** Foreign-key violation: a referenced row is simply not on the server yet. Retry, don't block. */
 const RETRYABLE_DETAIL = '23503';
@@ -91,7 +98,7 @@ export const getSyncCursor = (ctx: RepoContext): string | null => readSetting(ct
 
 // The four versioned tables share id / updatedAt / version / dirty columns. Typed through one of
 // them so the same bookkeeping update can be written once.
-const VERSIONED = { groups, members, expenses, settlements } as const;
+const VERSIONED = { groups, members, expenses, settlements, recurring_rules: recurringRules } as const;
 const versionedTable = (name: VersionedTable) => VERSIONED[name] as unknown as typeof groups;
 
 // ── Push: collect ──────────────────────────────────────────────────────────
@@ -127,13 +134,22 @@ export function collectPushBatch(ctx: RepoContext, limit: number = MAX_BATCH_ROW
   room -= forcedMembers.length;
   const memberRows = [...forcedMembers, ...take(dirtyMembers.filter((m) => !newGroupIds.has(m.groupId)))];
 
+  const ruleRows = take(
+    open('recurring_rules', db.select().from(recurringRules).where(eq(recurringRules.dirty, true)).all()),
+  );
   const expenseRows = take(open('expenses', db.select().from(expenses).where(eq(expenses.dirty, true)).all()));
   const settlementRows = take(
     open('settlements', db.select().from(settlements).where(eq(settlements.dirty, true)).all()),
   );
   const activityRows = take(open('activity', db.select().from(activityLog).where(eq(activityLog.dirty, true)).all()));
 
-  const size = groupRows.length + memberRows.length + expenseRows.length + settlementRows.length + activityRows.length;
+  const size =
+    groupRows.length +
+    memberRows.length +
+    ruleRows.length +
+    expenseRows.length +
+    settlementRows.length +
+    activityRows.length;
   if (size === 0) return null;
 
   const expenseIds = expenseRows.map((e) => e.id);
@@ -187,6 +203,10 @@ export function collectPushBatch(ctx: RepoContext, limit: number = MAX_BATCH_ROW
         base_version: s.version,
       };
     }),
+    recurring_rules: ruleRows.map((r) => {
+      remember('recurring_rules', r);
+      return { ...ruleToWire(r), group_currency: groupCurrency(r.groupId), base_version: r.version };
+    }),
     activity: activityRows.map(activityToWire),
   };
 
@@ -212,6 +232,7 @@ function ackVersioned(tx: Tx, name: VersionedTable, id: string, version: number,
 export function applyPushResult(ctx: RepoContext, collected: CollectedBatch, result: PushResult): void {
   const now = ctx.now();
 
+  const refetchGroups = new Set<string>();
   ctx.db.transaction((tx) => {
     const issues = new Map(readIssuesTx(tx).map((i) => [keyOf(i.table, i.id), i] as const));
 
@@ -229,6 +250,18 @@ export function applyPushResult(ctx: RepoContext, collected: CollectedBatch, res
 
     for (const o of result.conflicts) {
       const key = keyOf(o.table, o.id);
+      // An occurrence of a recurring rule that the server (or another phone) created first, not
+      // edited here: take the server's copy instead of asking. The group's next full fetch
+      // overwrites it (clean, version 0).
+      if (o.table === 'expenses') {
+        const local = tx.select().from(expenses).where(eq(expenses.id, o.id)).get();
+        if (local && isPristineOccurrence(local)) {
+          tx.update(expenses).set({ dirty: false, updatedAt: sql`${expenses.updatedAt}` }).where(eq(expenses.id, o.id)).run();
+          refetchGroups.add(local.groupId);
+          issues.delete(key);
+          continue;
+        }
+      }
       issues.set(key, {
         ...issues.get(key),
         kind: 'conflict',
@@ -252,6 +285,10 @@ export function applyPushResult(ctx: RepoContext, collected: CollectedBatch, res
     }
 
     writeIssues(tx, issues.values());
+    if (refetchGroups.size > 0) {
+      const queued = parseJson<string[]>(readSettingTx(tx, REFETCH_GROUPS_KEY), []);
+      writeSetting(tx, REFETCH_GROUPS_KEY, JSON.stringify([...new Set([...queued, ...refetchGroups])]));
+    }
   });
 }
 
@@ -315,6 +352,8 @@ function writeExpense(tx: Tx, e: Incoming<WireExpense>, mode: WriteMode): void {
     // Absent only from servers before notes/receipts.
     note: typeof e.note === 'string' ? e.note : null,
     receiptId: typeof e.receipt_id === 'string' ? e.receipt_id : null,
+    recurringRuleId: typeof e.recurring_rule_id === 'string' ? e.recurring_rule_id : null,
+    occurrenceDate: typeof e.occurrence_date === 'string' ? e.occurrence_date : null,
     createdAt: e.created_at,
     updatedAt: e.updated_at,
     deletedAt: e.deleted_at,
@@ -368,8 +407,38 @@ function writeSettlement(tx: Tx, s: Incoming<WireSettlement>, mode: WriteMode): 
   else tx.update(settlements).set(values).where(eq(settlements.id, s.id)).run();
 }
 
+function writeRule(tx: Tx, r: Incoming<WireRecurringRule>, mode: WriteMode): void {
+  const toLines = (lines: WireRecurringRule['payers']) =>
+    lines.map((l) => ({ memberId: l.member_id, amountPaise: l.amount_paise }));
+  const values = {
+    groupId: r.group_id,
+    description: r.description,
+    amountPaise: r.amount_paise,
+    category: r.category as ExpenseCategory,
+    categoryLabel: r.category_label,
+    note: r.note,
+    splitInput: r.split_input as StoredSplitInput,
+    payers: toLines(r.payers),
+    shares: toLines(r.shares),
+    frequency: r.frequency as RecurringRule['frequency'],
+    startDate: r.start_date,
+    endDate: r.end_date,
+    timeZone: r.time_zone,
+    createdByMemberId: r.created_by_member_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    deletedAt: r.deleted_at,
+    version: r.version,
+    dirty: false,
+  };
+  if (mode === 'insert') tx.insert(recurringRules).values({ id: r.id, ...values }).run();
+  else tx.update(recurringRules).set(values).where(eq(recurringRules.id, r.id)).run();
+}
+
 function writeServerRow(tx: Tx, table: VersionedTable, row: unknown, mode: WriteMode): void {
   switch (table) {
+    case 'recurring_rules':
+      return writeRule(tx, row as Incoming<WireRecurringRule>, mode);
     case 'groups':
       return writeGroup(tx, row as Incoming<WireGroup>, mode);
     case 'members':
@@ -425,10 +494,18 @@ export function applyPull(ctx: RepoContext, pull: PullResult, options: ApplyPull
       server: { id: string; version: number },
       local: { version: number; dirty: boolean } | undefined,
       localWire: () => object | null,
+      pristine?: (id: string) => boolean,
     ) => {
       const key = keyOf(table, server.id);
       if (!local) {
         writeServerRow(tx, table, server, 'insert');
+        stats.written++;
+        return;
+      }
+      if (table === 'expenses' && local.dirty && pristine?.(server.id)) {
+        // Our own untouched copy of a recurring occurrence: the server's copy wins, no question.
+        writeServerRow(tx, table, server, 'overwrite');
+        issues.delete(key);
         stats.written++;
         return;
       }
@@ -477,7 +554,13 @@ export function applyPull(ctx: RepoContext, pull: PullResult, options: ApplyPull
     for (const e of pull.expenses) {
       if (!knownGroups.has(e.group_id)) continue;
       const local = tx.select().from(expenses).where(eq(expenses.id, e.id)).get();
-      apply('expenses', e, local, () => expenseWire(tx, e.id));
+      apply('expenses', e, local, () => expenseWire(tx, e.id), () => !!local && isPristineOccurrence(local));
+    }
+    // Rules before the expenses they create don't matter (no foreign key), but keep table order.
+    for (const r of pull.recurring_rules ?? []) {
+      if (!knownGroups.has(r.group_id)) continue;
+      const local = tx.select().from(recurringRules).where(eq(recurringRules.id, r.id)).get();
+      apply('recurring_rules', r, local, () => (local ? ruleToWire(local) : null));
     }
     for (const s of pull.settlements) {
       if (!knownGroups.has(s.group_id)) continue;

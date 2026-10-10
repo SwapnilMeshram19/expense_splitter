@@ -15,6 +15,7 @@ import {
 import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
 import { formatRate, sanitizeRateInput } from '@/domain/fx';
 import { MAX_NOTE_LENGTH } from '@/domain/note';
+import { describeSchedule, type Frequency } from '@/domain/recurrence';
 import { suggestRate, type SuggestedRate } from '@/features/fx/rateCache';
 import { useRateTable } from '@/features/fx/useRateTable';
 import { ReceiptField } from '@/features/receipts/ReceiptField';
@@ -58,6 +59,13 @@ interface ExpenseFormProps {
   groupId: string;
   /** The expense being edited, or null when adding one. */
   expenseId: string | null;
+  /**
+   * 'off': no repeat controls (editing one expense). 'optional': a new expense may repeat.
+   * 'rule': editing a recurring rule (always repeats; no receipt, group currency only).
+   */
+  repeatMode?: 'off' | 'optional' | 'rule';
+  /** Rule mode: an occurrence exists, so the frequency and start date can't change. */
+  scheduleLocked?: boolean;
   /** Save the draft. Return an error message to show, or null on success. */
   onSubmit: (draft: DraftParts) => string | null;
 }
@@ -71,6 +79,14 @@ const SPLIT_MODES: readonly { value: SplitMode; label: string }[] = [
 
 const VALUE_KEYS = { exact: 'exactAmounts', percentage: 'percentages', shares: 'shares' } as const;
 
+const REPEAT_OPTIONS: readonly { value: 'none' | Frequency; label: string }[] = [
+  { value: 'none', label: 'Never' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+];
+const RULE_FREQUENCIES = REPEAT_OPTIONS.slice(1);
+
 /** Space kept between the focused input and the keyboard toolbar. */
 const KEYBOARD_BOTTOM_OFFSET = 62;
 
@@ -83,6 +99,8 @@ export function ExpenseForm({
   recentCurrencies = [],
   groupId,
   expenseId,
+  repeatMode = 'off',
+  scheduleLocked = false,
   onSubmit,
 }: ExpenseFormProps) {
   const theme = useTheme();
@@ -90,6 +108,8 @@ export function ExpenseForm({
   const [state, setState] = useState(initialState);
   const [error, setError] = useState<string | null>(null);
   const [showIosDate, setShowIosDate] = useState(false);
+  const [showIosEnd, setShowIosEnd] = useState(false);
+  const isRule = repeatMode === 'rule';
 
   const isForeign = state.currency !== groupCurrency;
   const rateTable = useRateTable(isForeign);
@@ -150,7 +170,24 @@ export function ExpenseForm({
     setError(null);
   };
 
+  const pickEndDate = () => {
+    const start = state.repeatEndDate ?? state.expenseDate;
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: fromIsoDate(start),
+        mode: 'date',
+        minimumDate: fromIsoDate(state.expenseDate),
+        onValueChange: (_event, date) => {
+          if (date) update({ repeatEndDate: toLocalIsoDate(date) });
+        },
+      });
+    } else {
+      setShowIosEnd((v) => !v);
+    }
+  };
+
   const pickDate = () => {
+    if (scheduleLocked) return;
     if (Platform.OS === 'android') {
       // onValueChange fires only when the user confirms; cancelling just closes the dialog.
       DateTimePickerAndroid.open({
@@ -202,13 +239,15 @@ export function ExpenseForm({
             <AppText variant="label" color={theme.muted}>
               Amount
             </AppText>
-            <CurrencyPicker
-              label="Bill currency"
-              value={state.currency}
-              onChange={setCurrency}
-              pinned={[groupCurrency, ...recentCurrencies, homeCurrency]}
-              variant="pill"
-            />
+            {isRule ? null : (
+              <CurrencyPicker
+                label="Bill currency"
+                value={state.currency}
+                onChange={setCurrency}
+                pinned={[groupCurrency, ...recentCurrencies, homeCurrency]}
+                variant="pill"
+              />
+            )}
           </View>
           <View style={styles.amountRow}>
             <AppText style={styles.rupee} color={theme.muted}>
@@ -262,17 +301,18 @@ export function ExpenseForm({
           </View>
           <Pressable
             onPress={pickDate}
+            disabled={scheduleLocked}
             accessibilityRole="button"
-            accessibilityLabel={`Date, ${formatIsoDate(state.expenseDate)}. Change`}
+            accessibilityLabel={`${state.repeat === 'none' ? 'Date' : 'First date'}, ${formatIsoDate(state.expenseDate)}${scheduleLocked ? '' : '. Change'}`}
             style={[styles.field, styles.dateField]}
           >
             <View style={styles.grow}>
               <AppText variant="caption" color={theme.muted}>
-                Date
+                {state.repeat === 'none' ? 'Date' : 'First date'}
               </AppText>
               <AppText style={styles.medium}>{formatIsoDate(state.expenseDate)}</AppText>
             </View>
-            <Icon name="calendar" color={theme.muted} size={20} />
+            <Icon name={scheduleLocked ? 'lock' : 'calendar'} color={theme.muted} size={20} />
           </Pressable>
         </Card>
         {Platform.OS === 'ios' && showIosDate ? (
@@ -286,15 +326,89 @@ export function ExpenseForm({
           />
         ) : null}
 
+        {/* ---- Repeat ---- */}
+        {repeatMode !== 'off' ? (
+          <View style={styles.repeatBlock}>
+            <SectionTitle>Repeat</SectionTitle>
+            {scheduleLocked ? null : (
+              <Segmented
+                options={isRule ? RULE_FREQUENCIES : REPEAT_OPTIONS}
+                value={state.repeat}
+                onChange={(repeat) => update({ repeat })}
+                accessibilityLabel="Repeat"
+              />
+            )}
+            {state.repeat !== 'none' ? (
+              <>
+                <AppText variant="caption" color={theme.muted}>
+                  {describeSchedule(state.repeat, state.expenseDate)}
+                  {scheduleLocked
+                    ? ' (fixed once it has started; stop it and add a new one to change it)'
+                    : ''}
+                  . Added automatically for everyone in the group, even if nobody opens the app.
+                  Changes apply to future ones.
+                </AppText>
+                <View style={styles.endRow}>
+                  <Pressable
+                    onPress={pickEndDate}
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    style={styles.grow}
+                  >
+                    <AppText variant="label">
+                      Ends:{' '}
+                      <AppText variant="label" style={styles.bold}>
+                        {state.repeatEndDate ? formatIsoDate(state.repeatEndDate) : 'Never'}
+                      </AppText>
+                    </AppText>
+                  </Pressable>
+                  {state.repeatEndDate ? (
+                    <Pressable
+                      onPress={() => update({ repeatEndDate: null })}
+                      accessibilityRole="button"
+                      hitSlop={8}
+                    >
+                      <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+                        No end date
+                      </AppText>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {Platform.OS === 'ios' && showIosEnd ? (
+                  <DateTimePicker
+                    value={fromIsoDate(state.repeatEndDate ?? state.expenseDate)}
+                    mode="date"
+                    display="inline"
+                    minimumDate={fromIsoDate(state.expenseDate)}
+                    onValueChange={(_event, date) => {
+                      if (date) update({ repeatEndDate: toLocalIsoDate(date) });
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </View>
+        ) : null}
+
         {/* ---- Category ---- */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
           {EXPENSE_CATEGORIES.map((category) => {
             const isCustom = category === 'other';
             const typed = state.categoryLabel.trim();
             return (
               <Chip
                 key={category}
-                label={isCustom ? (state.category === 'other' && typed ? typed : 'Custom') : CATEGORY_STYLE[category].label}
+                label={
+                  isCustom
+                    ? state.category === 'other' && typed
+                      ? typed
+                      : 'Custom'
+                    : CATEGORY_STYLE[category].label
+                }
                 icon={isCustom ? 'edit' : CATEGORY_STYLE[category].icon}
                 selected={state.category === category}
                 onPress={() => update({ category })}
@@ -315,12 +429,18 @@ export function ExpenseForm({
               autoFocus={state.categoryLabel === ''}
             />
             {categorySuggestions.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chips}
+              >
                 {categorySuggestions.map((label) => (
                   <Chip
                     key={label}
                     label={label}
-                    selected={categoryLabelKey(label) === categoryLabelKey(state.categoryLabel.trim())}
+                    selected={
+                      categoryLabelKey(label) === categoryLabelKey(state.categoryLabel.trim())
+                    }
                     onPress={() => update({ categoryLabel: label })}
                     theme={theme}
                   />
@@ -349,7 +469,10 @@ export function ExpenseForm({
                 key={m.id}
                 style={[
                   styles.memberRow,
-                  index < members.length - 1 && [styles.rowDivider, { borderBottomColor: theme.border }],
+                  index < members.length - 1 && [
+                    styles.rowDivider,
+                    { borderBottomColor: theme.border },
+                  ],
                 ]}
               >
                 <Avatar seed={m.id} name={m.name} size={32} />
@@ -372,7 +495,9 @@ export function ExpenseForm({
           <Hint text={analysis.payerHint} theme={theme} />
         ) : null}
         <Pressable
-          onPress={() => update({ payerMode: state.payerMode === 'single' ? 'multiple' : 'single' })}
+          onPress={() =>
+            update({ payerMode: state.payerMode === 'single' ? 'multiple' : 'single' })
+          }
           style={styles.linkButton}
           accessibilityRole="button"
           hitSlop={8}
@@ -409,7 +534,10 @@ export function ExpenseForm({
           {members.map((m, index) => {
             const mode = state.splitMode;
             const included = state.equalMemberIds.includes(m.id);
-            const divider = index < members.length - 1 && [styles.rowDivider, { borderBottomColor: theme.border }];
+            const divider = index < members.length - 1 && [
+              styles.rowDivider,
+              { borderBottomColor: theme.border },
+            ];
             const preview = (
               <AppText variant="label" style={[styles.preview, styles.bold]} numberOfLines={1}>
                 {formatPreview(analysis.preview.get(m.id))}
@@ -437,7 +565,11 @@ export function ExpenseForm({
                     {included ? <Icon name="check" color={theme.onPrimary} size={16} /> : null}
                   </View>
                   <Avatar seed={m.id} name={m.name} size={32} />
-                  <AppText style={styles.grow} color={included ? theme.text : theme.muted} numberOfLines={1}>
+                  <AppText
+                    style={styles.grow}
+                    color={included ? theme.text : theme.muted}
+                    numberOfLines={1}
+                  >
                     {m.name}
                   </AppText>
                   {preview}
@@ -466,7 +598,7 @@ export function ExpenseForm({
         {analysis.splitHint ? <Hint text={analysis.splitHint} theme={theme} /> : null}
 
         {/* ---- Note + receipt (both shared with the group) ---- */}
-        <SectionTitle>Note & receipt</SectionTitle>
+        <SectionTitle>{isRule ? 'Note' : 'Note & receipt'}</SectionTitle>
         <Card style={styles.noteCard}>
           <TextInput
             value={state.note}
@@ -483,19 +615,26 @@ export function ExpenseForm({
               {state.note.length}/{MAX_NOTE_LENGTH}
             </AppText>
           ) : null}
-          <View style={[styles.noteDivider, { backgroundColor: theme.border }]} />
-          <ReceiptField
-            groupId={groupId}
-            expenseId={expenseId}
-            receiptId={state.receiptId}
-            staged={state.stagedReceipt}
-            onStaged={(stagedReceipt) => update({ stagedReceipt })}
-            onRemove={() => update({ stagedReceipt: null, receiptId: null })}
-          />
+          {isRule ? null : <View style={[styles.noteDivider, { backgroundColor: theme.border }]} />}
+          {isRule ? null : (
+            <ReceiptField
+              groupId={groupId}
+              expenseId={expenseId}
+              receiptId={state.receiptId}
+              staged={state.stagedReceipt}
+              onStaged={(stagedReceipt) => update({ stagedReceipt })}
+              onRemove={() => update({ stagedReceipt: null, receiptId: null })}
+            />
+          )}
         </Card>
 
         {error ? (
-          <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite" style={styles.error}>
+          <AppText
+            variant="label"
+            color={theme.negative}
+            accessibilityLiveRegion="polite"
+            style={styles.error}
+          >
             {error}
           </AppText>
         ) : null}
@@ -508,7 +647,9 @@ export function ExpenseForm({
           onPress={submit}
           style={styles.submit}
           accessibilityLabel={
-            state.singlePayerId && state.payerMode === 'single' ? `${submitLabel}, paid by ${nameOf(state.singlePayerId)}` : submitLabel
+            state.singlePayerId && state.payerMode === 'single'
+              ? `${submitLabel}, paid by ${nameOf(state.singlePayerId)}`
+              : submitLabel
           }
         />
       </KeyboardAwareScrollView>
@@ -713,6 +854,8 @@ const styles = StyleSheet.create({
   customCategory: { gap: 8 },
   membersCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
   noteCard: { gap: 10, padding: 14, borderRadius: 18 },
+  repeatBlock: { gap: 8 },
+  endRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 32 },
   noteInput: { minHeight: 64, fontSize: 16, paddingVertical: 4 },
   counter: { alignSelf: 'flex-end' },
   noteDivider: { height: StyleSheet.hairlineWidth },
