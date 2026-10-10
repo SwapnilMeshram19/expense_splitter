@@ -43,3 +43,4 @@ example
 /android
 supabase/functions/node_modules/
 /deno.lock
+*.patch
