@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Split",
+    "name": "Expense Splitter",
     "slug": "expense-splitter",
     "scheme": "expensesplitter",
     "icon": "./assets/images/icon.png",
