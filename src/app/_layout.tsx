@@ -13,6 +13,7 @@ import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
 import { startAuth } from '@/features/auth/authStore';
 import { startRegionPreference } from '@/features/region/deviceLocales';
+import { startReceiptQueue } from '@/features/receipts/receiptStorage';
 import { startSyncScheduler } from '@/sync/scheduler';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
@@ -33,10 +34,13 @@ export default function RootLayout() {
     // Home currency and rupee grouping, before the first screen formats any amount.
     const stopRegion = startRegionPreference();
     startAuth();
+    // Receipt photos follow their expenses: upload/clean up after each successful sync.
+    const stopReceipts = startReceiptQueue();
     startSyncScheduler();
     return () => {
       unsubscribe();
       stopRegion();
+      stopReceipts();
     };
   }, [success]);
 

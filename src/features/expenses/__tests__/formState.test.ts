@@ -31,6 +31,8 @@ const expenseRow = (patch: Partial<Expense>): Expense => ({
   originalCurrency: null,
   originalAmountMinor: null,
   fxRate: null,
+  note: null,
+  receiptId: null,
   createdByMemberId: 'a',
   createdAt: 0,
   updatedAt: 0,
@@ -62,6 +64,26 @@ describe('analyzeForm', () => {
       categoryLabel: null,
       payers: [{ memberId: 'a', amountPaise: 900 }],
       splitInput: { type: 'equal', memberIds: members },
+      note: null,
+      receiptId: null,
+    });
+  });
+
+  it('carries the note and a newly picked receipt into the draft', () => {
+    const staged = { receiptId: '0192f0c4-7b1a-7c3e-8a10-000000000009', uri: 'file:///cache/x.jpg', bytes: 200_000 };
+    const result = analyzeForm(
+      base({ amountText: '9', note: '  Paid at counter 2 ', receiptId: '0192f0c4-7b1a-7c3e-8a10-000000000001', stagedReceipt: staged }),
+      members,
+    );
+    expect(result.draft).toMatchObject({ note: 'Paid at counter 2', receiptId: staged.receiptId, stagedReceipt: staged });
+    expect(analyzeForm(base({ amountText: '9', note: 'x'.repeat(501) }), members).problems).toContain(
+      'Keep the note under 500 characters.',
+    );
+    const existing = expenseRow({ note: 'Old note', receiptId: '0192f0c4-7b1a-7c3e-8a10-000000000001' });
+    expect(formStateFromExpense({ expense: existing, payers: [{ memberId: 'a', amountPaise: 10000 }], shares: [] }, members, 'a')).toMatchObject({
+      note: 'Old note',
+      receiptId: '0192f0c4-7b1a-7c3e-8a10-000000000001',
+      stagedReceipt: null,
     });
   });
 

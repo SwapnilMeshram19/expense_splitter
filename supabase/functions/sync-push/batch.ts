@@ -1,6 +1,7 @@
 import { isSupportedCurrency } from '../_shared/domain/currency.ts';
 import { validateExpense } from '../_shared/domain/expenseValidation.ts';
 import type { ForeignAmount } from '../_shared/domain/fx.ts';
+import { isCanonicalNote, isReceiptId } from '../_shared/domain/note.ts';
 import type { SplitInput } from '../_shared/domain/splits.ts';
 
 export const TABLES = ['groups', 'members', 'expenses', 'settlements', 'activity'] as const;
@@ -148,6 +149,16 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
       reject('INVALID_EXPENSE', 'UNKNOWN_CURRENCY');
       continue;
     }
+    // Notes and receipts: optional keys (older builds don't send them, and the row keeps its values).
+    if ('note' in row && !isCanonicalNote(row.note)) {
+      reject('INVALID_EXPENSE', 'NOTE');
+      continue;
+    }
+    if ('receipt_id' in row && row.receipt_id !== null && !isReceiptId(row.receipt_id)) {
+      reject('INVALID_EXPENSE', 'RECEIPT');
+      continue;
+    }
+
     const foreign = asForeign(row);
     if (foreign === 'INVALID' || (foreign && payers.some((p) => p.original_amount_minor === undefined))) {
       reject('INVALID_EXPENSE', 'FX_SHAPE');

@@ -204,14 +204,18 @@ export default function GroupDetailScreen() {
               })
             }
             accessibilityRole="button"
-            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}`}
+            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}${item.expense.note ? ', has a note' : ''}${item.expense.receiptId ? ', has a receipt' : ''}`}
             style={({ pressed }) => [styles.historyRow, { opacity: pressed ? 0.7 : 1 }]}
           >
             <CategoryTile category={item.expense.category} />
             <View style={styles.grow}>
-              <AppText variant="body" style={styles.medium} numberOfLines={1}>
-                {item.expense.description}
-              </AppText>
+              <View style={styles.titleRow}>
+                <AppText variant="body" style={[styles.medium, styles.shrink]} numberOfLines={1}>
+                  {item.expense.description}
+                </AppText>
+                {item.expense.note ? <Icon name="note" color={theme.muted} size={16} /> : null}
+                {item.expense.receiptId ? <Icon name="receipt" color={theme.muted} size={16} /> : null}
+              </View>
               <AppText variant="caption" color={theme.muted} numberOfLines={1}>
                 {item.expense.categoryLabel ? `${item.expense.categoryLabel} · ${paidBy}` : paidBy}
               </AppText>
@@ -556,6 +560,8 @@ const styles = StyleSheet.create({
   header: { gap: 14, paddingTop: 4, paddingBottom: 8 },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   grow: { flex: 1, minWidth: 0 },
+  shrink: { flexShrink: 1, minWidth: 0 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   medium: { fontWeight: '500' },
   bold: { fontWeight: '600' },
   right: { alignItems: 'flex-end' },

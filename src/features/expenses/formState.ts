@@ -26,6 +26,7 @@ import {
 } from '@/domain/currency';
 import { foreignTotal, parseRate, type ForeignAmount } from '@/domain/fx';
 import type { Paise } from '@/domain/money';
+import { MAX_NOTE_LENGTH, normalizeNote } from '@/domain/note';
 import {
   BASIS_POINTS_TOTAL,
   computeSplit,
@@ -33,6 +34,7 @@ import {
   type SplitInput,
   type WeightedEntry,
 } from '@/domain/splits';
+import type { StagedReceipt } from '@/features/receipts/receiptFiles';
 
 export type SplitMode = 'equal' | 'exact' | 'percentage' | 'shares';
 export type PayerMode = 'single' | 'multiple';
@@ -67,6 +69,12 @@ export interface ExpenseFormState {
   exactAmounts: ValueMap;
   percentages: ValueMap;
   shares: ValueMap;
+  /** Note as typed (normalised when saving). */
+  note: string;
+  /** The receipt saved with the expense, or null. Replaced by stagedReceipt when one is picked. */
+  receiptId: string | null;
+  /** A newly picked photo, not saved yet. */
+  stagedReceipt: StagedReceipt | null;
 }
 
 export interface DraftParts {
@@ -83,6 +91,12 @@ export interface DraftParts {
   splitInput: StoredSplitInput;
   /** Present only for a foreign bill. */
   foreign?: ForeignAmount;
+  /** Normalised note, or null. */
+  note: string | null;
+  /** The receipt the expense should point at after saving, or null. */
+  receiptId: string | null;
+  /** Set when receiptId is a new photo: the screen moves the file into place before saving. */
+  stagedReceipt?: StagedReceipt;
 }
 
 export interface FormAnalysis {
@@ -129,6 +143,9 @@ export function initialFormState(
     exactAmounts: {},
     percentages: {},
     shares: Object.fromEntries(memberIds.map((id) => [id, '1'])),
+    note: '',
+    receiptId: null,
+    stagedReceipt: null,
   };
 }
 
@@ -170,6 +187,8 @@ export function formStateFromExpense(
     amountText: minorToInputString(foreign ? foreign.amountMinor : expense.amountPaise, currency),
     category: expense.category,
     categoryLabel: expense.category === 'other' ? (expense.categoryLabel ?? '') : '',
+    note: expense.note ?? '',
+    receiptId: expense.receiptId ?? null,
   };
 
   const firstPayer = payers[0];
@@ -488,10 +507,12 @@ export function analyzeForm(
 
   const label = normalizeCategoryLabel(state.category === 'other' ? state.categoryLabel : null);
   if (!label.ok) problems.push(`Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`);
+  const note = normalizeNote(state.note);
+  if (!note.ok) problems.push(`Keep the note under ${MAX_NOTE_LENGTH} characters.`);
 
   const groupTotal = isForeign ? convertedTotal : totalPaise;
   const draft: DraftParts | null =
-    problems.length === 0 && groupTotal !== null && splitInput && payers && label.ok
+    problems.length === 0 && groupTotal !== null && splitInput && payers && label.ok && note.ok
       ? {
           description,
           amountPaise: groupTotal,
@@ -501,6 +522,9 @@ export function analyzeForm(
           payers,
           splitInput,
           ...(foreign ? { foreign } : {}),
+          note: note.ok ? note.note : null,
+          receiptId: state.stagedReceipt?.receiptId ?? state.receiptId,
+          ...(state.stagedReceipt ? { stagedReceipt: state.stagedReceipt } : {}),
         }
       : null;
 

@@ -58,6 +58,10 @@ export interface WireExpense extends Lifecycle {
   original_currency?: string | null;
   original_amount_minor?: number | null;
   fx_rate?: string | null;
+  /** Absent from servers before notes/receipts. */
+  note?: string | null;
+  /** Lowercase UUID naming the receipt photo in storage, or null. */
+  receipt_id?: string | null;
   /**
    * Push only, never stored: the group currency this row's amounts are in. The server refuses the
    * row if the group's currency differs, and refuses rows WITHOUT it in non-INR groups (builds
@@ -194,6 +198,8 @@ export const expenseToWire = (
   original_currency: e.originalCurrency ?? null,
   original_amount_minor: e.originalAmountMinor ?? null,
   fx_rate: e.fxRate ?? null,
+  note: e.note ?? null,
+  receipt_id: e.receiptId ?? null,
   created_at: e.createdAt,
   updated_at: e.updatedAt,
   deleted_at: e.deletedAt ?? null,

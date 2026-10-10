@@ -83,7 +83,15 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "./plugins/with-upi-queries"
+      "./plugins/with-upi-queries",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Expense Splitter uses the camera to take a photo of a receipt.",
+          "photosPermission": "Expense Splitter lets you attach a receipt photo from your gallery.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

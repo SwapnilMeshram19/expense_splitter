@@ -74,6 +74,9 @@ export function summarizeRow(
           : money(num(row.amount_paise));
       out.push(`${str(row.description)} · ${amount}`);
       out.push(`Date: ${formatIsoDate(str(row.expense_date))}`);
+      const note = str(row.note);
+      if (note) out.push(`Note: ${note.length > 60 ? `${note.slice(0, 60)}…` : note}`);
+      if (str(row.receipt_id)) out.push('Has a receipt photo');
       const payers = lines(row.payers);
       const shares = lines(row.shares);
       if (payers.length > 0) {
@@ -114,6 +117,8 @@ export function rejectionReason(code: string | undefined, detail?: string): stri
       return 'It refers to someone who isn’t in this group.';
     case 'INVALID_EXPENSE':
       // FX, FX_SHAPE, FX_TOTAL_MISMATCH (sync-push) or an unknown group currency.
+      if (detail === 'NOTE') return 'The note on this expense isn’t valid. Open it, check the note and save again.';
+      if (detail === 'RECEIPT') return 'The receipt photo on this expense isn’t valid. Open it and attach the photo again.';
       if (detail === 'UNKNOWN_CURRENCY' || detail?.startsWith('FX')) {
         return 'The currency or exchange rate on this expense isn’t valid. Open it and save it again.';
       }

@@ -312,6 +312,9 @@ function writeExpense(tx: Tx, e: Incoming<WireExpense>, mode: WriteMode): void {
     originalAmountMinor:
       typeof e.original_amount_minor === 'number' ? e.original_amount_minor : null,
     fxRate: typeof e.fx_rate === 'string' ? e.fx_rate : null,
+    // Absent only from servers before notes/receipts.
+    note: typeof e.note === 'string' ? e.note : null,
+    receiptId: typeof e.receipt_id === 'string' ? e.receipt_id : null,
     createdAt: e.created_at,
     updatedAt: e.updated_at,
     deletedAt: e.deleted_at,

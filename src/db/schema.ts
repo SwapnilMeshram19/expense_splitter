@@ -134,6 +134,14 @@ export const expenses = sqliteTable(
     originalAmountMinor: integer('original_amount_minor'),
     /** Decimal string: group-currency units per 1 unit of original_currency. */
     fxRate: text('fx_rate'),
+    /** Free-text note, shared with the group (src/domain/note.ts normalises it; ≤ 500 chars). */
+    note: text('note'),
+    /**
+     * Receipt photo, shared with the group: a lowercase UUID naming the storage object
+     * "<group>/<expense>/<receipt>.jpg". A new photo gets a new id. The file itself lives in
+     * Supabase Storage and/or on this phone (see receiptFiles).
+     */
+    receiptId: text('receipt_id'),
     createdByMemberId: text('created_by_member_id')
       .notNull()
       .references(() => members.id),
@@ -238,6 +246,33 @@ export const activityLog = sqliteTable(
   (t) => [index('activity_group_created_idx').on(t.groupId, t.createdAt)],
 );
 
+export const RECEIPT_FILE_STATES = ['upload', 'synced', 'discard'] as const;
+export type ReceiptFileState = (typeof RECEIPT_FILE_STATES)[number];
+
+/**
+ * Local-only (never synced): receipt photos this phone holds or still has to deal with.
+ * - 'upload':  taken on this phone, file in the app's documents folder, not on the server yet.
+ * - 'synced':  on the server; a local copy may exist (own photo, or downloaded to the cache).
+ * - 'discard': no longer used by its expense (replaced/removed): delete the server copy once the
+ *              server agrees, then the local file.
+ * A receipt only known from sync (another member's photo, never opened here) has no row.
+ */
+export const receiptFiles = sqliteTable(
+  'receipt_files',
+  {
+    receiptId: text('receipt_id').primaryKey(),
+    expenseId: text('expense_id').notNull(),
+    groupId: text('group_id').notNull(),
+    state: text('state', { enum: RECEIPT_FILE_STATES }).notNull(),
+    bytes: integer('bytes'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('receipt_files_state_idx').on(t.state)],
+);
+
 /** Local-only key/value (never synced): device profile id, UI preferences. */
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
@@ -255,3 +290,4 @@ export type ExpenseShare = typeof expenseShares.$inferSelect;
 export type Settlement = typeof settlements.$inferSelect;
 export type NewSettlement = typeof settlements.$inferInsert;
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
+export type ReceiptFile = typeof receiptFiles.$inferSelect;

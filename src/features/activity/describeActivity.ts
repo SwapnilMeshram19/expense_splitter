@@ -255,6 +255,19 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         if (oldCategory !== null && newCategory !== null && oldCategory !== newCategory) {
           changes.push(`${oldCategory} → ${newCategory}`);
         }
+        // Notes and receipts: say what happened, not the text (a note may be long or personal).
+        const oldNote = str(before, 'note');
+        const newNote = str(after, 'note');
+        if (oldNote !== newNote) {
+          changes.push(oldNote === null ? 'note added' : newNote === null ? 'note removed' : 'note changed');
+        }
+        const oldReceipt = str(before, 'receiptId');
+        const newReceipt = str(after, 'receiptId');
+        if (oldReceipt !== newReceipt) {
+          changes.push(
+            oldReceipt === null ? 'receipt added' : newReceipt === null ? 'receipt removed' : 'receipt replaced',
+          );
+        }
         const oldPayers = lines(before, 'payers');
         const newPayers = lines(after, 'payers');
         if (!sameLines(oldPayers, newPayers)) {

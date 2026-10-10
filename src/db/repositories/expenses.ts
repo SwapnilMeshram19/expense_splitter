@@ -4,6 +4,7 @@ import type { PayerLine } from '@/domain/balances';
 import { categoryLabelKey, normalizeCategoryLabel } from '@/domain/categoryLabel';
 import { validateExpense, type ExpenseValidationError } from '@/domain/expenseValidation';
 import type { ForeignAmount } from '@/domain/fx';
+import { isReceiptId, normalizeNote } from '@/domain/note';
 import type { ShareLine } from '@/domain/splits';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -19,6 +20,7 @@ import {
 } from '../schema';
 import { groupCurrency } from './groups';
 import { activeMemberIds } from './members';
+import { markReceiptDiscarded, registerOwnReceipt } from './receipts';
 
 export interface ExpenseDraft {
   groupId: string;
@@ -35,6 +37,15 @@ export interface ExpenseDraft {
   splitInput: StoredSplitInput;
   /** Set for a bill in another currency, with the rate locked for this expense. */
   foreign?: ForeignAmount | null;
+  /** Free-text note (normalised here). Undefined on update keeps the current note. */
+  note?: string | null;
+  /** Receipt photo id, or null for none. Undefined on update keeps the current receipt. */
+  receiptId?: string | null;
+  /**
+   * A photo taken on this phone for `receiptId`, already saved in the documents folder: recorded
+   * for upload in the same transaction as the expense.
+   */
+  newReceipt?: { receiptId: string; bytes: number } | null;
   /** Member performing the change (recorded in the activity log). */
   actorMemberId: string;
 }
@@ -42,6 +53,8 @@ export interface ExpenseDraft {
 export type ExpenseError =
   | ExpenseValidationError
   | { code: 'CATEGORY_LABEL_TOO_LONG' }
+  | { code: 'NOTE_TOO_LONG' }
+  | { code: 'INVALID_RECEIPT' }
   | { code: 'NOT_FOUND' }
   | { code: 'GROUP_MISMATCH' }
   | { code: 'NOT_A_MEMBER' };
@@ -118,6 +131,8 @@ type SnapshotSource = Pick<
   | 'originalCurrency'
   | 'originalAmountMinor'
   | 'fxRate'
+  | 'note'
+  | 'receiptId'
 >;
 
 const snapshot = (e: SnapshotSource, payers: PayerLine[], shares: ShareLine[]) => {
@@ -129,8 +144,10 @@ const snapshot = (e: SnapshotSource, payers: PayerLine[], shares: ShareLine[]) =
     categoryLabel: e.categoryLabel,
     expenseDate: e.expenseDate,
     splitInput: e.splitInput,
-    // Only for foreign bills, so group-currency history entries keep their old shape.
+    // Only when set, so history entries without them keep their old shape.
     ...(foreign ? { foreign } : {}),
+    ...(e.note ? { note: e.note } : {}),
+    ...(e.receiptId ? { receiptId: e.receiptId } : {}),
     payers,
     shares,
   };
@@ -209,6 +226,23 @@ export function groupBillCurrencies(db: AppDb, groupId: string, limit = 4): stri
   return [...new Set(rows.map((r) => r.currency).filter((c): c is string => !!c))].slice(0, limit);
 }
 
+/** Validate the note and receipt parts of a draft against what's stored now. */
+function resolveExtras(
+  draft: ExpenseDraft,
+  current: { note: string | null; receiptId: string | null },
+): Result<{ note: string | null; receiptId: string | null }, ExpenseError> {
+  let note = current.note;
+  if (draft.note !== undefined) {
+    const parsed = normalizeNote(draft.note);
+    if (!parsed.ok) return err({ code: 'NOTE_TOO_LONG' });
+    note = parsed.note;
+  }
+  const receiptId = draft.receiptId === undefined ? current.receiptId : draft.receiptId;
+  if (receiptId !== null && !isReceiptId(receiptId)) return err({ code: 'INVALID_RECEIPT' });
+  if (draft.newReceipt && draft.newReceipt.receiptId !== receiptId) return err({ code: 'INVALID_RECEIPT' });
+  return ok({ note, receiptId });
+}
+
 function insertLines(
   tx: Tx,
   expenseId: string,
@@ -246,6 +280,8 @@ export function createExpense(
   const category = draft.category ?? 'general';
   const label = resolveCategoryLabel(category, draft.categoryLabel ?? null, null);
   if (!label.ok) return err({ code: 'CATEGORY_LABEL_TOO_LONG' });
+  const extras = resolveExtras(draft, { note: null, receiptId: null });
+  if (!extras.ok) return extras;
 
   const expenseId = ctx.newId();
   const t = ctx.now();
@@ -257,6 +293,7 @@ export function createExpense(
     expenseDate: draft.expenseDate,
     splitInput: draft.splitInput,
     ...foreignColumns(draft.foreign),
+    ...extras.value,
   };
 
   ctx.db.transaction((tx) => {
@@ -271,6 +308,13 @@ export function createExpense(
       })
       .run();
     insertLines(tx, expenseId, valid.payers, valid.shares, valid.originalPayers);
+    if (draft.newReceipt) {
+      registerOwnReceipt(
+        tx,
+        { receiptId: draft.newReceipt.receiptId, expenseId, groupId: draft.groupId, bytes: draft.newReceipt.bytes },
+        t,
+      );
+    }
     tx.insert(activityLog)
       .values({
         id: ctx.newId(),
@@ -309,6 +353,8 @@ export function updateExpense(
   const category = draft.category ?? existing.expense.category;
   const label = resolveCategoryLabel(category, draft.categoryLabel, existing.expense.categoryLabel);
   if (!label.ok) return err({ code: 'CATEGORY_LABEL_TOO_LONG' });
+  const extras = resolveExtras(draft, existing.expense);
+  if (!extras.ok) return extras;
 
   const t = ctx.now();
   const row = {
@@ -319,7 +365,9 @@ export function updateExpense(
     expenseDate: draft.expenseDate,
     splitInput: draft.splitInput,
     ...foreignColumns(draft.foreign),
+    ...extras.value,
   };
+  const oldReceiptId = existing.expense.receiptId;
 
   ctx.db.transaction((tx) => {
     // version is intentionally unchanged: it is the base for sync conflict detection.
@@ -330,6 +378,13 @@ export function updateExpense(
     tx.delete(expensePayers).where(eq(expensePayers.expenseId, expenseId)).run();
     tx.delete(expenseShares).where(eq(expenseShares.expenseId, expenseId)).run();
     insertLines(tx, expenseId, valid.payers, valid.shares, valid.originalPayers);
+    const ref = { expenseId, groupId: draft.groupId };
+    if (oldReceiptId && oldReceiptId !== extras.value.receiptId) {
+      markReceiptDiscarded(tx, { ...ref, receiptId: oldReceiptId }, t);
+    }
+    if (draft.newReceipt) {
+      registerOwnReceipt(tx, { ...ref, receiptId: draft.newReceipt.receiptId, bytes: draft.newReceipt.bytes }, t);
+    }
     tx.insert(activityLog)
       .values({
         id: ctx.newId(),

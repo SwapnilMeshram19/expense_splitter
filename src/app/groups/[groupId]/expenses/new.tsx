@@ -8,6 +8,7 @@ import { ExpenseForm } from '@/features/expenses/ExpenseForm';
 import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
+import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
 
@@ -28,8 +29,17 @@ export default function NewExpenseScreen() {
   const nameOf = (id: string) => setup.members.find((m) => m.id === id)?.name ?? 'Someone';
 
   const save = (draft: DraftParts): string | null => {
-    const result = createExpense(appContext, { ...draft, groupId, actorMemberId: setup.me });
+    const { stagedReceipt, ...fields } = draft;
+    const result = saveWithReceipt(stagedReceipt, (newReceipt) =>
+      createExpense(appContext, {
+        ...fields,
+        groupId,
+        actorMemberId: setup.me,
+        newReceipt,
+      }),
+    );
     if (!result.ok) {
+      if ('fileError' in result) return result.fileError;
       return describeExpenseError(result.error, nameOf, {
         entry: draft.foreign?.currency ?? setup.groupCurrency,
         group: setup.groupCurrency,
@@ -48,6 +58,8 @@ export default function NewExpenseScreen() {
         categorySuggestions={setup.categorySuggestions}
         groupCurrency={setup.groupCurrency}
         recentCurrencies={setup.recentCurrencies}
+        groupId={groupId}
+        expenseId={null}
         submitLabel="Save expense"
         onSubmit={save}
       />

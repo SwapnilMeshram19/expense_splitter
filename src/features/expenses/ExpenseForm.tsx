@@ -14,8 +14,10 @@ import {
 } from '@/domain/currency';
 import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
 import { formatRate, sanitizeRateInput } from '@/domain/fx';
+import { MAX_NOTE_LENGTH } from '@/domain/note';
 import { suggestRate, type SuggestedRate } from '@/features/fx/rateCache';
 import { useRateTable } from '@/features/fx/useRateTable';
+import { ReceiptField } from '@/features/receipts/ReceiptField';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { formatIsoDate, fromIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { AppText } from '@/ui/AppText';
@@ -52,6 +54,10 @@ interface ExpenseFormProps {
   groupCurrency: CurrencyCode;
   /** Foreign currencies used before in this group, offered first in the picker. */
   recentCurrencies?: readonly CurrencyCode[];
+  /** For the receipt photo's storage path. */
+  groupId: string;
+  /** The expense being edited, or null when adding one. */
+  expenseId: string | null;
   /** Save the draft. Return an error message to show, or null on success. */
   onSubmit: (draft: DraftParts) => string | null;
 }
@@ -75,6 +81,8 @@ export function ExpenseForm({
   categorySuggestions = [],
   groupCurrency,
   recentCurrencies = [],
+  groupId,
+  expenseId,
   onSubmit,
 }: ExpenseFormProps) {
   const theme = useTheme();
@@ -457,6 +465,35 @@ export function ExpenseForm({
         </Card>
         {analysis.splitHint ? <Hint text={analysis.splitHint} theme={theme} /> : null}
 
+        {/* ---- Note + receipt (both shared with the group) ---- */}
+        <SectionTitle>Note & receipt</SectionTitle>
+        <Card style={styles.noteCard}>
+          <TextInput
+            value={state.note}
+            onChangeText={(note) => update({ note })}
+            placeholder="Add a note (optional)"
+            multiline
+            maxLength={MAX_NOTE_LENGTH}
+            textAlignVertical="top"
+            accessibilityLabel="Note"
+            style={styles.noteInput}
+          />
+          {state.note.length > MAX_NOTE_LENGTH - 50 ? (
+            <AppText variant="caption" color={theme.muted} style={styles.counter}>
+              {state.note.length}/{MAX_NOTE_LENGTH}
+            </AppText>
+          ) : null}
+          <View style={[styles.noteDivider, { backgroundColor: theme.border }]} />
+          <ReceiptField
+            groupId={groupId}
+            expenseId={expenseId}
+            receiptId={state.receiptId}
+            staged={state.stagedReceipt}
+            onStaged={(stagedReceipt) => update({ stagedReceipt })}
+            onRemove={() => update({ stagedReceipt: null, receiptId: null })}
+          />
+        </Card>
+
         {error ? (
           <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite" style={styles.error}>
             {error}
@@ -675,6 +712,10 @@ const styles = StyleSheet.create({
   allToggle: { minHeight: 32, justifyContent: 'flex-end' },
   customCategory: { gap: 8 },
   membersCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
+  noteCard: { gap: 10, padding: 14, borderRadius: 18 },
+  noteInput: { minHeight: 64, fontSize: 16, paddingVertical: 4 },
+  counter: { alignSelf: 'flex-end' },
+  noteDivider: { height: StyleSheet.hairlineWidth },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52 },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
   check: {

@@ -54,6 +54,12 @@ const ICONS = {
   calendar: { ios: 'calendar', android: 0xe935 }, // calendar_today
   rupee: { ios: 'indianrupeesign', android: 0xeaf7 }, // currency_rupee
   currency: { ios: 'dollarsign.arrow.circlepath', android: 0xeb70 }, // currency_exchange
+  camera: { ios: 'camera', android: 0xe3b0 }, // photo_camera
+  photo: { ios: 'photo', android: 0xe251 }, // image
+  photoLibrary: { ios: 'photo.on.rectangle', android: 0xe413 }, // photo_library
+  note: { ios: 'note.text', android: 0xe26c }, // notes
+  cloudUpload: { ios: 'icloud.and.arrow.up', android: 0xe2c3 }, // cloud_upload
+  download: { ios: 'arrow.down.circle', android: 0xe171 }, // download
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

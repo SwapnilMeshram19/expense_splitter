@@ -7,6 +7,7 @@ import {
   type CurrencyCode,
 } from '@/domain/currency';
 import type { ForeignError } from '@/domain/fx';
+import { MAX_NOTE_LENGTH } from '@/domain/note';
 import type { SplitError } from '@/domain/splits';
 
 type NameOf = (memberId: string) => string;
@@ -95,5 +96,9 @@ export function describeExpenseError(
       return 'You’re not a member of this group.';
     case 'CATEGORY_LABEL_TOO_LONG':
       return `Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`;
+    case 'NOTE_TOO_LONG':
+      return `Keep the note under ${MAX_NOTE_LENGTH} characters.`;
+    case 'INVALID_RECEIPT':
+      return 'The receipt photo couldn’t be saved. Attach it again.';
   }
 }
