@@ -5,6 +5,7 @@ import {
   formatMoney,
   maxAmountLabel,
   minorDigits,
+  usesIndianGroupingForInr,
   type CurrencyCode,
 } from '@/domain/currency';
 
@@ -14,9 +15,9 @@ export const METHOD_LABELS: Record<SettlementMethod, string> = {
   other: 'Other',
 };
 
-/** "₹0.01 and ₹1 crore" for INR (unchanged wording); "$0.01 and $10,000,000" / "¥1 and …" elsewhere. */
+/** "₹0.01 and ₹1 crore" for INR in India; "$0.01 and $10,000,000" / "¥1 and …" elsewhere. */
 function amountRange(currency: CurrencyCode): string {
-  if (currency === 'INR') return '₹0.01 and ₹1 crore';
+  if (currency === 'INR' && usesIndianGroupingForInr()) return '₹0.01 and ₹1 crore';
   const smallest = formatMoney(1, currency, { forceDecimals: minorDigits(currency) > 0 });
   return `${smallest} and ${maxAmountLabel(currency)}`;
 }

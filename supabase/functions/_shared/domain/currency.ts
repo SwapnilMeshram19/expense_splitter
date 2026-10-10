@@ -6,7 +6,8 @@
  *
  * Minor-unit digits follow ISO 4217 (JPY 0, KWD 3). Formatting is table-driven and never uses
  * Intl: ICU data differs across Hermes builds and Deno, and output must be identical everywhere.
- * Lakh/crore grouping is used for INR only; every other currency groups in thousands.
+ * Lakh/crore grouping is used for INR only, and only while setIndianGroupingForInr(true) (the
+ * default; the app turns it off on phones outside India). Every other currency groups in thousands.
  *
  * Pure TypeScript, zero dependencies: copied to the Edge Function by `npm run domain:sync`.
  */
@@ -23,6 +24,11 @@ export interface CurrencyInfo {
   name: string;
   /** 1 USD buys roughly 1,000 units or more: the per-amount cap is raised (see maxAmountMinor). */
   high: boolean;
+  /**
+   * Replaced by another currency (BGN → EUR in 2026). Still accepted and formatted, so old bills
+   * and groups keep working, but not suggested in pickers unless searched for or already chosen.
+   */
+  legacy: boolean;
 }
 
 export const DEFAULT_CURRENCY: CurrencyCode = 'INR';
@@ -38,7 +44,8 @@ const MAX_MAJOR_DEFAULT = 10_000_000;
 const MAX_MAJOR_HIGH = 10_000_000_000;
 
 // code, digits, symbol ('' = show the code), name. "*" after the digit marks a high-denomination
-// currency. Keep sorted by code. Funds, metals and SDR are left out on purpose.
+// currency. Keep sorted by code. Funds, metals and SDR are left out on purpose, as are non-ISO local
+// issues (GGP, JEP, IMP: people enter GBP) and codes already replaced (HRK, SLL, ZWL, ANG).
 const TABLE = `
 AED 2  | UAE dirham
 AFN 2  | Afghan afghani
@@ -52,7 +59,7 @@ AZN 2  | Azerbaijani manat
 BAM 2  | Bosnia-Herzegovina mark
 BBD 2  | Barbadian dollar
 BDT 2 ৳ | Bangladeshi taka
-BGN 2  | Bulgarian lev
+BGN 2  | Bulgarian lev (replaced by euro)
 BHD 3  | Bahraini dinar
 BIF 0* | Burundian franc
 BMD 2  | Bermudian dollar
@@ -83,9 +90,11 @@ ERN 2  | Eritrean nakfa
 ETB 2  | Ethiopian birr
 EUR 2 € | Euro
 FJD 2  | Fijian dollar
+FKP 2  | Falkland Islands pound
 GBP 2 £ | British pound
 GEL 2  | Georgian lari
 GHS 2  | Ghanaian cedi
+GIP 2  | Gibraltar pound
 GMD 2  | Gambian dalasi
 GNF 0* | Guinean franc
 GTQ 2  | Guatemalan quetzal
@@ -156,6 +165,7 @@ SCR 2  | Seychellois rupee
 SDG 2  | Sudanese pound
 SEK 2  | Swedish krona
 SGD 2 S$ | Singapore dollar
+SHP 2  | Saint Helena pound
 SLE 2  | Sierra Leonean leone
 SOS 2  | Somali shilling
 SRD 2  | Surinamese dollar
@@ -192,6 +202,9 @@ ZMW 2  | Zambian kwacha
 ZWG 2  | Zimbabwe gold
 `;
 
+/** Replaced currencies: see CurrencyInfo.legacy. */
+const LEGACY: ReadonlySet<string> = new Set(['BGN']);
+
 function parseTable(raw: string): CurrencyInfo[] {
   const out: CurrencyInfo[] = [];
   for (const line of raw.split('\n')) {
@@ -204,6 +217,7 @@ function parseTable(raw: string): CurrencyInfo[] {
       symbol: symbol ?? '',
       name: name!.trim(),
       high: star === '*',
+      legacy: LEGACY.has(code!),
     });
   }
   return out;
@@ -235,7 +249,7 @@ export const isSupportedCurrency = (code: unknown): code is CurrencyCode =>
 
 /** Info for a code. Unknown codes (data from a newer build) degrade to 2 digits, shown by code. */
 export function currencyInfo(code: CurrencyCode): CurrencyInfo {
-  return BY_CODE.get(code) ?? { code, digits: 2, symbol: '', name: code, high: false };
+  return BY_CODE.get(code) ?? { code, digits: 2, symbol: '', name: code, high: false, legacy: false };
 }
 
 export const minorDigits = (code: CurrencyCode): number => currencyInfo(code).digits;
@@ -260,6 +274,20 @@ export const currencyLabel = (code: CurrencyCode): string => `${code} · ${curre
 
 // ── Formatting ─────────────────────────────────────────────────────────
 
+let indianGroupingForInr = true;
+
+/**
+ * Lakh/crore grouping for INR (₹1,23,456) or plain thousands (₹123,456). The app sets this from
+ * the phone's region at start-up: Indian readers expect lakh, everyone else thousands. Default on.
+ */
+export function setIndianGroupingForInr(on: boolean): void {
+  indianGroupingForInr = on;
+}
+
+export const usesIndianGroupingForInr = (): boolean => indianGroupingForInr;
+
+const isIndianFormat = (code: CurrencyCode) => code === 'INR' && indianGroupingForInr;
+
 /** 1234567 -> "1,234,567" */
 function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -279,15 +307,15 @@ export interface MoneyFormatOptions {
 }
 
 /**
- * Format minor units of `code`. INR is exactly formatPaise (₹1,23,456.78). Other currencies use
- * thousands grouping: $1,234.56, ¥1,234, KWD 1.250.
+ * Format minor units of `code`. INR is exactly formatPaise (₹1,23,456.78) while Indian grouping is
+ * on, else ₹123,456.78. Other currencies use thousands grouping: $1,234.56, ¥1,234, KWD 1.250.
  */
 export function formatMoney(
   minor: number,
   code: CurrencyCode,
   opts: MoneyFormatOptions = {},
 ): string {
-  if (code === 'INR') return formatPaise(minor, opts);
+  if (isIndianFormat(code)) return formatPaise(minor, opts);
   const { forceDecimals = false, symbol = true } = opts;
   if (!Number.isSafeInteger(minor)) throw new RangeError(`Invalid amount: ${minor}`);
 
@@ -306,9 +334,9 @@ export function formatMoney(
   return `${negative ? '-' : ''}${symbol ? withPrefix(code, body) : body}`;
 }
 
-/** Compact form for tight UI: ₹1.2L / ₹3.4Cr for INR, $12.5K / $3.4M / Rp1.2B elsewhere. Truncates. */
+/** Compact form for tight UI: ₹1.2L / ₹3.4Cr for INR (Indian grouping), $12.5K / $3.4M elsewhere. Truncates. */
 export function formatMoneyCompact(minor: number, code: CurrencyCode): string {
-  if (code === 'INR') return formatPaiseCompact(minor);
+  if (isIndianFormat(code)) return formatPaiseCompact(minor);
   const negative = minor < 0;
   const whole = Math.floor(Math.abs(minor) / 10 ** minorDigits(code));
   const units: [number, string][] = [

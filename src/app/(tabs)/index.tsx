@@ -5,13 +5,15 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
-import { formatMoney } from '@/domain/currency';
+import { formatMoney, type CurrencyCode } from '@/domain/currency';
+import { useApprox } from '@/features/fx/useApprox';
 import {
   loadOverview,
   OVERVIEW_TABLES,
   type GroupSummary,
   type Overview,
 } from '@/features/overview/loadOverview';
+import { useRegionPreference } from '@/features/region/regionPreference';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
@@ -23,10 +25,18 @@ import { useTheme, type Theme } from '@/ui/theme';
 
 const loadHome = () => loadOverview(db, getDeviceUserId());
 
+/** "≈ ₹3,900" for an amount in another currency, or null. */
+type Approx = (minor: number, from: CurrencyCode) => string | null;
+
 export default function HomeScreen() {
   const theme = useTheme();
   const overview = useLiveData(OVERVIEW_TABLES, loadHome);
   const refreshControl = useSyncRefreshControl();
+  const { homeCurrency } = useRegionPreference();
+  // Rates are only fetched when some balance is in a currency other than the home one.
+  const approx = useApprox(
+    overview.groups.some((g) => g.myBalance !== 0 && g.group.currency !== homeCurrency),
+  );
 
   return (
     <View style={styles.container}>
@@ -34,24 +44,35 @@ export default function HomeScreen() {
       <FlashList
         refreshControl={refreshControl}
         data={overview.groups}
+        extraData={approx}
         keyExtractor={(row) => row.group.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
-          overview.groups.length > 0 ? <ListHeader overview={overview} theme={theme} /> : null
+          overview.groups.length > 0 ? (
+            <ListHeader overview={overview} theme={theme} approx={approx} />
+          ) : null
         }
         ListEmptyComponent={<EmptyState />}
         ItemSeparatorComponent={Separator}
-        renderItem={({ item }) => <GroupRow summary={item} theme={theme} />}
+        renderItem={({ item }) => <GroupRow summary={item} theme={theme} approx={approx} />}
       />
     </View>
   );
 }
 
-function ListHeader({ overview, theme }: { overview: Overview; theme: Theme }) {
+function ListHeader({
+  overview,
+  theme,
+  approx,
+}: {
+  overview: Overview;
+  theme: Theme;
+  approx: Approx;
+}) {
   return (
     <View style={styles.headerBlock}>
       <Greeting />
-      <BalanceCard overview={overview} theme={theme} />
+      <BalanceCard overview={overview} theme={theme} approx={approx} />
       <View style={styles.sectionRow}>
         <AppText variant="heading" accessibilityRole="header" style={styles.grow}>
           Your groups
@@ -75,7 +96,15 @@ function ListHeader({ overview, theme }: { overview: Overview; theme: Theme }) {
   );
 }
 
-function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) {
+function BalanceCard({
+  overview,
+  theme,
+  approx,
+}: {
+  overview: Overview;
+  theme: Theme;
+  approx: Approx;
+}) {
   const { totals } = overview;
   // Tiles are a light wash over the gradient, so they follow whichever accent is chosen.
   const tile = 'rgba(255,255,255,0.14)';
@@ -89,20 +118,36 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
   else title = single.net > 0 ? 'Overall, you are owed' : single.net < 0 ? 'Overall, you owe' : 'Overall, you’re even';
 
   // One line per currency: amounts in different currencies are never added together.
-  const owed = totals.filter((x) => x.owedToMe > 0).map((x) => formatMoney(x.owedToMe, x.currency));
-  const owe = totals.filter((x) => x.iOwe > 0).map((x) => formatMoney(x.iOwe, x.currency));
+  // Each line may carry "≈ ₹3,900" in the home currency; still never summed across currencies.
+  const line = (minor: number, currency: CurrencyCode): TileLine => ({
+    text: formatMoney(minor, currency),
+    approx: approx(minor, currency),
+  });
+  const owed = totals.filter((x) => x.owedToMe > 0).map((x) => line(x.owedToMe, x.currency));
+  const owe = totals.filter((x) => x.iOwe > 0).map((x) => line(x.iOwe, x.currency));
   const zero = formatMoney(0, totals[0]?.currency ?? 'INR');
   const heroAmount = single && single.net !== 0 ? formatMoney(Math.abs(single.net), single.currency) : null;
+  const heroApprox = single && single.net !== 0 ? approx(Math.abs(single.net), single.currency) : null;
 
   return (
     <GradientSurface style={styles.balanceCard}>
-      <View accessible accessibilityLabel={heroAmount ? `${title} ${heroAmount}` : title}>
+      <View
+        accessible
+        accessibilityLabel={
+          heroAmount ? `${title} ${heroAmount}${heroApprox ? `, ${heroApprox}` : ''}` : title
+        }
+      >
         <AppText variant="label" color={fg} style={styles.dim}>
           {title}
         </AppText>
         {heroAmount ? (
           <AppText variant="display" color={fg}>
             {heroAmount}
+          </AppText>
+        ) : null}
+        {heroApprox ? (
+          <AppText variant="label" color={fg} style={styles.dim}>
+            {heroApprox}
           </AppText>
         ) : null}
       </View>
@@ -124,6 +169,11 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
   );
 }
 
+interface TileLine {
+  text: string;
+  approx: string | null;
+}
+
 function AmountTile({
   label,
   amounts,
@@ -132,34 +182,52 @@ function AmountTile({
   color,
 }: {
   label: string;
-  amounts: string[];
+  amounts: TileLine[];
   /** Shown when there's nothing in this direction ("₹0"). */
   zero: string;
   background: string;
   color: string;
 }) {
-  const shown = amounts.length > 0 ? amounts : [zero];
+  const shown = amounts.length > 0 ? amounts : [{ text: zero, approx: null }];
   return (
     <View
       style={[styles.tile, { backgroundColor: background }]}
       accessible
-      accessibilityLabel={`${label}: ${shown.join(' and ')}`}
+      accessibilityLabel={`${label}: ${shown
+        .map((l) => (l.approx ? `${l.text} (${l.approx})` : l.text))
+        .join(' and ')}`}
     >
       <AppText variant="caption" color={color} style={styles.dim}>
         {label}
       </AppText>
-      {shown.map((text) => (
-        <AppText key={text} variant="amount" color={color} style={styles.tileAmount} numberOfLines={1}>
-          {text}
-        </AppText>
+      {shown.map((l) => (
+        <View key={l.text}>
+          <AppText variant="amount" color={color} style={styles.tileAmount} numberOfLines={1}>
+            {l.text}
+          </AppText>
+          {l.approx ? (
+            <AppText variant="caption" color={color} style={styles.dim} numberOfLines={1}>
+              {l.approx}
+            </AppText>
+          ) : null}
+        </View>
       ))}
     </View>
   );
 }
 
-function GroupRow({ summary, theme }: { summary: GroupSummary; theme: Theme }) {
+function GroupRow({
+  summary,
+  theme,
+  approx,
+}: {
+  summary: GroupSummary;
+  theme: Theme;
+  approx: Approx;
+}) {
   const { group, myBalance, lost, me, activeMemberCount } = summary;
   const amount = formatMoney(Math.abs(myBalance), group.currency);
+  const approxAmount = approx(Math.abs(myBalance), group.currency);
   const balanceLabel = myBalance > 0 ? 'you’re owed' : myBalance < 0 ? 'you owe' : null;
   const balanceColor = myBalance > 0 ? theme.positive : theme.negative;
   const members = activeMemberCount === 1 ? '1 member' : `${activeMemberCount} members`;
@@ -202,6 +270,11 @@ function GroupRow({ summary, theme }: { summary: GroupSummary; theme: Theme }) {
             <AppText variant="amount" color={balanceColor}>
               {amount}
             </AppText>
+            {approxAmount ? (
+              <AppText variant="caption" color={theme.muted}>
+                {approxAmount}
+              </AppText>
+            ) : null}
           </View>
         ) : (
           <AppText variant="label" color={theme.muted}>

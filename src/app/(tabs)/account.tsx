@@ -19,13 +19,17 @@ import {
   OTP_LENGTH,
   RESEND_COOLDOWN_S,
 } from '@/features/auth/messages';
+import { currencyLabel, formatMoney } from '@/domain/currency';
 import { GoogleButton } from '@/features/auth/GoogleButton';
 import { useMyProfile } from '@/features/auth/useMyProfile';
+import { chooseHomeCurrency } from '@/features/region/deviceLocales';
+import { useRegionPreference } from '@/features/region/regionPreference';
 import { SyncPanel } from '@/sync/SyncPanel';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
+import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { Icon, type IconName } from '@/ui/Icon';
 import { ACCENT_IDS, ACCENTS, type AccentId } from '@/ui/palette';
 import { Segmented } from '@/ui/Segmented';
@@ -65,6 +69,7 @@ export default function AccountTab() {
         ) : (
           <SignInCard notice={auth.notice} />
         )}
+        <RegionCard />
         <AppearanceCard />
         <LinksCard signedIn={auth.status === 'signedIn'} />
         <AppText variant="caption" color={theme.muted} style={styles.version}>
@@ -98,6 +103,53 @@ function ProfileCard() {
         </View>
       </View>
       <SyncPanel compact />
+    </Card>
+  );
+}
+
+function RegionCard() {
+  const theme = useTheme();
+  const region = useRegionPreference();
+
+  return (
+    <Card style={styles.card}>
+      <AppText variant="heading" accessibilityRole="header">
+        Currency
+      </AppText>
+      <View style={styles.field}>
+        <AppText variant="label" color={theme.muted}>
+          Home currency
+        </AppText>
+        <CurrencyPicker
+          label="Home currency"
+          value={region.homeCurrency}
+          onChange={(code) => chooseHomeCurrency(code)}
+          pinned={[region.detectedCurrency]}
+        />
+        <AppText variant="caption" color={theme.muted}>
+          {region.homeIsAutomatic
+            ? `Set from your phone (${currencyLabel(region.detectedCurrency)}). `
+            : ''}
+          New groups start in it, and amounts in other currencies show roughly what they are in it
+          (≈ today’s rate; you always settle in the group’s currency).
+        </AppText>
+        {!region.homeIsAutomatic ? (
+          <Pressable
+            onPress={() => chooseHomeCurrency(null)}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={styles.inlineLink}
+          >
+            <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+              Use my phone’s currency ({region.detectedCurrency})
+            </AppText>
+          </Pressable>
+        ) : null}
+        <AppText variant="caption" color={theme.muted}>
+          Rupees are shown as {formatMoney(10_000_000, 'INR')}
+          {region.indianGrouping ? ' (lakh/crore, India)' : ''}, following your phone’s region.
+        </AppText>
+      </View>
     </Card>
   );
 }
@@ -426,6 +478,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   field: { gap: 8 },
+  inlineLink: { alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' },
+  bold: { fontWeight: '600' },
   swatches: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   swatchRing: { width: 48, height: 48, borderRadius: 24, borderWidth: 2 },
   swatch: {

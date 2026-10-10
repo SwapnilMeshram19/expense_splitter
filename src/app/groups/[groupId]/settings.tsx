@@ -33,6 +33,7 @@ import {
   describeGroupUpdateError,
   describeMemberError,
 } from '@/features/groups/messages';
+import { getRegionPreference } from '@/features/region/regionPreference';
 import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { useTheme, type Theme } from '@/ui/theme';
 import { Text, TextInput } from '@/ui/Text';
@@ -270,6 +271,7 @@ function SettingsForm({
           label="Group currency"
           value={currency}
           onChange={changeCurrency}
+          pinned={[getRegionPreference().homeCurrency]}
           disabled={currencyLocked}
         />
         <Text style={{ color: theme.muted, fontSize: 13 }}>

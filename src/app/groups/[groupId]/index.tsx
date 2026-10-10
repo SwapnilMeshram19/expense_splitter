@@ -13,6 +13,7 @@ import { getDeviceUserId } from '@/db/session';
 import type { Debt } from '@/domain/balances';
 import { formatMoney } from '@/domain/currency';
 import { describeMyExpenseShare } from '@/features/balances/describe';
+import { useApprox } from '@/features/fx/useApprox';
 import {
   GROUP_VIEW_TABLES,
   loadGroupView,
@@ -94,6 +95,8 @@ export default function GroupDetailScreen() {
   const compute = useCallback(() => loadGroupView(db, groupId, getDeviceUserId(), todayIsoDate()), [groupId]);
   const view = useLiveData(GROUP_VIEW_TABLES, compute);
   const refreshControl = useSyncRefreshControl();
+  // "≈ in your currency" under my balance when this group uses another currency.
+  const approx = useApprox(!!view && view.myBalance !== 0);
 
   if (!view) {
     return (
@@ -156,6 +159,7 @@ export default function GroupDetailScreen() {
         theme={theme}
         nameOf={nameOf}
         money={money}
+        approx={approx(Math.abs(view.myBalance), currency)}
         onSettle={() => setSegment('balances')}
         onRecord={() => openSettle()}
       />
@@ -385,6 +389,7 @@ function SummaryCard({
   theme,
   nameOf,
   money,
+  approx,
   onSettle,
   onRecord,
 }: {
@@ -392,6 +397,8 @@ function SummaryCard({
   theme: Theme;
   nameOf: (id: string) => string;
   money: (minor: number) => string;
+  /** My balance roughly in the home currency, or null. */
+  approx: string | null;
   onSettle: () => void;
   onRecord: () => void;
 }) {
@@ -412,6 +419,11 @@ function SummaryCard({
           {myBalance !== 0 ? (
             <AppText variant="title" color={myBalance > 0 ? theme.positive : theme.negative}>
               {money(Math.abs(myBalance))}
+            </AppText>
+          ) : null}
+          {myBalance !== 0 && approx ? (
+            <AppText variant="caption" color={theme.muted}>
+              {approx}
             </AppText>
           ) : null}
         </View>

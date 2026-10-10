@@ -12,6 +12,7 @@ import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
 import { startAuth } from '@/features/auth/authStore';
+import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startSyncScheduler } from '@/sync/scheduler';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
@@ -29,9 +30,14 @@ export default function RootLayout() {
     if (!success) return;
     applyNativeColorScheme(loadThemePreference(appContext).mode);
     const unsubscribe = subscribeThemePreference((pref) => applyNativeColorScheme(pref.mode));
+    // Home currency and rupee grouping, before the first screen formats any amount.
+    const stopRegion = startRegionPreference();
     startAuth();
     startSyncScheduler();
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      stopRegion();
+    };
   }, [success]);
 
   // The window background shows during transitions and behind the keyboard: keep it on-theme.

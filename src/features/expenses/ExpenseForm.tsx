@@ -16,6 +16,7 @@ import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
 import { formatRate, sanitizeRateInput } from '@/domain/fx';
 import { suggestRate, type SuggestedRate } from '@/features/fx/rateCache';
 import { useRateTable } from '@/features/fx/useRateTable';
+import { useRegionPreference } from '@/features/region/regionPreference';
 import { formatIsoDate, fromIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
@@ -77,6 +78,7 @@ export function ExpenseForm({
   onSubmit,
 }: ExpenseFormProps) {
   const theme = useTheme();
+  const { homeCurrency } = useRegionPreference();
   const [state, setState] = useState(initialState);
   const [error, setError] = useState<string | null>(null);
   const [showIosDate, setShowIosDate] = useState(false);
@@ -196,7 +198,7 @@ export function ExpenseForm({
               label="Bill currency"
               value={state.currency}
               onChange={setCurrency}
-              pinned={[groupCurrency, ...recentCurrencies]}
+              pinned={[groupCurrency, ...recentCurrencies, homeCurrency]}
               variant="pill"
             />
           </View>

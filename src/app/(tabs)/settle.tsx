@@ -8,8 +8,10 @@ import { useLiveData } from '@/db/hooks/useLiveData';
 import { groupMembersQuery } from '@/db/repositories/members';
 import { getDeviceUserId } from '@/db/session';
 import { formatMoney } from '@/domain/currency';
+import { useApprox } from '@/features/fx/useApprox';
 import { loadOverview, OVERVIEW_TABLES, type MyTransfer } from '@/features/overview/loadOverview';
 import { getPendingUpiPayment } from '@/features/upi/pendingUpiPayment';
+import { useRegionPreference } from '@/features/region/regionPreference';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
@@ -31,6 +33,8 @@ export default function SettleTab() {
   const overview = useLiveData(OVERVIEW_TABLES, load);
   const refreshControl = useSyncRefreshControl();
   const [pending, setPending] = useState<PendingContext | null>(null);
+  const { homeCurrency } = useRegionPreference();
+  const approx = useApprox(overview.transfers.some((t) => t.currency !== homeCurrency));
 
   // The pending UPI payment lives in settings, which useLiveData doesn't watch: re-read on focus
   // (same approach as the group screen's banner, which this renders).
@@ -81,7 +85,7 @@ export default function SettleTab() {
             color={theme.negative}
           >
             {toPay.map((t) => (
-              <PayCard key={key(t)} transfer={t} />
+              <PayCard key={key(t)} transfer={t} approx={approx(t.amountPaise, t.currency)} />
             ))}
           </Section>
         ) : null}
@@ -96,7 +100,12 @@ export default function SettleTab() {
           >
             <Card style={styles.listCard}>
               {toReceive.map((t, index) => (
-                <ReceiveRow key={key(t)} transfer={t} last={index === toReceive.length - 1} />
+                <ReceiveRow
+                  key={key(t)}
+                  transfer={t}
+                  approx={approx(t.amountPaise, t.currency)}
+                  last={index === toReceive.length - 1}
+                />
               ))}
             </Card>
           </Section>
@@ -142,7 +151,7 @@ function Section({
 /** UPI moves rupees only: other currencies are settled however people pay, then recorded. */
 const canUseUpi = (t: MyTransfer) => t.currency === 'INR';
 
-function PayCard({ transfer: t }: { transfer: MyTransfer }) {
+function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string | null }) {
   const theme = useTheme();
   const amount = formatMoney(t.amountPaise, t.currency);
   const record = () =>
@@ -162,9 +171,16 @@ function PayCard({ transfer: t }: { transfer: MyTransfer }) {
             {t.groupName}
           </AppText>
         </View>
-        <AppText variant="heading" color={theme.negative}>
-          {amount}
-        </AppText>
+        <View style={styles.amountCol}>
+          <AppText variant="heading" color={theme.negative}>
+            {amount}
+          </AppText>
+          {approx ? (
+            <AppText variant="caption" color={theme.muted}>
+              {approx}
+            </AppText>
+          ) : null}
+        </View>
       </View>
       {t.canEdit && canUseUpi(t) ? (
         <View style={styles.actions}>
@@ -203,7 +219,15 @@ function PayCard({ transfer: t }: { transfer: MyTransfer }) {
   );
 }
 
-function ReceiveRow({ transfer: t, last }: { transfer: MyTransfer; last: boolean }) {
+function ReceiveRow({
+  transfer: t,
+  approx,
+  last,
+}: {
+  transfer: MyTransfer;
+  approx: string | null;
+  last: boolean;
+}) {
   const theme = useTheme();
   const amount = formatMoney(t.amountPaise, t.currency);
   const upi = canUseUpi(t);
@@ -222,6 +246,11 @@ function ReceiveRow({ transfer: t, last }: { transfer: MyTransfer; last: boolean
         <AppText variant="amount" color={theme.positive}>
           {amount}
         </AppText>
+        {approx ? (
+          <AppText variant="caption" color={theme.muted}>
+            {approx}
+          </AppText>
+        ) : null}
         {t.canEdit ? (
           <Pressable
             hitSlop={12}
@@ -265,6 +294,7 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   sectionHeader: { flexDirection: 'row', alignItems: 'baseline' },
   totals: { alignItems: 'flex-end' },
+  amountCol: { alignItems: 'flex-end' },
   grow: { flex: 1, minWidth: 0 },
   payCard: { gap: 12, padding: 14, borderRadius: 18 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

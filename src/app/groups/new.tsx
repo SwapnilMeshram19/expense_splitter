@@ -8,8 +8,9 @@ import { createGroup } from '@/db/repositories/groups';
 import { MAX_NAME_LENGTH } from '@/db/repositories/names';
 import { getSetting, SELF_NAME_KEY, setSetting } from '@/db/repositories/profile';
 import { getDeviceUserId } from '@/db/session';
-import { DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
+import { type CurrencyCode } from '@/domain/currency';
 import { describeGroupError } from '@/features/groups/messages';
+import { getRegionPreference } from '@/features/region/regionPreference';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { CurrencyPicker } from '@/ui/CurrencyPicker';
@@ -28,7 +29,8 @@ export default function NewGroupScreen() {
   const [groupName, setGroupName] = useState('');
   const [selfName, setSelfName] = useState(() => getSetting(appContext, SELF_NAME_KEY) ?? '');
   const [people, setPeople] = useState<PersonField[]>([{ key: 0, name: '' }]);
-  const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
+  // Home currency (from the phone or Account): a US visitor's trip to India starts in USD.
+  const [currency, setCurrency] = useState<CurrencyCode>(() => getRegionPreference().homeCurrency);
   const [error, setError] = useState<string | null>(null);
 
   const updatePerson = (key: number, name: string) =>
@@ -71,11 +73,16 @@ export default function NewGroupScreen() {
         />
 
         <FieldLabel>Currency</FieldLabel>
-        <CurrencyPicker label="Group currency" value={currency} onChange={setCurrency} />
+        <CurrencyPicker
+          label="Group currency"
+          value={currency}
+          onChange={setCurrency}
+          pinned={[getRegionPreference().homeCurrency]}
+        />
         <AppText variant="caption" color={theme.muted}>
-          {currency === DEFAULT_CURRENCY
-            ? 'Balances and UPI settle-up are in rupees. Bills in other currencies can still be added with their rate.'
-            : 'Balances are kept in this currency. UPI settle-up works only for rupee groups.'}
+          {currency === 'INR'
+            ? 'Balances and UPI settle-up are in rupees. Bills in other currencies are converted when you add them.'
+            : 'Everyone settles up in this currency. Bills in other currencies are converted when you add them. UPI works only for rupee groups.'}
         </AppText>
 
         <FieldLabel>Your name</FieldLabel>

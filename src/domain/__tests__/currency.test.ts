@@ -61,6 +61,7 @@ describe('currency table', () => {
       symbol: '',
       name: 'XYZ',
       high: false,
+      legacy: false,
     });
     expect(formatMoney(1250, 'XYZ')).toBe('XYZ 12.50');
   });
