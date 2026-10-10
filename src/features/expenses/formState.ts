@@ -6,6 +6,7 @@
 import type { ExpenseDetail } from '@/db/repositories/expenses';
 import type { ExpenseCategory, StoredSplitInput } from '@/db/schema';
 import type { PayerLine } from '@/domain/balances';
+import { MAX_CATEGORY_LABEL_LENGTH, normalizeCategoryLabel } from '@/domain/categoryLabel';
 import {
   formatPaise,
   paiseToInputString,
@@ -35,6 +36,8 @@ export interface ExpenseFormState {
   amountText: string;
   expenseDate: string;
   category: ExpenseCategory;
+  /** Custom category name, typed when category is 'other' ('' = plain "Other"). */
+  categoryLabel: string;
   payerMode: PayerMode;
   singlePayerId: string;
   payerAmounts: ValueMap;
@@ -50,6 +53,8 @@ export interface DraftParts {
   amountPaise: Paise;
   expenseDate: string;
   category: ExpenseCategory;
+  /** Normalised custom name, or null. Always null unless category is 'other'. */
+  categoryLabel: string | null;
   payers: PayerLine[];
   splitInput: StoredSplitInput;
 }
@@ -80,6 +85,7 @@ export function initialFormState(
     amountText: '',
     expenseDate: today,
     category: 'general',
+    categoryLabel: '',
     payerMode: 'single',
     singlePayerId: selfMemberId,
     payerAmounts: {},
@@ -113,6 +119,7 @@ export function formStateFromExpense(
     description: expense.description,
     amountText: paiseToInputString(expense.amountPaise),
     category: expense.category,
+    categoryLabel: expense.category === 'other' ? (expense.categoryLabel ?? '') : '',
   };
 
   const firstPayer = payers[0];
@@ -337,13 +344,17 @@ export function analyzeForm(state: ExpenseFormState, memberIds: readonly string[
     problems.push(payerHint ? `Fix who paid: ${payerHint}` : 'Fix who paid.');
   }
 
+  const label = normalizeCategoryLabel(state.category === 'other' ? state.categoryLabel : null);
+  if (!label.ok) problems.push(`Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`);
+
   const draft =
-    problems.length === 0 && totalPaise !== null && splitInput && payers
+    problems.length === 0 && totalPaise !== null && splitInput && payers && label.ok
       ? {
           description,
           amountPaise: totalPaise,
           expenseDate: state.expenseDate,
           category: state.category,
+          categoryLabel: label.label,
           payers,
           splitInput,
         }

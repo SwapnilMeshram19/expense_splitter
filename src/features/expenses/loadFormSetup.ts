@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import { isGroupLost, LOST_ACCESS_MESSAGE } from '@/db/repositories/access';
-import { getExpense } from '@/db/repositories/expenses';
+import { getExpense, groupCategoryLabels } from '@/db/repositories/expenses';
 import { getGroup } from '@/db/repositories/groups';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
 import { getDeviceUserId } from '@/db/session';
@@ -14,7 +14,14 @@ import {
 } from './formState';
 
 export type FormSetup =
-  | { ok: true; me: string; members: FormMember[]; initialState: ExpenseFormState }
+  | {
+      ok: true;
+      me: string;
+      members: FormMember[];
+      initialState: ExpenseFormState;
+      /** Custom category names already used in this group, most used first. */
+      categorySuggestions: string[];
+    }
   | { ok: false; message: string };
 
 /** Everything the add/edit expense screens need, read once when the screen opens. */
@@ -43,5 +50,5 @@ export function loadFormSetup(groupId: string, expenseId: string | null): FormSe
     ? formStateFromExpense(detail, memberIds, me)
     : initialFormState(memberIds, me, todayIsoDate());
 
-  return { ok: true, me, members, initialState };
+  return { ok: true, me, members, initialState, categorySuggestions: groupCategoryLabels(db, groupId) };
 }

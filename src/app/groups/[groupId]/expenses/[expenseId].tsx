@@ -63,6 +63,7 @@ export default function EditExpenseScreen() {
       <ExpenseForm
         members={setup.members}
         initialState={setup.initialState}
+        categorySuggestions={setup.categorySuggestions}
         submitLabel="Save changes"
         onSubmit={save}
       />

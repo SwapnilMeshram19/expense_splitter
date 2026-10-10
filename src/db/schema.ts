@@ -106,6 +106,11 @@ export const expenses = sqliteTable(
     description: text('description').notNull(),
     amountPaise: integer('amount_paise').notNull(),
     category: text('category', { enum: EXPENSE_CATEGORIES }).notNull().default('general'),
+    /**
+     * Name of a custom category ("Petrol", "Maid"), shared with the group. Only with category
+     * 'other': older app versions that don't know the label simply show "Other".
+     */
+    categoryLabel: text('category_label'),
     /** Local calendar date 'YYYY-MM-DD'. Not a timestamp, so it can never shift by timezone. */
     expenseDate: text('expense_date').notNull(),
     /** Raw split as entered, so the user can re-edit it exactly. */

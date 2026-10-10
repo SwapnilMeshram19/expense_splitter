@@ -280,6 +280,13 @@ function writeExpense(tx: Tx, e: Incoming<WireExpense>, mode: WriteMode): void {
     description: e.description,
     amountPaise: e.amount_paise,
     category: e.category as ExpenseCategory,
+    // Only meaningful with 'other'. A server that doesn't send the field at all (deployed before
+    // custom categories) leaves the local label alone, like the server does for old app builds.
+    ...(e.category !== 'other'
+      ? { categoryLabel: null }
+      : 'category_label' in e
+        ? { categoryLabel: typeof e.category_label === 'string' ? e.category_label : null }
+        : {}),
     expenseDate: e.expense_date,
     splitInput: e.split_input as StoredSplitInput,
     createdByMemberId: e.created_by_member_id,

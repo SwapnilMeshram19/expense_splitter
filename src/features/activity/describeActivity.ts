@@ -197,10 +197,16 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         if (oldDate !== null && newDate !== null && oldDate !== newDate) {
           changes.push(`${formatIsoDate(oldDate)} → ${formatIsoDate(newDate)}`);
         }
-        const oldCategory = str(before, 'category');
-        const newCategory = str(after, 'category');
+        // A custom name wins over the category key ("Other" with label "Petrol" reads "Petrol").
+        const categoryText = (record: Json | null) => {
+          const category = str(record, 'category');
+          if (category === null) return null;
+          return (category === 'other' ? str(record, 'categoryLabel') : null) ?? capitalize(category);
+        };
+        const oldCategory = categoryText(before);
+        const newCategory = categoryText(after);
         if (oldCategory !== null && newCategory !== null && oldCategory !== newCategory) {
-          changes.push(`${capitalize(oldCategory)} → ${capitalize(newCategory)}`);
+          changes.push(`${oldCategory} → ${newCategory}`);
         }
         const oldPayers = lines(before, 'payers');
         const newPayers = lines(after, 'payers');

@@ -192,7 +192,7 @@ export default function GroupDetailScreen() {
                 {item.expense.description}
               </AppText>
               <AppText variant="caption" color={theme.muted} numberOfLines={1}>
-                {paidBy}
+                {item.expense.categoryLabel ? `${item.expense.categoryLabel} · ${paidBy}` : paidBy}
               </AppText>
             </View>
             <View style={styles.right}>

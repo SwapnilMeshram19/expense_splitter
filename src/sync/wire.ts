@@ -44,6 +44,8 @@ export interface WireExpense extends Lifecycle {
   description: string;
   amount_paise: number;
   category: string;
+  /** Custom category name (with category 'other'). Absent from servers before this migration. */
+  category_label?: string | null;
   expense_date: string;
   split_input: unknown;
   created_by_member_id: string;
@@ -151,6 +153,7 @@ export const expenseToWire = (
   description: e.description,
   amount_paise: e.amountPaise,
   category: e.category,
+  category_label: e.categoryLabel ?? null,
   expense_date: e.expenseDate,
   split_input: e.splitInput,
   created_by_member_id: e.createdByMemberId,

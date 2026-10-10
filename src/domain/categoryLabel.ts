@@ -1,0 +1,22 @@
+/**
+ * Custom category names ("Petrol", "Maid", "Society maintenance").
+ *
+ * A custom category is stored as category 'other' plus this label, so older app versions that
+ * don't know labels still show the expense as "Other". The server enforces the same limits.
+ */
+
+export const MAX_CATEGORY_LABEL_LENGTH = 30;
+
+export type CategoryLabelResult = { ok: true; label: string | null } | { ok: false; error: 'TOO_LONG' };
+
+/** Trim and collapse inner whitespace. Empty means "no custom name" (plain "Other"). */
+export function normalizeCategoryLabel(input: string | null | undefined): CategoryLabelResult {
+  const label = (input ?? '').replace(/\s+/g, ' ').trim();
+  if (label === '') return { ok: true, label: null };
+  // Code points, not UTF-16 units: a Devanagari name counts the way the user sees it typed.
+  if (Array.from(label).length > MAX_CATEGORY_LABEL_LENGTH) return { ok: false, error: 'TOO_LONG' };
+  return { ok: true, label };
+}
+
+/** Case-insensitive key for de-duplicating suggestions ("petrol" and "Petrol" are one). */
+export const categoryLabelKey = (label: string): string => label.toLocaleLowerCase('en-IN');

@@ -1,14 +1,21 @@
 {
   "expo": {
-    "name": "Expense Splitter",
+    "name": "Split",
     "slug": "expense-splitter",
     "scheme": "expensesplitter",
+    "icon": "./assets/images/icon.png",
     "platforms": [
       "android",
       "ios"
     ],
     "userInterfaceStyle": "automatic",
     "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
+        "backgroundColor": "#0A6AA1"
+      },
       "package": "in.ssoftapp.split",
       "intentFilters": [
         {
@@ -27,6 +34,15 @@
     },
     "plugins": [
       "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#0A6AA1"
+        }
+      ],
       [
         "expo-font",
         {

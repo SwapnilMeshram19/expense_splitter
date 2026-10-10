@@ -4,6 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { EXPENSE_CATEGORIES } from '@/db/schema';
+import { categoryLabelKey, MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
 import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
 import { formatPaise, sanitizeAmountInput } from '@/domain/money';
 import { formatIsoDate, fromIsoDate, toLocalIsoDate } from '@/lib/dates';
@@ -12,7 +13,9 @@ import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CATEGORY_STYLE } from '@/ui/CategoryTile';
+import { Input } from '@/ui/Field';
 import { Icon, type IconName } from '@/ui/Icon';
+import { MemberPicker } from '@/ui/MemberPicker';
 import { Segmented } from '@/ui/Segmented';
 import { TextInput } from '@/ui/Text';
 import { useTheme, type Theme } from '@/ui/theme';
@@ -30,6 +33,8 @@ interface ExpenseFormProps {
   members: FormMember[];
   initialState: ExpenseFormState;
   submitLabel: string;
+  /** Custom category names already used in the group, offered as one-tap suggestions. */
+  categorySuggestions?: readonly string[];
   /** Save the draft. Return an error message to show, or null on success. */
   onSubmit: (draft: DraftParts) => string | null;
 }
@@ -46,7 +51,13 @@ const VALUE_KEYS = { exact: 'exactAmounts', percentage: 'percentages', shares: '
 /** Space kept between the focused input and the keyboard toolbar. */
 const KEYBOARD_BOTTOM_OFFSET = 62;
 
-export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: ExpenseFormProps) {
+export function ExpenseForm({
+  members,
+  initialState,
+  submitLabel,
+  categorySuggestions = [],
+  onSubmit,
+}: ExpenseFormProps) {
   const theme = useTheme();
   const [state, setState] = useState(initialState);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +89,11 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
         payerAmounts: { ...s.payerAmounts, [memberId]: sanitizeAmountInput(text, previous) },
       };
     });
+    setError(null);
+  };
+
+  const setAllIncluded = (included: boolean) => {
+    setState((s) => ({ ...s, equalMemberIds: included ? [...memberIds] : [] }));
     setError(null);
   };
 
@@ -194,32 +210,60 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
 
         {/* ---- Category ---- */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          {EXPENSE_CATEGORIES.map((category) => (
-            <Chip
-              key={category}
-              label={CATEGORY_STYLE[category].label}
-              icon={CATEGORY_STYLE[category].icon}
-              selected={state.category === category}
-              onPress={() => update({ category })}
-              theme={theme}
-            />
-          ))}
+          {EXPENSE_CATEGORIES.map((category) => {
+            const isCustom = category === 'other';
+            const typed = state.categoryLabel.trim();
+            return (
+              <Chip
+                key={category}
+                label={isCustom ? (state.category === 'other' && typed ? typed : 'Custom') : CATEGORY_STYLE[category].label}
+                icon={isCustom ? 'edit' : CATEGORY_STYLE[category].icon}
+                selected={state.category === category}
+                onPress={() => update({ category })}
+                theme={theme}
+              />
+            );
+          })}
         </ScrollView>
+        {state.category === 'other' ? (
+          <View style={styles.customCategory}>
+            <Input
+              value={state.categoryLabel}
+              onChangeText={(categoryLabel) => update({ categoryLabel })}
+              placeholder="Category name, e.g. Petrol, Maid, Rent"
+              maxLength={MAX_CATEGORY_LABEL_LENGTH}
+              accessibilityLabel="Custom category name"
+              autoCapitalize="words"
+              autoFocus={state.categoryLabel === ''}
+            />
+            {categorySuggestions.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                {categorySuggestions.map((label) => (
+                  <Chip
+                    key={label}
+                    label={label}
+                    selected={categoryLabelKey(label) === categoryLabelKey(state.categoryLabel.trim())}
+                    onPress={() => update({ categoryLabel: label })}
+                    theme={theme}
+                  />
+                ))}
+              </ScrollView>
+            ) : null}
+            <AppText variant="caption" color={theme.muted}>
+              Everyone in the group sees this name. Leave it empty for “Other”.
+            </AppText>
+          </View>
+        ) : null}
 
         {/* ---- Paid by ---- */}
         <SectionTitle>Paid by</SectionTitle>
         {state.payerMode === 'single' ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            {members.map((m) => (
-              <Chip
-                key={m.id}
-                label={m.name}
-                selected={state.singlePayerId === m.id}
-                onPress={() => update({ singlePayerId: m.id })}
-                theme={theme}
-              />
-            ))}
-          </ScrollView>
+          <MemberPicker
+            label="Paid by"
+            members={members}
+            value={state.singlePayerId}
+            onChange={(singlePayerId) => update({ singlePayerId })}
+          />
         ) : (
           <Card style={styles.membersCard}>
             {members.map((m, index) => (
@@ -261,7 +305,21 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
         </Pressable>
 
         {/* ---- Split ---- */}
-        <SectionTitle>Split</SectionTitle>
+        <View style={styles.sectionRow}>
+          <SectionTitle>Split</SectionTitle>
+          {state.splitMode === 'equal' && members.length > 2 ? (
+            <Pressable
+              onPress={() => setAllIncluded(state.equalMemberIds.length !== members.length)}
+              accessibilityRole="button"
+              hitSlop={8}
+              style={styles.allToggle}
+            >
+              <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+                {state.equalMemberIds.length === members.length ? 'Select none' : 'Select all'}
+              </AppText>
+            </Pressable>
+          ) : null}
+        </View>
         <Segmented
           options={SPLIT_MODES}
           value={state.splitMode}
@@ -438,6 +496,9 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   section: { fontWeight: '600', marginTop: 6 },
+  sectionRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  allToggle: { minHeight: 32, justifyContent: 'flex-end' },
+  customCategory: { gap: 8 },
   membersCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52 },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth },

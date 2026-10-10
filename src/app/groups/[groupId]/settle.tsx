@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -19,6 +19,7 @@ import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { AmountInput, FieldLabel, Input } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
+import { MemberPicker } from '@/ui/MemberPicker';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
 
@@ -118,20 +119,16 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
     router.back();
   };
 
-  const memberChips = (selectedId: string, onSelect: (id: string) => void) => (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-      {setup.members.map((m) => (
-        <Chip
-          key={m.id}
-          label={m.name}
-          selected={selectedId === m.id}
-          onPress={() => {
-            onSelect(m.id);
-            setError(null);
-          }}
-        />
-      ))}
-    </ScrollView>
+  const memberPicker = (label: string, selectedId: string, onSelect: (id: string) => void) => (
+    <MemberPicker
+      label={label}
+      members={setup.members}
+      value={selectedId}
+      onChange={(id) => {
+        onSelect(id);
+        setError(null);
+      }}
+    />
   );
 
   return (
@@ -143,7 +140,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
         keyboardShouldPersistTaps="handled"
       >
         <FieldLabel>Who paid</FieldLabel>
-        {memberChips(fromId, setFromId)}
+        {memberPicker('Who paid', fromId, setFromId)}
 
         <Pressable onPress={swap} style={styles.swap} accessibilityRole="button" accessibilityLabel="Swap payer and receiver" hitSlop={8}>
           <Icon name="settle" color={theme.onPrimarySoft} size={18} />
@@ -153,7 +150,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
         </Pressable>
 
         <FieldLabel>Who received</FieldLabel>
-        {memberChips(toId, setToId)}
+        {memberPicker('Who received', toId, setToId)}
 
         <FieldLabel>Amount</FieldLabel>
         <AmountInput

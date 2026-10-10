@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 
 import type { PayerLine } from '@/domain/balances';
+import { categoryLabelKey, normalizeCategoryLabel } from '@/domain/categoryLabel';
 import { validateExpense, type ExpenseValidationError } from '@/domain/expenseValidation';
 import type { ShareLine } from '@/domain/splits';
 import { err, ok, type Result } from '@/lib/result';
@@ -22,6 +23,8 @@ export interface ExpenseDraft {
   description: string;
   amountPaise: number;
   category?: ExpenseCategory;
+  /** Custom category name; used only with category 'other'. Undefined on update keeps the old one. */
+  categoryLabel?: string | null;
   expenseDate: string;
   payers: PayerLine[];
   splitInput: StoredSplitInput;
@@ -31,6 +34,7 @@ export interface ExpenseDraft {
 
 export type ExpenseError =
   | ExpenseValidationError
+  | { code: 'CATEGORY_LABEL_TOO_LONG' }
   | { code: 'NOT_FOUND' }
   | { code: 'GROUP_MISMATCH' }
   | { code: 'NOT_A_MEMBER' };
@@ -72,18 +76,68 @@ export function getExpense(db: AppDb, expenseId: string): ExpenseDetail | null {
 
 type SnapshotSource = Pick<
   Expense,
-  'description' | 'amountPaise' | 'category' | 'expenseDate' | 'splitInput'
+  'description' | 'amountPaise' | 'category' | 'categoryLabel' | 'expenseDate' | 'splitInput'
 >;
 
 const snapshot = (e: SnapshotSource, payers: PayerLine[], shares: ShareLine[]) => ({
   description: e.description,
   amountPaise: e.amountPaise,
   category: e.category,
+  categoryLabel: e.categoryLabel,
   expenseDate: e.expenseDate,
   splitInput: e.splitInput,
   payers,
   shares,
 });
+
+/**
+ * The label to store: only with 'other', normalised. `requested` undefined means "unchanged"
+ * (keep `current`), null or '' means "plain Other".
+ */
+function resolveCategoryLabel(
+  category: ExpenseCategory,
+  requested: string | null | undefined,
+  current: string | null,
+): { ok: true; label: string | null } | { ok: false } {
+  if (category !== 'other') return { ok: true, label: null };
+  if (requested === undefined) return { ok: true, label: current };
+  const normalized = normalizeCategoryLabel(requested);
+  return normalized.ok ? { ok: true, label: normalized.label } : { ok: false };
+}
+
+/**
+ * Custom category names used in a group, most used first (case-insensitive, latest spelling
+ * wins), for suggestions in the expense form.
+ */
+export function groupCategoryLabels(db: AppDb, groupId: string, limit = 8): string[] {
+  const rows = db
+    .select({ label: expenses.categoryLabel })
+    .from(expenses)
+    .where(
+      and(
+        eq(expenses.groupId, groupId),
+        isNull(expenses.deletedAt),
+        eq(expenses.category, 'other'),
+        isNotNull(expenses.categoryLabel),
+      ),
+    )
+    .orderBy(desc(expenses.updatedAt))
+    .all();
+
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const { label } of rows) {
+    if (!label) continue;
+    const key = categoryLabelKey(label);
+    const entry = counts.get(key);
+    if (entry) entry.count++;
+    else counts.set(key, { label, count: 1 }); // first seen = most recently updated spelling
+  }
+  // Stable sort: equal counts keep most-recent-first order.
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((e) => e.label);
+}
 
 function insertLines(tx: Tx, expenseId: string, payers: PayerLine[], shares: ShareLine[]) {
   tx.insert(expensePayers)
@@ -104,12 +158,17 @@ export function createExpense(
   const valid = validateExpense(draft, allowed);
   if (!valid.ok) return err(valid.error);
 
+  const category = draft.category ?? 'general';
+  const label = resolveCategoryLabel(category, draft.categoryLabel ?? null, null);
+  if (!label.ok) return err({ code: 'CATEGORY_LABEL_TOO_LONG' });
+
   const expenseId = ctx.newId();
   const t = ctx.now();
   const row = {
     description: valid.description,
     amountPaise: draft.amountPaise,
-    category: draft.category ?? 'general',
+    category,
+    categoryLabel: label.label,
     expenseDate: draft.expenseDate,
     splitInput: draft.splitInput,
   };
@@ -160,11 +219,16 @@ export function updateExpense(
   const valid = validateExpense(draft, allowed);
   if (!valid.ok) return err(valid.error);
 
+  const category = draft.category ?? existing.expense.category;
+  const label = resolveCategoryLabel(category, draft.categoryLabel, existing.expense.categoryLabel);
+  if (!label.ok) return err({ code: 'CATEGORY_LABEL_TOO_LONG' });
+
   const t = ctx.now();
   const row = {
     description: valid.description,
     amountPaise: draft.amountPaise,
-    category: draft.category ?? existing.expense.category,
+    category,
+    categoryLabel: label.label,
     expenseDate: draft.expenseDate,
     splitInput: draft.splitInput,
   };

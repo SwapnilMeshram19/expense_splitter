@@ -1,4 +1,5 @@
 import type { ExpenseError } from '@/db/repositories/expenses';
+import { MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
 import { formatPaise } from '@/domain/money';
 import type { SplitError } from '@/domain/splits';
 
@@ -49,5 +50,7 @@ export function describeExpenseError(error: ExpenseError, nameOf: NameOf): strin
       return 'This expense belongs to a different group.';
     case 'NOT_A_MEMBER':
       return 'You’re not a member of this group.';
+    case 'CATEGORY_LABEL_TOO_LONG':
+      return `Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`;
   }
 }

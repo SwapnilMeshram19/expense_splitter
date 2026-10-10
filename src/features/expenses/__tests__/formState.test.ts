@@ -23,6 +23,7 @@ const expenseRow = (patch: Partial<Expense>): Expense => ({
   description: 'Dinner',
   amountPaise: 10000,
   category: 'food',
+  categoryLabel: null,
   expenseDate: '2026-10-01',
   splitInput: { type: 'equal', memberIds: members },
   createdByMemberId: 'a',
@@ -53,6 +54,7 @@ describe('analyzeForm', () => {
       amountPaise: 900,
       expenseDate: '2026-10-01',
       category: 'general',
+      categoryLabel: null,
       payers: [{ memberId: 'a', amountPaise: 900 }],
       splitInput: { type: 'equal', memberIds: members },
     });
