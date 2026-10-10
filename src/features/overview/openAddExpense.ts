@@ -1,17 +1,10 @@
 import { router } from 'expo-router';
 
 import type { AppDb } from '@/db/context';
-import { isGroupLost } from '@/db/repositories/access';
-import { activeGroupsQuery } from '@/db/repositories/groups';
-import { findSelfMemberId } from '@/db/repositories/members';
+import { editableGroups } from '@/db/repositories/editableGroups';
 import type { Group } from '@/db/schema';
 
-/** Groups I can add an expense to: I'm a member and access hasn't been revoked. Most recent first. */
-export function editableGroups(db: AppDb, deviceUserId: string): Group[] {
-  return activeGroupsQuery(db)
-    .all()
-    .filter((group) => findSelfMemberId(db, group.id, deviceUserId) !== null && !isGroupLost(db, group.id));
-}
+export { editableGroups };
 
 export type AddExpenseTarget =
   | { kind: 'createGroup' }

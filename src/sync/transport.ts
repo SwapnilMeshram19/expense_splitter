@@ -1,5 +1,6 @@
 import { getSupabase } from '@/lib/supabase';
 
+import { syncOrigin } from './origin';
 import type { SyncTransport } from './runSync';
 import type { PullResult, PushResult } from './wire';
 
@@ -35,8 +36,12 @@ function rpcErrorCode(error: { code?: string }): SyncErrorCode {
 
 export const supabaseTransport: SyncTransport = {
   async push(batch) {
-    // invoke() attaches the signed-in user's access token automatically.
-    const { data, error } = await getSupabase().functions.invoke<PushResult>('sync-push', { body: batch });
+    // invoke() attaches the signed-in user's access token automatically. The origin lets this
+    // phone recognise (and skip) the change signal its own push triggers.
+    const { data, error } = await getSupabase().functions.invoke<PushResult>('sync-push', {
+      body: batch,
+      headers: { 'X-Sync-Origin': syncOrigin() },
+    });
     if (error) {
       const code = functionErrorCode(error);
       throw new SyncError(code, `push failed: ${code}`);

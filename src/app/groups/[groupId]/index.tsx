@@ -24,6 +24,7 @@ import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { todayIsoDate } from '@/lib/dates';
+import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Banner } from '@/ui/Banner';
@@ -91,6 +92,7 @@ export default function GroupDetailScreen() {
   const [segment, setSegment] = useState<Segment>('expenses');
   const compute = useCallback(() => loadGroupView(db, groupId, getDeviceUserId(), todayIsoDate()), [groupId]);
   const view = useLiveData(GROUP_VIEW_TABLES, compute);
+  const refreshControl = useSyncRefreshControl();
 
   if (!view) {
     return (
@@ -329,6 +331,7 @@ export default function GroupDetailScreen() {
         }}
       />
       <FlashList
+        refreshControl={refreshControl}
         data={rowsFor(segment, view)}
         keyExtractor={(row) => row.key}
         getItemType={(row) => row.kind}

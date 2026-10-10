@@ -11,6 +11,7 @@ import {
   RECENT_ACTIVITY_TABLES,
   type RecentActivityItem,
 } from '@/features/activity/loadRecentActivity';
+import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Card } from '@/ui/Card';
 import { GroupTile } from '@/ui/GroupTile';
@@ -22,11 +23,13 @@ const load = () => loadRecentActivity(db, getDeviceUserId());
 export default function ActivityTab() {
   const theme = useTheme();
   const items = useLiveData(RECENT_ACTIVITY_TABLES, load);
+  const refreshControl = useSyncRefreshControl();
 
   return (
     <View style={styles.container}>
       <TabHeader title="Activity" />
       <FlashList
+        refreshControl={refreshControl}
         data={items}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}

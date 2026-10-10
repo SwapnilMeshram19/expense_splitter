@@ -73,7 +73,7 @@ export default function SyncScreen() {
         <SyncPanel />
 
         {views.length === 0 ? (
-          <Text style={[styles.empty, { color: theme.muted }]}>Everything on this phone is in sync.</Text>
+          <Text style={[styles.empty, { color: theme.muted }]}>Nothing here needs your attention.</Text>
         ) : (
           <Text style={[styles.heading, { color: theme.text }]}>Needs your attention</Text>
         )}

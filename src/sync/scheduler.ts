@@ -6,7 +6,9 @@ import { appContext } from '@/db/appContext';
 import { getSupabase } from '@/lib/supabase';
 
 import { countPendingChanges } from './issueActions';
-import { isSyncing, markSignedOut, refreshSyncStatus, syncNow } from './syncService';
+import { setChangeSignalHandler, updateChangeSignals } from './realtime';
+import { remoteSyncDelay, REMOTE_DELAY_MS } from './signalPlan';
+import { isSyncing, markSignedOut, onSyncSucceeded, refreshSyncStatus, syncNow } from './syncService';
 
 const EDIT_DEBOUNCE_MS = 4_000;
 const SOON_MS = 1_000;
@@ -22,7 +24,7 @@ const SYNCED_TABLES = new Set([
   'activity_log',
 ]);
 
-type Reason = 'edit' | 'network' | 'foreground' | 'interval' | 'signin' | 'retry';
+type Reason = 'edit' | 'network' | 'foreground' | 'interval' | 'signin' | 'retry' | 'remote';
 
 let started = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -30,6 +32,13 @@ let queuedReason: Reason | null = null;
 let failures = 0;
 let online = true;
 let active = AppState.currentState === 'active';
+let signedIn = false;
+let lastRemoteSyncAt: number | null = null;
+
+/** Change-signal channels are open only while it can help: signed in, online, in the foreground. */
+function refreshChangeSignals(): void {
+  updateChangeSignals(signedIn && online && active);
+}
 
 function schedule(delayMs: number, reason: Reason): void {
   // A non-edit reason always wins: it needs a pull even with nothing pending.
@@ -49,6 +58,13 @@ async function run(): Promise<void> {
   timer = null;
   queuedReason = null;
   if (!online || !active) return; // network / foreground listeners reschedule
+
+  // A signal during a running cycle may be newer than that cycle's pull: go again once it ends.
+  if (reason === 'remote' && isSyncing()) {
+    schedule(REMOTE_DELAY_MS, 'remote');
+    return;
+  }
+  if (reason === 'remote') lastRemoteSyncAt = Date.now();
 
   // Edits made by sync itself leave nothing pending, so they never start another cycle.
   if (reason === 'edit' && countPendingChanges(appContext) === 0) {
@@ -73,19 +89,30 @@ export function startSyncScheduler(): void {
   if (started) return;
   started = true;
 
+  setChangeSignalHandler(() => {
+    if (active) schedule(remoteSyncDelay(Date.now(), lastRemoteSyncAt), 'remote');
+  });
+  // After every successful sync the set of groups may have changed (joined, created, lost).
+  onSyncSucceeded(refreshChangeSignals);
+
   NetInfo.addEventListener((state) => {
     // isInternetReachable is null while unknown: treat as reachable rather than block sync.
     const nowOnline = state.isConnected !== false && state.isInternetReachable !== false;
     const cameBack = nowOnline && !online;
+    const wentOffline = !nowOnline && online;
     online = nowOnline;
     if (cameBack) schedule(SOON_MS, 'network');
+    if (wentOffline) refreshChangeSignals(); // reopened by the sync that runs when we're back
   });
 
   AppState.addEventListener('change', (next: AppStateStatus) => {
     const wasActive = active;
     active = next === 'active';
-    if (active && !wasActive) schedule(SOON_MS, 'foreground');
-    if (!active) cancel();
+    if (active && !wasActive) schedule(SOON_MS, 'foreground'); // its success reopens the channels
+    if (!active) {
+      cancel();
+      refreshChangeSignals();
+    }
   });
 
   addDatabaseChangeListener((event) => {
@@ -104,10 +131,13 @@ export function startSyncScheduler(): void {
       setTimeout(() => {
         if (session && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
           failures = 0;
+          signedIn = true;
           schedule(0, 'signin');
         } else if (event === 'SIGNED_OUT') {
           cancel();
           failures = 0;
+          signedIn = false;
+          refreshChangeSignals();
           markSignedOut();
         }
       }, 0);
