@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -21,6 +21,7 @@ import {
   type PendingUpiPayment,
 } from '@/features/upi/pendingUpiPayment';
 import { useTheme } from '@/ui/theme';
+import { Text, TextInput } from '@/ui/Text';
 
 type Ready = Extract<PaySetup, { ok: true }>;
 type Phase = 'form' | 'waiting' | 'confirm';
@@ -386,11 +387,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
   title: { fontSize: 20, fontWeight: '600' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
-  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10, paddingHorizontal: 12 },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
   rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '600', paddingVertical: 8 },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
+  amountInput: { flex: 1, fontSize: 34, fontWeight: '700', paddingVertical: 10 },
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
   row: { flexDirection: 'row', gap: 20 },
   block: { gap: 6, marginTop: 8 },
 });

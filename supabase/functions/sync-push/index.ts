@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+import { changedGroupIds, GROUP_CHANGED_EVENT, groupTopic, parseOrigin } from '../_shared/domain/changeSignals.ts';
 import { checkExpenses, parseBatch } from './batch.ts';
 
 const MAX_BODY_BYTES = 1_000_000;
@@ -30,9 +31,38 @@ const authClient = createClient(SUPABASE_URL, apiKey('publishable'), clientOptio
 const adminClient = createClient(SUPABASE_URL, apiKey('secret'), clientOptions);
 
 interface ApplyResult {
-  applied: unknown[];
+  applied: { table?: unknown; id?: unknown }[];
   conflicts: unknown[];
   rejected: unknown[];
+}
+
+/**
+ * Tell the other phones in each changed group to pull. Private broadcast channels: only active
+ * members can subscribe (RLS on realtime.messages), and the payload holds no data, just the
+ * sender's origin so it can ignore its own echo. Best effort: a failed signal only means the
+ * other phones see the change at their next scheduled sync.
+ */
+async function signalGroups(groupIds: string[], origin: string | null): Promise<void> {
+  const results = await Promise.allSettled(
+    groupIds.map(async (groupId) => {
+      const channel = adminClient.channel(groupTopic(groupId), { config: { private: true } });
+      try {
+        await channel.httpSend(GROUP_CHANGED_EVENT, { origin });
+      } finally {
+        await adminClient.removeChannel(channel);
+      }
+    }),
+  );
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  // Counts only: group ids are not secret, but there is no reason to put them in logs.
+  if (failed > 0) console.error('signal failed', { failed, total: groupIds.length });
+}
+
+/** Run after the response is sent when the runtime allows it, so the push never waits on Realtime. */
+function inBackground(task: Promise<void>): void {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime;
+  if (runtime) runtime.waitUntil(task);
+  else void task;
 }
 
 Deno.serve(async (req) => {
@@ -70,6 +100,11 @@ Deno.serve(async (req) => {
   }
 
   const result = data as ApplyResult;
+  const changed = changedGroupIds(batch, result.applied);
+  if (changed.length > 0) {
+    inBackground(signalGroups(changed, parseOrigin(req.headers.get('X-Sync-Origin'))));
+  }
+
   return json(200, {
     applied: result.applied,
     conflicts: result.conflicts,

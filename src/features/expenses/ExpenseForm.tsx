@@ -1,12 +1,20 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
-import { EXPENSE_CATEGORIES, type ExpenseCategory } from '@/db/schema';
+import { EXPENSE_CATEGORIES } from '@/db/schema';
 import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
 import { formatPaise, sanitizeAmountInput } from '@/domain/money';
 import { formatIsoDate, fromIsoDate, toLocalIsoDate } from '@/lib/dates';
+import { AppText } from '@/ui/AppText';
+import { Avatar } from '@/ui/Avatar';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { CATEGORY_STYLE } from '@/ui/CategoryTile';
+import { Icon, type IconName } from '@/ui/Icon';
+import { Segmented } from '@/ui/Segmented';
+import { TextInput } from '@/ui/Text';
 import { useTheme, type Theme } from '@/ui/theme';
 
 import {
@@ -26,25 +34,12 @@ interface ExpenseFormProps {
   onSubmit: (draft: DraftParts) => string | null;
 }
 
-const SPLIT_MODES: { mode: SplitMode; label: string }[] = [
-  { mode: 'equal', label: 'Equally' },
-  { mode: 'exact', label: 'Amounts' },
-  { mode: 'percentage', label: '%' },
-  { mode: 'shares', label: 'Shares' },
+const SPLIT_MODES: readonly { value: SplitMode; label: string }[] = [
+  { value: 'equal', label: 'Equally' },
+  { value: 'exact', label: 'Amounts' },
+  { value: 'percentage', label: '%' },
+  { value: 'shares', label: 'Shares' },
 ];
-
-const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
-  general: 'General',
-  food: 'Food',
-  groceries: 'Groceries',
-  travel: 'Travel',
-  transport: 'Transport',
-  stay: 'Stay',
-  shopping: 'Shopping',
-  utilities: 'Utilities',
-  entertainment: 'Fun',
-  other: 'Other',
-};
 
 const VALUE_KEYS = { exact: 'exactAmounts', percentage: 'percentages', shares: 'shares' } as const;
 
@@ -59,6 +54,7 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
 
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
   const analysis = useMemo(() => analyzeForm(state, memberIds), [state, memberIds]);
+  const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? 'Someone';
 
   const update = (patch: Partial<ExpenseFormState>) => {
     setState((s) => ({ ...s, ...patch }));
@@ -122,7 +118,10 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
   const formatPreview = (paise: number | undefined) =>
     paise === undefined ? '' : `${analysis.previewIsEstimate ? '≈ ' : ''}${formatPaise(paise)}`;
 
-  const input = inputStyle(theme);
+  const smallInput = [
+    styles.smallInput,
+    { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+  ];
 
   return (
     <>
@@ -131,34 +130,57 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <TextInput
-          value={state.description}
-          onChangeText={(description) => update({ description })}
-          placeholder="What was it for?"
-          placeholderTextColor={theme.muted}
-          maxLength={MAX_DESCRIPTION_LENGTH}
-          style={[input, styles.description]}
-          autoFocus={state.description === ''}
-        />
-
-        <View style={[styles.amountRow, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-          <Text style={[styles.rupee, { color: theme.muted }]}>₹</Text>
-          <TextInput
-            value={state.amountText}
-            onChangeText={(text) => update({ amountText: sanitizeAmountInput(text, state.amountText) })}
-            placeholder="0"
-            placeholderTextColor={theme.muted}
-            keyboardType="decimal-pad"
-            style={[styles.amountInput, { color: theme.text }]}
-          />
+        {/* ---- Amount ---- */}
+        <View style={styles.amountBlock}>
+          <AppText variant="label" color={theme.muted}>
+            Amount
+          </AppText>
+          <View style={styles.amountRow}>
+            <AppText style={styles.rupee} color={theme.muted}>
+              ₹
+            </AppText>
+            <TextInput
+              value={state.amountText}
+              onChangeText={(text) => update({ amountText: sanitizeAmountInput(text, state.amountText) })}
+              placeholder="0"
+              keyboardType="decimal-pad"
+              accessibilityLabel="Amount in rupees"
+              autoFocus={state.description === '' && state.amountText === ''}
+              style={styles.amountInput}
+            />
+          </View>
         </View>
 
-        <Pressable onPress={pickDate} style={styles.dateRow} accessibilityRole="button">
-          <Text style={{ color: theme.muted }}>Date</Text>
-          <Text style={{ color: theme.primary, fontWeight: '600' }}>
-            {formatIsoDate(state.expenseDate)}
-          </Text>
-        </Pressable>
+        {/* ---- Description + date ---- */}
+        <Card style={styles.fieldsCard}>
+          <View style={[styles.field, styles.fieldDivider, { borderBottomColor: theme.border }]}>
+            <AppText variant="caption" color={theme.muted}>
+              Description
+            </AppText>
+            <TextInput
+              value={state.description}
+              onChangeText={(description) => update({ description })}
+              placeholder="What was it for?"
+              maxLength={MAX_DESCRIPTION_LENGTH}
+              accessibilityLabel="Description"
+              style={styles.descriptionInput}
+            />
+          </View>
+          <Pressable
+            onPress={pickDate}
+            accessibilityRole="button"
+            accessibilityLabel={`Date, ${formatIsoDate(state.expenseDate)}. Change`}
+            style={[styles.field, styles.dateField]}
+          >
+            <View style={styles.grow}>
+              <AppText variant="caption" color={theme.muted}>
+                Date
+              </AppText>
+              <AppText style={styles.medium}>{formatIsoDate(state.expenseDate)}</AppText>
+            </View>
+            <Icon name="calendar" color={theme.muted} size={20} />
+          </Pressable>
+        </Card>
         {Platform.OS === 'ios' && showIosDate ? (
           <DateTimePicker
             value={fromIsoDate(state.expenseDate)}
@@ -170,11 +192,13 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
           />
         ) : null}
 
+        {/* ---- Category ---- */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {EXPENSE_CATEGORIES.map((category) => (
             <Chip
               key={category}
-              label={CATEGORY_LABELS[category]}
+              label={CATEGORY_STYLE[category].label}
+              icon={CATEGORY_STYLE[category].icon}
               selected={state.category === category}
               onPress={() => update({ category })}
               theme={theme}
@@ -183,7 +207,7 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
         </ScrollView>
 
         {/* ---- Paid by ---- */}
-        <SectionTitle theme={theme}>Paid by</SectionTitle>
+        <SectionTitle>Paid by</SectionTitle>
         {state.payerMode === 'single' ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {members.map((m) => (
@@ -197,172 +221,247 @@ export function ExpenseForm({ members, initialState, submitLabel, onSubmit }: Ex
             ))}
           </ScrollView>
         ) : (
-          members.map((m) => (
-            <View key={m.id} style={styles.memberRow}>
-              <Text style={[styles.memberName, { color: theme.text }]}>{m.name}</Text>
-              <TextInput
-                value={state.payerAmounts[m.id] ?? ''}
-                onChangeText={(text) => setPayerAmount(m.id, text)}
-                placeholder="0"
-                placeholderTextColor={theme.muted}
-                keyboardType="decimal-pad"
-                style={[input, styles.smallInput]}
-              />
-            </View>
-          ))
+          <Card style={styles.membersCard}>
+            {members.map((m, index) => (
+              <View
+                key={m.id}
+                style={[
+                  styles.memberRow,
+                  index < members.length - 1 && [styles.rowDivider, { borderBottomColor: theme.border }],
+                ]}
+              >
+                <Avatar seed={m.id} name={m.name} size={32} />
+                <AppText style={styles.grow} numberOfLines={1}>
+                  {m.name}
+                </AppText>
+                <TextInput
+                  value={state.payerAmounts[m.id] ?? ''}
+                  onChangeText={(text) => setPayerAmount(m.id, text)}
+                  placeholder="0"
+                  keyboardType="decimal-pad"
+                  accessibilityLabel={`Amount paid by ${m.name}`}
+                  style={smallInput}
+                />
+              </View>
+            ))}
+          </Card>
         )}
         {state.payerMode === 'multiple' && analysis.payerHint ? (
-          <Text style={{ color: theme.warning }}>{analysis.payerHint}</Text>
+          <Hint text={analysis.payerHint} theme={theme} />
         ) : null}
         <Pressable
           onPress={() => update({ payerMode: state.payerMode === 'single' ? 'multiple' : 'single' })}
           style={styles.linkButton}
+          accessibilityRole="button"
+          hitSlop={8}
         >
-          <Text style={{ color: theme.primary, fontWeight: '600' }}>
+          <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
             {state.payerMode === 'single' ? 'Multiple people paid' : 'One person paid'}
-          </Text>
+          </AppText>
         </Pressable>
 
         {/* ---- Split ---- */}
-        <SectionTitle theme={theme}>Split</SectionTitle>
-        <View style={[styles.tabs, { borderColor: theme.border }]}>
-          {SPLIT_MODES.map(({ mode, label }) => {
-            const selected = state.splitMode === mode;
+        <SectionTitle>Split</SectionTitle>
+        <Segmented
+          options={SPLIT_MODES}
+          value={state.splitMode}
+          onChange={(splitMode) => update({ splitMode })}
+          accessibilityLabel="Split method"
+        />
+
+        <Card style={styles.membersCard}>
+          {members.map((m, index) => {
+            const mode = state.splitMode;
+            const included = state.equalMemberIds.includes(m.id);
+            const divider = index < members.length - 1 && [styles.rowDivider, { borderBottomColor: theme.border }];
+            const preview = (
+              <AppText variant="label" style={[styles.preview, styles.bold]} numberOfLines={1}>
+                {formatPreview(analysis.preview.get(m.id))}
+              </AppText>
+            );
+
+            if (mode === 'equal') {
+              return (
+                <Pressable
+                  key={m.id}
+                  onPress={() => toggleEqualMember(m.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: included }}
+                  accessibilityLabel={`Include ${m.name}`}
+                  style={[styles.memberRow, divider]}
+                >
+                  <View
+                    style={[
+                      styles.check,
+                      included
+                        ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                        : { borderColor: theme.muted },
+                    ]}
+                  >
+                    {included ? <Icon name="check" color={theme.onPrimary} size={16} /> : null}
+                  </View>
+                  <Avatar seed={m.id} name={m.name} size={32} />
+                  <AppText style={styles.grow} color={included ? theme.text : theme.muted} numberOfLines={1}>
+                    {m.name}
+                  </AppText>
+                  {preview}
+                </Pressable>
+              );
+            }
             return (
-              <Pressable
-                key={mode}
-                onPress={() => update({ splitMode: mode })}
-                style={[styles.tab, selected && { backgroundColor: theme.primary }]}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-              >
-                <Text style={{ color: selected ? theme.onPrimary : theme.text, fontWeight: '600' }}>
-                  {label}
-                </Text>
-              </Pressable>
+              <View key={m.id} style={[styles.memberRow, divider]}>
+                <Avatar seed={m.id} name={m.name} size={32} />
+                <AppText style={styles.grow} numberOfLines={1}>
+                  {m.name}
+                </AppText>
+                <TextInput
+                  value={state[VALUE_KEYS[mode]][m.id] ?? ''}
+                  onChangeText={(text) => setSplitValue(mode, m.id, text)}
+                  placeholder="0"
+                  keyboardType={mode === 'shares' ? 'number-pad' : 'decimal-pad'}
+                  accessibilityLabel={`${mode === 'shares' ? 'Shares' : mode === 'percentage' ? 'Percent' : 'Amount'} for ${m.name}`}
+                  style={[smallInput, styles.splitInput]}
+                />
+                {preview}
+              </View>
             );
           })}
-        </View>
+        </Card>
+        {analysis.splitHint ? <Hint text={analysis.splitHint} theme={theme} /> : null}
 
-        {members.map((m) => {
-          const mode = state.splitMode;
-          return (
-            <View key={m.id} style={styles.memberRow}>
-              {mode === 'equal' ? (
-                <Pressable
-                  onPress={() => toggleEqualMember(m.id)}
-                  style={styles.checkRow}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: state.equalMemberIds.includes(m.id) }}
-                >
-                  <Text style={{ color: theme.primary, fontSize: 20 }}>
-                    {state.equalMemberIds.includes(m.id) ? '☑' : '☐'}
-                  </Text>
-                  <Text style={[styles.memberName, { color: theme.text }]}>{m.name}</Text>
-                </Pressable>
-              ) : (
-                <>
-                  <Text style={[styles.memberName, { color: theme.text }]}>{m.name}</Text>
-                  <TextInput
-                    value={state[VALUE_KEYS[mode]][m.id] ?? ''}
-                    onChangeText={(text) => setSplitValue(mode, m.id, text)}
-                    placeholder="0"
-                    placeholderTextColor={theme.muted}
-                    keyboardType={mode === 'shares' ? 'number-pad' : 'decimal-pad'}
-                    style={[input, styles.smallInput]}
-                  />
-                </>
-              )}
-              <Text style={[styles.preview, { color: theme.muted }]} numberOfLines={1}>
-                {formatPreview(analysis.preview.get(m.id))}
-              </Text>
-            </View>
-          );
-        })}
-        {analysis.splitHint ? <Text style={{ color: theme.warning }}>{analysis.splitHint}</Text> : null}
+        {error ? (
+          <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite" style={styles.error}>
+            {error}
+          </AppText>
+        ) : null}
 
-        {error ? <Text style={[styles.error, { color: theme.negative }]}>{error}</Text> : null}
-
-        <Pressable
-          accessibilityRole="button"
+        {/* In the scroll content, not pinned: a pinned bar would sit on top of the keyboard toolbar
+            on small screens, and the form is short enough that Save is one scroll away. */}
+        <Button
+          label={submitLabel}
+          size="lg"
           onPress={submit}
-          style={({ pressed }) => [
-            styles.submit,
-            { backgroundColor: theme.primary, opacity: pressed ? 0.8 : 1 },
-          ]}
-        >
-          <Text style={[styles.submitText, { color: theme.onPrimary }]}>{submitLabel}</Text>
-        </Pressable>
+          style={styles.submit}
+          accessibilityLabel={
+            state.singlePayerId && state.payerMode === 'single' ? `${submitLabel}, paid by ${nameOf(state.singlePayerId)}` : submitLabel
+          }
+        />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
   );
 }
 
-function SectionTitle({ theme, children }: { theme: Theme; children: string }) {
-  return <Text style={[styles.section, { color: theme.muted }]}>{children}</Text>;
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <AppText variant="label" accessibilityRole="header" style={styles.section}>
+      {children}
+    </AppText>
+  );
+}
+
+function Hint({ text, theme }: { text: string; theme: Theme }) {
+  return (
+    <View style={styles.hint}>
+      <Icon name="info" color={theme.warning} size={16} />
+      <AppText variant="caption" color={theme.warning} style={styles.grow}>
+        {text}
+      </AppText>
+    </View>
+  );
 }
 
 function Chip({
   label,
+  icon,
   selected,
   onPress,
   theme,
 }: {
   label: string;
+  icon?: IconName;
   selected: boolean;
   onPress: () => void;
   theme: Theme;
 }) {
+  const fg = selected ? theme.onPrimarySoft : theme.text;
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
       style={[
         styles.chip,
         {
           borderColor: selected ? theme.primary : theme.border,
-          backgroundColor: selected ? theme.primary : 'transparent',
+          backgroundColor: selected ? theme.primarySoft : theme.surface,
         },
       ]}
     >
-      <Text style={{ color: selected ? theme.onPrimary : theme.text }}>{label}</Text>
+      {icon ? <Icon name={icon} color={fg} size={16} /> : null}
+      <AppText variant="label" color={fg} style={selected ? styles.bold : undefined}>
+        {label}
+      </AppText>
     </Pressable>
   );
 }
 
-const inputStyle = (theme: Theme) => [
-  styles.input,
-  { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border },
-];
-
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 10, paddingBottom: 48 },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
-  description: { fontSize: 18 },
-  amountRow: {
+  container: { paddingHorizontal: 20, paddingTop: 8, gap: 12, paddingBottom: 48 },
+  grow: { flex: 1, minWidth: 0 },
+  medium: { fontWeight: '500' },
+  bold: { fontWeight: '600' },
+  amountBlock: { alignItems: 'center', paddingVertical: 8 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rupee: { fontSize: 28, fontWeight: '500' },
+  amountInput: {
+    minWidth: 120,
+    maxWidth: 260,
+    fontSize: 42,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 4,
+  },
+  fieldsCard: { padding: 0, borderRadius: 18 },
+  field: { paddingHorizontal: 14, paddingVertical: 10 },
+  fieldDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
+  descriptionInput: { fontSize: 16, paddingVertical: 4, paddingHorizontal: 0 },
+  dateField: { flexDirection: 'row', alignItems: 'center', minHeight: 56 },
+  chips: { gap: 8, paddingVertical: 2 },
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    minHeight: 40,
   },
-  rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 32, fontWeight: '600', paddingVertical: 8 },
-  dateRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
-  chips: { gap: 8, paddingVertical: 4 },
-  chip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 },
-  section: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
-  tabs: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 10 },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
-  checkRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  memberName: { flex: 1, fontSize: 16 },
-  smallInput: { width: 96, textAlign: 'right' },
-  preview: { width: 100, textAlign: 'right', fontSize: 13 },
-  linkButton: { paddingVertical: 6 },
-  error: { marginTop: 8 },
-  submit: { marginTop: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  submitText: { fontSize: 16, fontWeight: '600' },
+  section: { fontWeight: '600', marginTop: 6 },
+  membersCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52 },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
+  check: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallInput: {
+    width: 96,
+    textAlign: 'right',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 15,
+  },
+  splitInput: { width: 76 },
+  preview: { width: 92, textAlign: 'right' },
+  hint: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
+  linkButton: { paddingVertical: 4, alignSelf: 'flex-start' },
+  error: { marginTop: 4 },
+  submit: { marginTop: 12 },
 });

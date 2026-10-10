@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -13,6 +13,7 @@ import { joinGroup, previewInvite, type InvitePreview } from '@/features/invites
 import { describeInviteStatus, extractInviteCode, formatInviteCode } from '@/features/invites/messages';
 import { syncNow } from '@/sync/syncService';
 import { useTheme, type Theme } from '@/ui/theme';
+import { Text, TextInput } from '@/ui/Text';
 
 type Phase =
   | { kind: 'enter' }
@@ -320,20 +321,20 @@ const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 48, flexGrow: 1, justifyContent: 'center' },
   block: { gap: 12, alignItems: 'stretch' },
   title: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase' },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
   code: {
     fontSize: 28,
     fontWeight: '700',
     letterSpacing: 4,
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderRadius: 10,
+    borderRadius: 14,
     paddingVertical: 8,
     textAlign: 'center',
   },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
   codeInput: { fontSize: 22, letterSpacing: 3, textAlign: 'center' },
-  option: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 2 },
-  primaryButton: { marginTop: 8, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  option: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 2 },
+  primaryButton: { marginTop: 8, borderRadius: 25, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
   linkButton: { paddingVertical: 8, alignItems: 'center' },
 });

@@ -1,13 +1,12 @@
 import { router } from 'expo-router';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { forgetGroupLocally } from '@/sync/lostGroups';
-import { useTheme } from '@/ui/theme';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
 
 export function LostAccessBanner({ groupId, groupName }: { groupId: string; groupName: string }) {
-  const theme = useTheme();
-
   const confirmForget = () =>
     Alert.alert(
       `Remove “${groupName}” from this phone?`,
@@ -27,20 +26,13 @@ export function LostAccessBanner({ groupId, groupName }: { groupId: string; grou
     );
 
   return (
-    <View style={[styles.banner, { borderColor: theme.warning, backgroundColor: theme.surface }]}>
-      <Text style={{ color: theme.text, fontWeight: '600' }}>You no longer have access to this group</Text>
-      <Text style={{ color: theme.muted }}>
-        Someone may have removed you. You can still read what’s saved on this phone, but it can’t be changed.
-        If you’re added back, it updates on the next sync.
-      </Text>
-      <Pressable accessibilityRole="button" onPress={confirmForget} hitSlop={8} style={styles.action}>
-        <Text style={{ color: theme.negative, fontWeight: '600' }}>Remove from this phone</Text>
-      </Pressable>
-    </View>
+    <Banner
+      tone="warning"
+      icon="lock"
+      title="You no longer have access to this group"
+      body="Someone may have removed you. You can still read what’s saved on this phone, but it can’t be changed. If you’re added back, it updates on the next sync."
+    >
+      <Button label="Remove from this phone" variant="danger" onPress={confirmForget} />
+    </Banner>
   );
 }
-
-const styles = StyleSheet.create({
-  banner: { borderWidth: 1, borderRadius: 10, padding: 12, gap: 6 },
-  action: { paddingVertical: 4 },
-});

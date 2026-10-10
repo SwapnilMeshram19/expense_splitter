@@ -73,6 +73,16 @@ const errorCode = (e: unknown): SyncErrorCode | 'UNKNOWN' => {
   return o?.name === 'SyncError' && o.code ? o.code : 'UNKNOWN';
 };
 
+const successListeners = new Set<() => void>();
+
+/** Called after every successful cycle, whoever started it (scheduler, pull-to-refresh, join). */
+export function onSyncSucceeded(listener: () => void): () => void {
+  successListeners.add(listener);
+  return () => {
+    successListeners.delete(listener);
+  };
+}
+
 let inFlight: Promise<SyncOutcome> | null = null;
 
 export const isSyncing = () => inFlight !== null;
@@ -89,6 +99,7 @@ export function syncNow(): Promise<SyncOutcome> {
       emit({ ...status, state: 'syncing', message: null, errorCode: null });
       await runSync(appContext, supabaseTransport);
       emit({ state: 'idle', lastSyncedAt: Date.now(), message: null, errorCode: null, ...counts() });
+      successListeners.forEach((listener) => listener());
       return 'ok';
     } catch (e) {
       const code = errorCode(e);

@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -26,6 +26,7 @@ import {
   describeMemberError,
 } from '@/features/groups/messages';
 import { useTheme, type Theme } from '@/ui/theme';
+import { Text, TextInput } from '@/ui/Text';
 import { isGroupLost } from '@/db/repositories/access';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 
@@ -233,7 +234,14 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
               an expense. Balances stay the same either way.
             </Text>
           </View>
-          <Switch value={group.simplifyDebts} onValueChange={toggleSimplify} />
+          <Switch
+            value={group.simplifyDebts}
+            onValueChange={toggleSimplify}
+            accessibilityLabel="Simplify debts"
+            trackColor={{ false: theme.surfaceAlt, true: theme.primary }}
+            thumbColor={theme.surface}
+            ios_backgroundColor={theme.surfaceAlt}
+          />
         </View>
 
         <Text style={[styles.label, { color: theme.muted }]}>People</Text>
@@ -324,11 +332,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   notMember: { textAlign: 'center', fontSize: 15 },
   container: { padding: 16, gap: 10, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
-  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 12 },
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   flex: { flex: 1 },
-  linkRow: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12 },
+  linkRow: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 52, justifyContent: 'center' },
   switchRow: { marginTop: 12, gap: 16 },
   memberRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   inlineButton: { paddingHorizontal: 6, paddingVertical: 8 },

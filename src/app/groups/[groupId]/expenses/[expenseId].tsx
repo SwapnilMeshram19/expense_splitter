@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { deleteExpense, updateExpense } from '@/db/repositories/expenses';
@@ -8,7 +8,9 @@ import { ExpenseForm } from '@/features/expenses/ExpenseForm';
 import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
+import { HeaderIconButton } from '@/ui/HeaderIconButton';
 import { useTheme } from '@/ui/theme';
+import { Text } from '@/ui/Text';
 
 export default function EditExpenseScreen() {
   const { groupId, expenseId } = useLocalSearchParams<{ groupId: string; expenseId: string }>();
@@ -54,9 +56,7 @@ export default function EditExpenseScreen() {
         options={{
           title: 'Edit expense',
           headerRight: () => (
-            <Pressable onPress={confirmDelete} hitSlop={8} accessibilityRole="button">
-              <Text style={{ color: theme.negative, fontWeight: '600' }}>Delete</Text>
-            </Pressable>
+            <HeaderIconButton icon="delete" label="Delete expense" color={theme.negative} onPress={confirmDelete} />
           ),
         }}
       />

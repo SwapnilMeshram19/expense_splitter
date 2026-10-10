@@ -7,6 +7,7 @@ import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
 import { formatPaise } from '@/domain/money';
 import { loadOverview, OVERVIEW_TABLES, type GroupSummary, type Overview } from '@/features/overview/loadOverview';
+import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
@@ -19,11 +20,13 @@ const loadHome = () => loadOverview(db, getDeviceUserId());
 export default function HomeScreen() {
   const theme = useTheme();
   const overview = useLiveData(OVERVIEW_TABLES, loadHome);
+  const refreshControl = useSyncRefreshControl();
 
   return (
     <View style={styles.container}>
       <TabHeader />
       <FlashList
+        refreshControl={refreshControl}
         data={overview.groups}
         keyExtractor={(row) => row.group.id}
         contentContainerStyle={styles.list}

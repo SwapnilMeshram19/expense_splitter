@@ -11,6 +11,7 @@ import { formatPaise } from '@/domain/money';
 import { loadOverview, OVERVIEW_TABLES, type MyTransfer } from '@/features/overview/loadOverview';
 import { getPendingUpiPayment } from '@/features/upi/pendingUpiPayment';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
+import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -28,6 +29,7 @@ interface PendingContext {
 export default function SettleTab() {
   const theme = useTheme();
   const overview = useLiveData(OVERVIEW_TABLES, load);
+  const refreshControl = useSyncRefreshControl();
   const [pending, setPending] = useState<PendingContext | null>(null);
 
   // The pending UPI payment lives in settings, which useLiveData doesn't watch: re-read on focus
@@ -53,7 +55,7 @@ export default function SettleTab() {
   return (
     <View style={styles.container}>
       <TabHeader title="Settle up" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={refreshControl}>
         {pending && pendingGroup?.canEdit ? (
           <PendingUpiBanner
             groupId={pending.groupId}
