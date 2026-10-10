@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '@/db/client';
 import { getDeviceUserId } from '@/db/session';
 import { openAddExpense } from '@/features/overview/openAddExpense';
+import { GradientSurface } from '@/ui/GradientSurface';
 import { Icon, type IconName } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
 
@@ -28,16 +29,11 @@ function AddButton() {
         onPress={() => openAddExpense(db, getDeviceUserId())}
         accessibilityRole="button"
         accessibilityLabel="Add expense"
-        style={({ pressed }) => [
-          styles.addButton,
-          {
-            backgroundColor: theme.primary,
-            borderColor: theme.background,
-            opacity: pressed ? 0.85 : 1,
-          },
-        ]}
+        style={({ pressed }) => [styles.addRing, { borderColor: theme.background, opacity: pressed ? 0.85 : 1 }]}
       >
-        <Icon name="add" color={theme.onPrimary} size={26} />
+        <GradientSurface style={styles.addButton}>
+          <Icon name="add" color={theme.onGradient} size={26} />
+        </GradientSurface>
       </Pressable>
     </View>
   );
@@ -86,14 +82,7 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   iconPill: { width: 52, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   addSlot: { flex: 1, alignItems: 'center' },
-  addButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 4,
-    marginTop: -22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 3,
-  },
+  // Ring in the page colour around the gradient disc, so the button "cuts" into the tab bar.
+  addRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 4, marginTop: -24, overflow: 'hidden' },
+  addButton: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

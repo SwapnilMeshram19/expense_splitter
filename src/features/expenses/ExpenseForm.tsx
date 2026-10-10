@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
   bold: { fontWeight: '600' },
   amountBlock: { alignItems: 'center', paddingVertical: 8 },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rupee: { fontSize: 28, fontWeight: '500' },
+  rupee: { fontSize: 28, lineHeight: 36, fontWeight: '500' },
   amountInput: {
     minWidth: 120,
     maxWidth: 260,

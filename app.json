@@ -14,7 +14,7 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png",
-        "backgroundColor": "#0A6AA1"
+        "backgroundColor": "#1C5AAE"
       },
       "package": "in.ssoftapp.split",
       "intentFilters": [
@@ -40,7 +40,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#0A6AA1"
+          "backgroundColor": "#1C5AAE"
         }
       ],
       [

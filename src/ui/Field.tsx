@@ -74,6 +74,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: 16,
   },
-  rupee: { fontSize: 28, fontWeight: '500', marginRight: 6 },
+  rupee: { fontSize: 28, lineHeight: 36, fontWeight: '500', marginRight: 6 },
   amountInput: { flex: 1, fontSize: 34, fontWeight: '700', paddingVertical: 10 },
 });

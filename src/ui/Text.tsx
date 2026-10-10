@@ -5,6 +5,7 @@ import {
   type TextProps,
 } from 'react-native';
 
+import { FONT_RESET } from './AppText';
 import { useTheme } from './theme';
 
 /**
@@ -14,7 +15,7 @@ import { useTheme } from './theme';
  */
 export function Text({ style, ...rest }: TextProps) {
   const theme = useTheme();
-  return <RNText {...rest} style={[{ fontFamily: theme.fontFamily, color: theme.text }, style]} />;
+  return <RNText {...rest} style={[FONT_RESET, { fontFamily: theme.fontFamily, color: theme.text }, style]} />;
 }
 
 export function TextInput({ style, placeholderTextColor, ...rest }: TextInputProps) {
@@ -24,7 +25,7 @@ export function TextInput({ style, placeholderTextColor, ...rest }: TextInputPro
       {...rest}
       placeholderTextColor={placeholderTextColor ?? theme.muted}
       selectionColor={theme.primary}
-      style={[{ fontFamily: theme.fontFamily, color: theme.text }, style]}
+      style={[{ includeFontPadding: false, fontFamily: theme.fontFamily, color: theme.text }, style]}
     />
   );
 }

@@ -31,6 +31,7 @@ import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CategoryTile } from '@/ui/CategoryTile';
+import { GradientSurface } from '@/ui/GradientSurface';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
 import { Icon } from '@/ui/Icon';
 import { Segmented } from '@/ui/Segmented';
@@ -345,15 +346,16 @@ export default function GroupDetailScreen() {
           accessibilityRole="button"
           accessibilityLabel="Add expense"
           onPress={() => router.push({ pathname: '/groups/[groupId]/expenses/new', params: { groupId } })}
-          style={({ pressed }) => [
-            styles.fab,
-            { backgroundColor: theme.primary, bottom: insets.bottom + 24, opacity: pressed ? 0.85 : 1 },
-          ]}
+          style={({ pressed }) => [styles.fab, { bottom: insets.bottom + 24, opacity: pressed ? 0.85 : 1 }]}
         >
-          <Icon name="add" color={theme.onPrimary} size={22} />
-          <AppText variant="label" color={theme.onPrimary} style={styles.fabText}>
-            Add expense
-          </AppText>
+          <GradientSurface style={styles.fabInner}>
+            <View style={styles.fabIcon}>
+              <Icon name="add" color={theme.onGradient} size={22} />
+            </View>
+            <AppText variant="label" color={theme.onGradient} style={styles.fabText}>
+              Add expense
+            </AppText>
+          </GradientSurface>
         </Pressable>
       ) : null}
     </View>
@@ -552,17 +554,15 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   activityRow: { paddingVertical: 12, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
   emptyText: { paddingVertical: 12 },
-  fab: {
-    position: 'absolute',
-    right: 20,
+  fab: { position: 'absolute', right: 20, borderRadius: 28, overflow: 'hidden', elevation: 4 },
+  fabInner: {
     minHeight: 56,
     paddingLeft: 18,
     paddingRight: 22,
-    borderRadius: 28,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    elevation: 4,
   },
-  fabText: { fontSize: 15, fontWeight: '600' },
+  fabIcon: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  fabText: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
 });

@@ -2,8 +2,11 @@
  * Colour tokens. Pure data (no React, no native imports) so tests can check contrast.
  *
  * Accents are user-selectable; everything else is fixed per scheme. "You're owed" amounts use
- * the accent (`positive === primary`), "you owe" uses a fixed burnt orange in every accent so the
- * two never depend on hue alone; labels always say which is which as well.
+ * the accent (`positive === primary`), "you owe" uses a fixed rose in every accent; labels always
+ * say which is which as well, so colour is never the only signal.
+ *
+ * Neutrals are cool (blue-grey) to sit with the blue-family accents; no orange anywhere except
+ * the amber of warnings, which is a status colour, not decoration.
  */
 
 export type ColorScheme = 'light' | 'dark';
@@ -19,67 +22,100 @@ interface AccentColors {
   primarySoft: string;
   /** Text/icon colour on primarySoft. */
   onPrimarySoft: string;
+  /** Hero surfaces (balance card, centre + button): diagonal gradient, white content on top. */
+  gradient: readonly [string, string];
 }
 
 export const ACCENTS: Record<AccentId, { label: string; light: AccentColors; dark: AccentColors }> = {
   ocean: {
     label: 'Ocean',
-    light: { primary: '#0A6AA1', onPrimary: '#FFFFFF', primarySoft: '#E1EFF7', onPrimarySoft: '#08507A' },
-    dark: { primary: '#6CB8E6', onPrimary: '#06223A', primarySoft: '#16334A', onPrimarySoft: '#A9D6F2' },
+    light: {
+      primary: '#0A6AA1',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#E1EFF8',
+      onPrimarySoft: '#08507A',
+      gradient: ['#0B72B5', '#2E3FA6'],
+    },
+    dark: {
+      primary: '#6CB8E6',
+      onPrimary: '#06223A',
+      primarySoft: '#16334A',
+      onPrimarySoft: '#A9D6F2',
+      gradient: ['#0F5C8E', '#26357F'],
+    },
   },
   indigo: {
     label: 'Indigo',
-    light: { primary: '#3A41C6', onPrimary: '#FFFFFF', primarySoft: '#E5E7FB', onPrimarySoft: '#2A2F94' },
-    dark: { primary: '#8E95F2', onPrimary: '#12143A', primarySoft: '#252859', onPrimarySoft: '#B9BEF8' },
+    light: {
+      primary: '#3A41C6',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#E7E8FC',
+      onPrimarySoft: '#2A2F94',
+      gradient: ['#4B4FD8', '#6B2FB8'],
+    },
+    dark: {
+      primary: '#8E95F2',
+      onPrimary: '#12143A',
+      primarySoft: '#252859',
+      onPrimarySoft: '#B9BEF8',
+      gradient: ['#3638A8', '#4F2590'],
+    },
   },
   plum: {
     label: 'Plum',
-    light: { primary: '#8A2D6E', onPrimary: '#FFFFFF', primarySoft: '#F4E4EF', onPrimarySoft: '#6B1F55' },
-    dark: { primary: '#E39BCD', onPrimary: '#3A0F2E', primarySoft: '#3A1D33', onPrimarySoft: '#F0C3E2' },
+    light: {
+      primary: '#8A2D6E',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#F6E7F1',
+      onPrimarySoft: '#6B1F55',
+      gradient: ['#9C2F7A', '#5E2A8A'],
+    },
+    dark: {
+      primary: '#E39BCD',
+      onPrimary: '#3A0F2E',
+      primarySoft: '#3A1D33',
+      onPrimarySoft: '#F0C3E2',
+      gradient: ['#7A2461', '#47206B'],
+    },
   },
   slate: {
     label: 'Slate',
-    light: { primary: '#3A4553', onPrimary: '#FFFFFF', primarySoft: '#E6E9ED', onPrimarySoft: '#2A323D' },
-    dark: { primary: '#A9B6C6', onPrimary: '#1A2029', primarySoft: '#262D37', onPrimarySoft: '#CED6E0' },
+    light: {
+      primary: '#3A4553',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#E7EBF0',
+      onPrimarySoft: '#2A323D',
+      gradient: ['#3E4C5E', '#1F2937'],
+    },
+    dark: {
+      primary: '#A9B6C6',
+      onPrimary: '#1A2029',
+      primarySoft: '#262D37',
+      onPrimarySoft: '#CED6E0',
+      gradient: ['#334155', '#1E2532'],
+    },
   },
   teal: {
     label: 'Teal',
-    light: { primary: '#0E6B5C', onPrimary: '#FFFFFF', primarySoft: '#DDEFEA', onPrimarySoft: '#0A5246' },
-    dark: { primary: '#4FC3AE', onPrimary: '#0B1F1B', primarySoft: '#1E3A35', onPrimarySoft: '#7FD8C6' },
-  },
-};
-
-const BASE: Record<ColorScheme, BaseColors> = {
-  light: {
-    background: '#F6F5F1',
-    surface: '#FFFFFF',
-    surfaceAlt: '#EFEDE7',
-    text: '#17181C',
-    muted: '#5E6068',
-    border: '#E3E0D8',
-    negative: '#B8461B',
-    warning: '#8A4B00',
-    warningSoft: '#FBE7C6',
-    highlight: '#F2A93B',
-    onHighlight: '#17181C',
-  },
-  dark: {
-    background: '#111214',
-    surface: '#1A1B1F',
-    surfaceAlt: '#23252A',
-    text: '#F1EFEA',
-    muted: '#A3A5AD',
-    border: '#2E3036',
-    negative: '#F08A5D',
-    warning: '#F2C77E',
-    warningSoft: '#3A2C14',
-    highlight: '#F2A93B',
-    onHighlight: '#17181C',
+    light: {
+      primary: '#0E6B5C',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#DDF1EC',
+      onPrimarySoft: '#0A5246',
+      gradient: ['#0D7466', '#0B5F86'],
+    },
+    dark: {
+      primary: '#4FC3AE',
+      onPrimary: '#0B1F1B',
+      primarySoft: '#1E3A35',
+      onPrimarySoft: '#7FD8C6',
+      gradient: ['#0B6457', '#0B4A69'],
+    },
   },
 };
 
 interface BaseColors {
-  /** Screen background (warm paper in light mode). */
+  /** Screen background (cool off-white in light mode). */
   background: string;
   /** Cards, inputs, tab bar. */
   surface: string;
@@ -88,14 +124,41 @@ interface BaseColors {
   text: string;
   muted: string;
   border: string;
+  /** "You owe" amounts and destructive actions. */
   negative: string;
   /** Warning text; on warningSoft or the screen background. */
   warning: string;
   warningSoft: string;
-  /** Marigold call-to-action (Settle up). Same in both schemes, always with onHighlight text. */
-  highlight: string;
-  onHighlight: string;
+  /** Text on the hero gradient (always white: every gradient is dark enough for it). */
+  onGradient: string;
 }
+
+const BASE: Record<ColorScheme, BaseColors> = {
+  light: {
+    background: '#F3F6FA',
+    surface: '#FFFFFF',
+    surfaceAlt: '#E9EEF5',
+    text: '#121722',
+    muted: '#5A6474',
+    border: '#DCE3EC',
+    negative: '#C63852',
+    warning: '#8A5A00',
+    warningSoft: '#FCEFD2',
+    onGradient: '#FFFFFF',
+  },
+  dark: {
+    background: '#0D1117',
+    surface: '#161B22',
+    surfaceAlt: '#1F2630',
+    text: '#EDF1F6',
+    muted: '#98A2B3',
+    border: '#2A3340',
+    negative: '#FFA3B1',
+    warning: '#F5C76B',
+    warningSoft: '#3A2E12',
+    onGradient: '#FFFFFF',
+  },
+};
 
 export interface Theme extends BaseColors, AccentColors {
   scheme: ColorScheme;

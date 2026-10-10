@@ -16,6 +16,7 @@ import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
+import { GradientSurface } from '@/ui/GradientSurface';
 import { GroupTile } from '@/ui/GroupTile';
 import { Greeting, TabHeader } from '@/ui/TabHeader';
 import { useTheme, type Theme } from '@/ui/theme';
@@ -78,22 +79,22 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
   const { net, owedToMe, iOwe } = overview;
   const title =
     net > 0 ? 'Overall, you are owed' : net < 0 ? 'Overall, you owe' : 'You’re all settled up';
-  // Tiles tint the card instead of using a second colour: light-on-primary in light mode,
-  // dark-on-primary in dark mode (where primary is the lighter shade).
-  const tile = theme.scheme === 'light' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)';
+  // Tiles are a light wash over the gradient, so they follow whichever accent is chosen.
+  const tile = 'rgba(255,255,255,0.14)';
+  const fg = theme.onGradient;
   const settled = owedToMe === 0 && iOwe === 0;
 
   return (
-    <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
+    <GradientSurface style={styles.balanceCard}>
       <View
         accessible
         accessibilityLabel={settled ? title : `${title} ${formatPaise(Math.abs(net))}`}
       >
-        <AppText variant="label" color={theme.onPrimary} style={styles.dim}>
+        <AppText variant="label" color={fg} style={styles.dim}>
           {title}
         </AppText>
         {!settled ? (
-          <AppText variant="display" color={theme.onPrimary}>
+          <AppText variant="display" color={fg}>
             {formatPaise(Math.abs(net))}
           </AppText>
         ) : null}
@@ -101,18 +102,18 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
       {!settled ? (
         <View style={styles.tiles}>
           <View style={[styles.tile, { backgroundColor: tile }]} accessible>
-            <AppText variant="caption" color={theme.onPrimary} style={styles.dim}>
+            <AppText variant="caption" color={fg} style={styles.dim}>
               Owed to you
             </AppText>
-            <AppText variant="amount" color={theme.onPrimary} style={styles.tileAmount}>
+            <AppText variant="amount" color={fg} style={styles.tileAmount}>
               {formatPaise(owedToMe)}
             </AppText>
           </View>
           <View style={[styles.tile, { backgroundColor: tile }]} accessible>
-            <AppText variant="caption" color={theme.onPrimary} style={styles.dim}>
+            <AppText variant="caption" color={fg} style={styles.dim}>
               You owe
             </AppText>
-            <AppText variant="amount" color={theme.onPrimary} style={styles.tileAmount}>
+            <AppText variant="amount" color={fg} style={styles.tileAmount}>
               {formatPaise(iOwe)}
             </AppText>
           </View>
@@ -121,12 +122,12 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
       {!settled ? (
         <Button
           label="Settle up"
-          variant="highlight"
+          variant="onGradient"
           size="lg"
           onPress={() => router.navigate('/settle')}
         />
       ) : null}
-    </View>
+    </GradientSurface>
   );
 }
 

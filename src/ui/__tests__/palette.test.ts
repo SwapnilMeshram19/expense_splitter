@@ -31,8 +31,12 @@ describe.each(SCHEMES)('%s theme', (scheme) => {
       ['warning on background', t.warning, t.background],
       ['positive amount on surface', t.positive, t.surface],
       ['negative amount on surface', t.negative, t.surface],
+      ['negative amount on background (history rows)', t.negative, t.background],
+      ['positive amount on background', t.positive, t.background],
+      ['gradient start on the white hero button', t.gradient[0], '#FFFFFF'],
       ['warning on warningSoft', t.warning, t.warningSoft],
-      ['onHighlight on highlight', t.onHighlight, t.highlight],
+      ['white on both gradient ends', t.onGradient, t.gradient[0]],
+      ['white on gradient end', t.onGradient, t.gradient[1]],
     ];
 
     it.each(pairs)('%s is at least 4.5:1', (_label, fg, bg) => {

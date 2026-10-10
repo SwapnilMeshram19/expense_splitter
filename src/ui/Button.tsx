@@ -4,7 +4,14 @@ import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { useTheme } from './theme';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'soft' | 'highlight' | 'danger';
+/**
+ * - primary: filled accent (main action of a screen)
+ * - secondary: outlined on the card surface
+ * - soft: tinted accent (secondary actions that should still read as "accent")
+ * - onGradient: white pill for use ON the hero gradient (balance card)
+ * - danger: outlined, rose text (sign out, delete)
+ */
+export type ButtonVariant = 'primary' | 'secondary' | 'soft' | 'onGradient' | 'danger';
 
 interface ButtonProps {
   label: string;
@@ -37,7 +44,7 @@ export function Button({
     primary: { bg: theme.primary, fg: theme.onPrimary, border: theme.primary },
     secondary: { bg: theme.surface, fg: theme.text, border: theme.border },
     soft: { bg: theme.primarySoft, fg: theme.onPrimarySoft, border: theme.primarySoft },
-    highlight: { bg: theme.highlight, fg: theme.onHighlight, border: theme.highlight },
+    onGradient: { bg: '#FFFFFF', fg: theme.gradient[0], border: '#FFFFFF' },
     danger: { bg: theme.surface, fg: theme.negative, border: theme.border },
   }[variant];
 
@@ -63,7 +70,12 @@ export function Button({
         <ActivityIndicator color={colors.fg} />
       ) : (
         <View style={styles.content}>
-          {icon ? <Icon name={icon} color={colors.fg} size={18} /> : null}
+          {icon ? (
+            // Fixed box: the glyph sits centred on the text's line, not on its baseline.
+            <View style={styles.iconBox}>
+              <Icon name={icon} color={colors.fg} size={18} />
+            </View>
+          ) : null}
           <AppText variant="label" color={colors.fg} style={styles.label} numberOfLines={1}>
             {label}
           </AppText>
@@ -77,6 +89,7 @@ const styles = StyleSheet.create({
   base: { borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   md: { minHeight: 44, borderRadius: 22 },
   lg: { minHeight: 50, borderRadius: 25 },
-  content: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  label: { fontSize: 15, fontWeight: '600' },
+  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  iconBox: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
 });

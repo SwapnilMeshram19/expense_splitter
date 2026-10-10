@@ -19,6 +19,7 @@ import {
   OTP_LENGTH,
   RESEND_COOLDOWN_S,
 } from '@/features/auth/messages';
+import { GoogleButton } from '@/features/auth/GoogleButton';
 import { useMyProfile } from '@/features/auth/useMyProfile';
 import { SyncPanel } from '@/sync/SyncPanel';
 import { AppText } from '@/ui/AppText';
@@ -329,7 +330,7 @@ function SignInCard({ notice }: { notice: string | null }) {
 
           {isGoogleSignInAvailable ? (
             <>
-              <Button label="Continue with Google" variant="secondary" size="lg" onPress={() => void google()} busy={busy} />
+              <GoogleButton onPress={() => void google()} busy={busy} />
               <AppText variant="caption" color={theme.muted} style={styles.divider}>
                 or use email
               </AppText>

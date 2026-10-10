@@ -1,4 +1,6 @@
+import { MaterialSymbols_400Regular } from '@expo-google-fonts/material-symbols/400Regular';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -18,6 +20,8 @@ export default function RootLayout() {
   const theme = useTheme();
   const preference = useThemePreference();
   const { success, error } = useMigrations(db, migrations);
+  // Start loading the Android icon font while migrations run, so icons don't pop in later.
+  useFonts({ MaterialSymbols_400Regular });
 
   // Order matters: the saved theme first (it gates the first real render), then auth links the
   // account to local data before the scheduler's first push.

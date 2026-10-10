@@ -14,27 +14,30 @@ export function initialsOf(name: string | null | undefined): string {
   return last ? head(first) + head(last) : head(first);
 }
 
-/** Background/foreground pairs, each ≥ 4.5:1 so initials stay readable. */
+/**
+ * Background/foreground pairs, each ≥ 4.5:1 so initials stay readable. Cool blues, teals and
+ * violets that sit with every accent; index order matters (CategoryTile picks by index).
+ */
 const SWATCHES: Record<ColorScheme, readonly { bg: string; fg: string }[]> = {
   light: [
-    { bg: '#0A6AA1', fg: '#FFFFFF' },
-    { bg: '#F2A93B', fg: '#17181C' },
-    { bg: '#8A2D6E', fg: '#FFFFFF' },
-    { bg: '#E1EFF7', fg: '#08507A' },
-    { bg: '#3A4553', fg: '#FFFFFF' },
-    { bg: '#F4E4EF', fg: '#6B1F55' },
-    { bg: '#9A4A12', fg: '#FFFFFF' },
-    { bg: '#E5E7FB', fg: '#2A2F94' },
+    { bg: '#0A6AA1', fg: '#FFFFFF' }, // ocean
+    { bg: '#4146C9', fg: '#FFFFFF' }, // indigo
+    { bg: '#0E7C6B', fg: '#FFFFFF' }, // teal
+    { bg: '#DCEFFB', fg: '#0B5A8A' }, // sky
+    { bg: '#465364', fg: '#FFFFFF' }, // slate
+    { bg: '#ECE9FD', fg: '#4338A8' }, // lavender
+    { bg: '#7A3FB8', fg: '#FFFFFF' }, // violet
+    { bg: '#DDF3EE', fg: '#0B5E52' }, // mint
   ],
   dark: [
-    { bg: '#16334A', fg: '#A9D6F2' },
-    { bg: '#F2A93B', fg: '#17181C' },
-    { bg: '#3A1D33', fg: '#F0C3E2' },
-    { bg: '#252859', fg: '#B9BEF8' },
-    { bg: '#262D37', fg: '#CED6E0' },
-    { bg: '#3A2C14', fg: '#F2C77E' },
-    { bg: '#1E3A35', fg: '#7FD8C6' },
-    { bg: '#2E3036', fg: '#F1EFEA' },
+    { bg: '#173A55', fg: '#A9D6F2' },
+    { bg: '#272B66', fg: '#BDC1FA' },
+    { bg: '#143D37', fg: '#8FDCCB' },
+    { bg: '#1D3448', fg: '#BFE2F7' },
+    { bg: '#2A3442', fg: '#D2DAE4' },
+    { bg: '#2E2A55', fg: '#CFC9FB' },
+    { bg: '#3A2457', fg: '#D9C2F5' },
+    { bg: '#16332E', fg: '#A7E6D7' },
   ],
 };
 

@@ -9,14 +9,14 @@ import { useTheme } from './theme';
 /** Icon and swatch per category. Swatch indexes point into AVATAR_SWATCHES (all ≥ 4.5:1). */
 export const CATEGORY_STYLE: Record<ExpenseCategory, { icon: IconName; swatch: number; label: string }> = {
   general: { icon: 'catGeneral', swatch: 4, label: 'General' },
-  food: { icon: 'catFood', swatch: 1, label: 'Food & drinks' },
-  groceries: { icon: 'catGroceries', swatch: 6, label: 'Groceries' },
+  food: { icon: 'catFood', swatch: 6, label: 'Food & drinks' },
+  groceries: { icon: 'catGroceries', swatch: 7, label: 'Groceries' },
   travel: { icon: 'catTravel', swatch: 3, label: 'Travel' },
-  transport: { icon: 'catTransport', swatch: 7, label: 'Transport' },
+  transport: { icon: 'catTransport', swatch: 0, label: 'Transport' },
   stay: { icon: 'catStay', swatch: 5, label: 'Stay' },
-  shopping: { icon: 'catShopping', swatch: 2, label: 'Shopping' },
-  utilities: { icon: 'catUtilities', swatch: 0, label: 'Utilities' },
-  entertainment: { icon: 'catEntertainment', swatch: 2, label: 'Entertainment' },
+  shopping: { icon: 'catShopping', swatch: 1, label: 'Shopping' },
+  utilities: { icon: 'catUtilities', swatch: 2, label: 'Utilities' },
+  entertainment: { icon: 'catEntertainment', swatch: 6, label: 'Entertainment' },
   other: { icon: 'catOther', swatch: 4, label: 'Other' },
 };
 
