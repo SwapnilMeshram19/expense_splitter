@@ -1,5 +1,7 @@
 -- Notes + receipts smoke test. One transaction, rolled back: leaves no data (storage rows included;
--- no files are uploaded, the policies are checked on storage.objects directly).
+-- no files are uploaded). Reads and uploads are checked on storage.objects directly. Deletes are
+-- checked through private.receipt_object_access(), the function the delete policy calls: Supabase
+-- refuses any direct SQL DELETE on storage tables (storage.protect_delete), only the Storage API may.
 begin;
 
 insert into auth.users (id, email) values
@@ -87,7 +89,6 @@ do $$
 declare
   path_r1 constant text := '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000001.jpg';
   path_r2 constant text := '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000002.jpg';
-  n integer;
 begin
   -- The current receipt can be uploaded and read.
   insert into storage.objects (bucket_id, name) values ('receipts', path_r1);
@@ -111,21 +112,18 @@ begin
   end;
 
   -- The current receipt can't be deleted.
-  delete from storage.objects where bucket_id = 'receipts' and name = path_r1;
-  get diagnostics n = row_count;
-  assert n = 0, 'current receipt must not be deletable';
+  assert not private.receipt_object_access(path_r1, 'delete'), 'current receipt must not be deletable';
+  assert not private.receipt_object_access(path_r1, 'anything'), 'unknown mode must be refused';
 end $$;
 
 -- ── 6. A non-member sees and deletes nothing ──
 set local request.jwt.claims = '{"sub":"a4000000-0000-0000-0000-000000000002","role":"authenticated"}';
 do $$
-declare
-  n integer;
 begin
   assert (select count(*) from storage.objects where bucket_id = 'receipts') = 0, 'outsider must not read';
-  delete from storage.objects where bucket_id = 'receipts';
-  get diagnostics n = row_count;
-  assert n = 0, 'outsider must not delete';
+  assert not private.receipt_object_access(
+    '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000002.jpg',
+    'delete'), 'outsider must not delete';
 end $$;
 
 -- ── 7. After the photo is replaced, the member can delete the old one ──
@@ -135,14 +133,23 @@ where id = 'e4000000-0000-0000-0000-000000000001';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"a4000000-0000-0000-0000-000000000001","role":"authenticated"}';
 do $$
-declare
-  n integer;
 begin
-  delete from storage.objects
-  where bucket_id = 'receipts'
-    and name = '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000001.jpg';
-  get diagnostics n = row_count;
-  assert n = 1, 'replaced receipt must be deletable';
+  assert private.receipt_object_access(
+    '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000001.jpg',
+    'delete'), 'replaced receipt must be deletable';
+  assert not private.receipt_object_access(
+    '94000000-0000-0000-0000-000000000001/e4000000-0000-0000-0000-000000000001/c4000000-0000-0000-0000-000000000002.jpg',
+    'delete'), 'the new current receipt must not be deletable';
+end $$;
+
+-- ── 8. The three storage policies are in place ──
+reset role;
+do $$
+begin
+  assert (select count(*) from pg_policies
+          where schemaname = 'storage' and tablename = 'objects'
+            and policyname in ('receipts_select', 'receipts_insert', 'receipts_delete')) = 3,
+    'receipts storage policies missing';
 end $$;
 
 reset role;
