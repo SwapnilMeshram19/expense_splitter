@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
-import { formatPaise } from '@/domain/money';
+import { formatMoney } from '@/domain/currency';
 import {
   loadOverview,
   OVERVIEW_TABLES,
@@ -76,47 +76,40 @@ function ListHeader({ overview, theme }: { overview: Overview; theme: Theme }) {
 }
 
 function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) {
-  const { net, owedToMe, iOwe } = overview;
-  const title =
-    net > 0 ? 'Overall, you are owed' : net < 0 ? 'Overall, you owe' : 'You’re all settled up';
+  const { totals } = overview;
   // Tiles are a light wash over the gradient, so they follow whichever accent is chosen.
   const tile = 'rgba(255,255,255,0.14)';
   const fg = theme.onGradient;
-  const settled = owedToMe === 0 && iOwe === 0;
+  const settled = totals.length === 0;
+  const single = totals.length === 1 ? totals[0]! : null;
+
+  let title: string;
+  if (settled) title = 'You’re all settled up';
+  else if (!single) title = `Your balances in ${totals.length} currencies`;
+  else title = single.net > 0 ? 'Overall, you are owed' : single.net < 0 ? 'Overall, you owe' : 'Overall, you’re even';
+
+  // One line per currency: amounts in different currencies are never added together.
+  const owed = totals.filter((x) => x.owedToMe > 0).map((x) => formatMoney(x.owedToMe, x.currency));
+  const owe = totals.filter((x) => x.iOwe > 0).map((x) => formatMoney(x.iOwe, x.currency));
+  const zero = formatMoney(0, totals[0]?.currency ?? 'INR');
+  const heroAmount = single && single.net !== 0 ? formatMoney(Math.abs(single.net), single.currency) : null;
 
   return (
     <GradientSurface style={styles.balanceCard}>
-      <View
-        accessible
-        accessibilityLabel={settled ? title : `${title} ${formatPaise(Math.abs(net))}`}
-      >
+      <View accessible accessibilityLabel={heroAmount ? `${title} ${heroAmount}` : title}>
         <AppText variant="label" color={fg} style={styles.dim}>
           {title}
         </AppText>
-        {!settled ? (
+        {heroAmount ? (
           <AppText variant="display" color={fg}>
-            {formatPaise(Math.abs(net))}
+            {heroAmount}
           </AppText>
         ) : null}
       </View>
       {!settled ? (
         <View style={styles.tiles}>
-          <View style={[styles.tile, { backgroundColor: tile }]} accessible>
-            <AppText variant="caption" color={fg} style={styles.dim}>
-              Owed to you
-            </AppText>
-            <AppText variant="amount" color={fg} style={styles.tileAmount}>
-              {formatPaise(owedToMe)}
-            </AppText>
-          </View>
-          <View style={[styles.tile, { backgroundColor: tile }]} accessible>
-            <AppText variant="caption" color={fg} style={styles.dim}>
-              You owe
-            </AppText>
-            <AppText variant="amount" color={fg} style={styles.tileAmount}>
-              {formatPaise(iOwe)}
-            </AppText>
-          </View>
+          <AmountTile label="Owed to you" amounts={owed} zero={zero} background={tile} color={fg} />
+          <AmountTile label="You owe" amounts={owe} zero={zero} background={tile} color={fg} />
         </View>
       ) : null}
       {!settled ? (
@@ -131,8 +124,42 @@ function BalanceCard({ overview, theme }: { overview: Overview; theme: Theme }) 
   );
 }
 
+function AmountTile({
+  label,
+  amounts,
+  zero,
+  background,
+  color,
+}: {
+  label: string;
+  amounts: string[];
+  /** Shown when there's nothing in this direction ("₹0"). */
+  zero: string;
+  background: string;
+  color: string;
+}) {
+  const shown = amounts.length > 0 ? amounts : [zero];
+  return (
+    <View
+      style={[styles.tile, { backgroundColor: background }]}
+      accessible
+      accessibilityLabel={`${label}: ${shown.join(' and ')}`}
+    >
+      <AppText variant="caption" color={color} style={styles.dim}>
+        {label}
+      </AppText>
+      {shown.map((text) => (
+        <AppText key={text} variant="amount" color={color} style={styles.tileAmount} numberOfLines={1}>
+          {text}
+        </AppText>
+      ))}
+    </View>
+  );
+}
+
 function GroupRow({ summary, theme }: { summary: GroupSummary; theme: Theme }) {
   const { group, myBalance, lost, me, activeMemberCount } = summary;
+  const amount = formatMoney(Math.abs(myBalance), group.currency);
   const balanceLabel = myBalance > 0 ? 'you’re owed' : myBalance < 0 ? 'you owe' : null;
   const balanceColor = myBalance > 0 ? theme.positive : theme.negative;
   const members = activeMemberCount === 1 ? '1 member' : `${activeMemberCount} members`;
@@ -141,7 +168,7 @@ function GroupRow({ summary, theme }: { summary: GroupSummary; theme: Theme }) {
     <Pressable
       onPress={() => router.push({ pathname: '/groups/[groupId]', params: { groupId: group.id } })}
       accessibilityRole="button"
-      accessibilityLabel={`${group.name}, ${balanceLabel ? `${balanceLabel} ${formatPaise(Math.abs(myBalance))}` : 'settled up'}${lost ? ', read-only' : ''}`}
+      accessibilityLabel={`${group.name}, ${balanceLabel ? `${balanceLabel} ${amount}` : 'settled up'}${lost ? ', read-only' : ''}`}
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
       <Card
@@ -173,7 +200,7 @@ function GroupRow({ summary, theme }: { summary: GroupSummary; theme: Theme }) {
               {balanceLabel}
             </AppText>
             <AppText variant="amount" color={balanceColor}>
-              {formatPaise(Math.abs(myBalance))}
+              {amount}
             </AppText>
           </View>
         ) : (

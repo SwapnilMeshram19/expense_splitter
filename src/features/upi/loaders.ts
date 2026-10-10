@@ -14,6 +14,10 @@ import { isValidVpa } from '@/domain/upi';
 type Fail = { ok: false; message: string };
 const fail = (message: string): Fail => ({ ok: false, message });
 
+/** UPI moves rupees only. The screens never offer it elsewhere; this guards deep links. */
+export const UPI_INR_ONLY_MESSAGE =
+  'UPI works only for groups in Indian rupees. Pay another way, then record the payment.';
+
 function loadMember(groupId: string, memberId: string | undefined) {
   if (!memberId) return null;
   const row = db
@@ -47,6 +51,7 @@ export type PaySetup =
 export function loadPaySetup(groupId: string, toMemberId: string | undefined): PaySetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
+  if (group.currency !== 'INR') return fail(UPI_INR_ONLY_MESSAGE);
   if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
@@ -88,6 +93,7 @@ export type RequestSetup =
 export function loadRequestSetup(groupId: string, fromMemberId: string | undefined): RequestSetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
+  if (group.currency !== 'INR') return fail(UPI_INR_ONLY_MESSAGE);
   if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');

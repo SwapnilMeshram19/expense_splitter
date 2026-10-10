@@ -7,11 +7,11 @@ import { appContext } from '@/db/appContext';
 import { MAX_NOTE_LENGTH, recordSettlement } from '@/db/repositories/settlements';
 import { SETTLEMENT_METHODS, type SettlementMethod } from '@/db/schema';
 import {
-  formatPaise,
-  paiseToInputString,
-  parseRupeesToPaise,
-  sanitizeAmountInput,
-} from '@/domain/money';
+  formatMoney,
+  minorToInputString,
+  parseAmount,
+  sanitizeMoneyInput,
+} from '@/domain/currency';
 import { loadSettleSetup, type SettleSetup } from '@/features/settlements/loadSettleSetup';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { AppText } from '@/ui/AppText';
@@ -29,7 +29,7 @@ interface SettleParams {
   groupId: string;
   from?: string;
   to?: string;
-  /** Prefilled amount in paise (from a suggested payment). */
+  /** Prefilled amount in minor units of the group currency (from a suggested payment). */
   amount?: string;
 }
 
@@ -63,8 +63,9 @@ function pickInitial(setup: ReadySetup, params: SettleParams) {
     params.to && ids.includes(params.to) && params.to !== fromId
       ? params.to
       : (ids.find((id) => id !== fromId) ?? fromId);
-  const paise = Number(params.amount);
-  const amountText = Number.isSafeInteger(paise) && paise > 0 ? paiseToInputString(paise) : '';
+  const minor = Number(params.amount);
+  const amountText =
+    Number.isSafeInteger(minor) && minor > 0 ? minorToInputString(minor, setup.currency) : '';
   return { fromId, toId, amountText };
 }
 
@@ -74,23 +75,27 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
   const [fromId, setFromId] = useState(initial.fromId);
   const [toId, setToId] = useState(initial.toId);
   const [amountText, setAmountText] = useState(initial.amountText);
-  const [method, setMethod] = useState<SettlementMethod>('upi');
+  // UPI only moves rupees: other groups default to cash and don't offer it.
+  const [method, setMethod] = useState<SettlementMethod>(setup.currency === 'INR' ? 'upi' : 'cash');
+  const methods = SETTLEMENT_METHODS.filter((m) => m !== 'upi' || setup.currency === 'INR');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const { currency } = setup;
+  const money = (minor: number) => formatMoney(minor, currency);
   const nameOf = (id: string) => setup.members.find((m) => m.id === id)?.name ?? 'Someone';
   const isMe = fromId === setup.me;
   const fromName = nameOf(fromId);
 
-  const parsed = parseRupeesToPaise(amountText);
+  const parsed = parseAmount(amountText, currency);
   const owes = Math.max(0, -(setup.balances.get(fromId) ?? 0));
 
   let hint: string | null = null;
   if (fromId === toId) hint = 'Choose two different people.';
   else if (owes === 0) hint = `${isMe ? 'You don’t' : `${fromName} doesn’t`} owe anything right now.`;
-  else if (parsed.ok && parsed.paise > owes)
-    hint = `That’s more than ${isMe ? 'you owe' : `${fromName} owes`} in total (${formatPaise(owes)}).`;
-  else hint = `${isMe ? 'You owe' : `${fromName} owes`} ${formatPaise(owes)} in total.`;
+  else if (parsed.ok && parsed.minor > owes)
+    hint = `That’s more than ${isMe ? 'you owe' : `${fromName} owes`} in total (${money(owes)}).`;
+  else hint = `${isMe ? 'You owe' : `${fromName} owes`} ${money(owes)} in total.`;
 
   const swap = () => {
     setFromId(toId);
@@ -107,13 +112,13 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
       groupId: params.groupId,
       fromMemberId: fromId,
       toMemberId: toId,
-      amountPaise: parsed.paise,
+      amountPaise: parsed.minor,
       method,
       note,
       actorMemberId: setup.me,
     });
     if (!result.ok) {
-      setError(describeSettlementError(result.error, nameOf));
+      setError(describeSettlementError(result.error, nameOf, currency));
       return;
     }
     router.back();
@@ -155,8 +160,9 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
         <FieldLabel>Amount</FieldLabel>
         <AmountInput
           value={amountText}
+          currency={currency}
           onChangeText={(text) => {
-            setAmountText(sanitizeAmountInput(text, amountText));
+            setAmountText(sanitizeMoneyInput(text, amountText, currency));
             setError(null);
           }}
           autoFocus={initial.amountText === ''}
@@ -169,7 +175,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
 
         <FieldLabel>Paid via</FieldLabel>
         <View style={styles.chips}>
-          {SETTLEMENT_METHODS.map((m) => (
+          {methods.map((m) => (
             <Chip key={m} label={METHOD_LABELS[m]} selected={method === m} onPress={() => setMethod(m)} />
           ))}
         </View>

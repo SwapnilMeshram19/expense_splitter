@@ -1,4 +1,6 @@
+import { isSupportedCurrency } from '../_shared/domain/currency.ts';
 import { validateExpense } from '../_shared/domain/expenseValidation.ts';
+import type { ForeignAmount } from '../_shared/domain/fx.ts';
 import type { SplitInput } from '../_shared/domain/splits.ts';
 
 export const TABLES = ['groups', 'members', 'expenses', 'settlements', 'activity'] as const;
@@ -60,6 +62,8 @@ export function parseBatch(body: unknown): ParseResult {
 interface Line {
   member_id: string;
   amount_paise: number;
+  /** Payer lines of foreign bills: the amount in the bill's currency. */
+  original_amount_minor?: number;
 }
 
 function asLines(value: unknown): Line[] | null {
@@ -69,10 +73,38 @@ function asLines(value: unknown): Line[] | null {
     if (!isObject(item)) return null;
     const memberId = item.member_id;
     const amount = item.amount_paise;
+    const original = item.original_amount_minor;
     if (!isUuid(memberId) || typeof amount !== 'number') return null;
-    lines.push({ member_id: memberId.toLowerCase(), amount_paise: amount });
+    if (original !== undefined && original !== null && typeof original !== 'number') return null;
+    lines.push(
+      typeof original === 'number'
+        ? { member_id: memberId.toLowerCase(), amount_paise: amount, original_amount_minor: original }
+        : { member_id: memberId.toLowerCase(), amount_paise: amount },
+    );
   }
   return lines;
+}
+
+/**
+ * The bill part of an expense row: null for a group-currency expense, 'INVALID' when the three
+ * fields are only partly there or mistyped.
+ */
+function asForeign(row: Row): ForeignAmount | null | 'INVALID' {
+  const { original_currency: currency, original_amount_minor: amountMinor, fx_rate: rate } = row;
+  if (currency == null && amountMinor == null && rate == null) return null;
+  if (typeof currency !== 'string' || typeof amountMinor !== 'number' || typeof rate !== 'string') return 'INVALID';
+  return { currency, amountMinor, rate };
+}
+
+/** Group rows may carry a currency; the database checks the format, this checks it's one we support. */
+export function checkGroups(batch: Batch): { batch: Batch; rejected: Rejection[] } {
+  const rejected: Rejection[] = [];
+  const groups = batch.groups.filter((row) => {
+    if (row.currency === undefined || isSupportedCurrency(row.currency)) return true;
+    rejected.push({ table: 'groups', id: String(row.id), code: 'INVALID_GROUP', detail: 'UNKNOWN_CURRENCY' });
+    return false;
+  });
+  return { batch: { ...batch, groups }, rejected };
 }
 
 const lineKey = (lines: { memberId: string; amountPaise: number }[]) =>
@@ -89,6 +121,11 @@ const ANY_MEMBER = { has: () => true } as unknown as ReadonlySet<string>;
  * Re-validates every expense with the app's own domain code. The server stores the shares it
  * computes, and rejects the row if the client's shares differ (tampering or version skew).
  * History entries for rejected expenses are dropped so the log never describes a missing row.
+ *
+ * Currencies: `group_currency` says which currency the amounts are in (rows without it come from
+ * builds before multi-currency: INR). Whether it matches the group is checked in SQL, against the
+ * database. A foreign bill is re-split in its own currency and re-converted at its locked rate;
+ * both shares and payers must come out exactly as the phone computed them.
  */
 export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection[] } {
   const rejected: Rejection[] = [];
@@ -106,6 +143,17 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
       continue;
     }
 
+    const currency = row.group_currency === undefined ? 'INR' : row.group_currency;
+    if (!isSupportedCurrency(currency)) {
+      reject('INVALID_EXPENSE', 'UNKNOWN_CURRENCY');
+      continue;
+    }
+    const foreign = asForeign(row);
+    if (foreign === 'INVALID' || (foreign && payers.some((p) => p.original_amount_minor === undefined))) {
+      reject('INVALID_EXPENSE', 'FX_SHAPE');
+      continue;
+    }
+
     let result: ReturnType<typeof validateExpense>;
     try {
       result = validateExpense(
@@ -113,8 +161,14 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
           description: typeof row.description === 'string' ? row.description : '',
           amountPaise: row.amount_paise,
           expenseDate: typeof row.expense_date === 'string' ? row.expense_date : '',
-          payers: payers.map((p) => ({ memberId: p.member_id, amountPaise: p.amount_paise })),
+          // Validated in the currency the bill was entered in.
+          payers: payers.map((p) => ({
+            memberId: p.member_id,
+            amountPaise: foreign ? (p.original_amount_minor ?? 0) : p.amount_paise,
+          })),
           splitInput: row.split_input as SplitInput,
+          currency,
+          foreign,
         },
         ANY_MEMBER,
       );
@@ -133,11 +187,23 @@ export function checkExpenses(batch: Batch): { batch: Batch; rejected: Rejection
       reject('SHARES_MISMATCH');
       continue;
     }
+    const clientPayers = payers
+      .filter((p) => p.amount_paise > 0 || (p.original_amount_minor ?? 0) > 0)
+      .map((p) => ({ memberId: p.member_id, amountPaise: p.amount_paise }));
+    if (foreign && lineKey(result.payers) !== lineKey(clientPayers)) {
+      reject('PAYERS_MISMATCH');
+      continue;
+    }
 
+    const original = new Map(result.originalPayers?.map((p) => [p.memberId, p.amountPaise]));
     accepted.push({
       ...row,
       description: result.description,
-      payers: result.payers.map((p) => ({ member_id: p.memberId, amount_paise: p.amountPaise })),
+      payers: result.payers.map((p) =>
+        result.originalPayers
+          ? { member_id: p.memberId, amount_paise: p.amountPaise, original_amount_minor: original.get(p.memberId) }
+          : { member_id: p.memberId, amount_paise: p.amountPaise },
+      ),
       shares: result.shares.map((s) => ({ member_id: s.memberId, amount_paise: s.amountPaise })),
     });
   }

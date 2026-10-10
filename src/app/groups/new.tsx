@@ -8,9 +8,11 @@ import { createGroup } from '@/db/repositories/groups';
 import { MAX_NAME_LENGTH } from '@/db/repositories/names';
 import { getSetting, SELF_NAME_KEY, setSetting } from '@/db/repositories/profile';
 import { getDeviceUserId } from '@/db/session';
+import { DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
 import { describeGroupError } from '@/features/groups/messages';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
+import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { FieldLabel, Input } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
@@ -26,6 +28,7 @@ export default function NewGroupScreen() {
   const [groupName, setGroupName] = useState('');
   const [selfName, setSelfName] = useState(() => getSetting(appContext, SELF_NAME_KEY) ?? '');
   const [people, setPeople] = useState<PersonField[]>([{ key: 0, name: '' }]);
+  const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
   const [error, setError] = useState<string | null>(null);
 
   const updatePerson = (key: number, name: string) =>
@@ -39,6 +42,7 @@ export default function NewGroupScreen() {
       selfName,
       otherMemberNames: people.map((p) => p.name).filter((n) => n.trim() !== ''),
       deviceUserId: getDeviceUserId(),
+      currency,
     });
     if (!result.ok) {
       setError(describeGroupError(result.error));
@@ -65,6 +69,14 @@ export default function NewGroupScreen() {
           accessibilityLabel="Group name"
           autoFocus
         />
+
+        <FieldLabel>Currency</FieldLabel>
+        <CurrencyPicker label="Group currency" value={currency} onChange={setCurrency} />
+        <AppText variant="caption" color={theme.muted}>
+          {currency === DEFAULT_CURRENCY
+            ? 'Balances and UPI settle-up are in rupees. Bills in other currencies can still be added with their rate.'
+            : 'Balances are kept in this currency. UPI settle-up works only for rupee groups.'}
+        </AppText>
 
         <FieldLabel>Your name</FieldLabel>
         <Input

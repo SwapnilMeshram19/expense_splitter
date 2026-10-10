@@ -78,7 +78,7 @@ describe('groups and members', () => {
 
     const log = t.ctx.db.select().from(activityLog).where(eq(activityLog.entityType, 'group')).all();
     expect(log).toHaveLength(1);
-    expect(log[0]?.after).toEqual({ name: 'Goa Trip', members: ['Asha', 'Rahul', 'Priya'] });
+    expect(log[0]?.after).toEqual({ name: 'Goa Trip', members: ['Asha', 'Rahul', 'Priya'], currency: 'INR' });
   });
 
   it('rejects blank and duplicate names (case-insensitive)', () => {

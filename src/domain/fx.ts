@@ -1,0 +1,253 @@
+/**
+ * Foreign-currency expenses.
+ *
+ * A rate is a decimal STRING: how many group-currency units one unit of the bill's currency buys
+ * ("96.64" for USD → INR). Strings, never floats: the rate is stored, synced, compared for
+ * conflicts and re-checked on the server, so "96.64" must stay exactly "96.64" everywhere.
+ * All arithmetic is BigInt rational math.
+ *
+ * Pure TypeScript, zero dependencies (Hermes + Deno).
+ */
+import { maxAmountMinor, minorDigits, type CurrencyCode } from './currency';
+import { allocateByWeights, type MemberId, type ShareLine } from './splits';
+
+/** Significant digits kept for rates (user-entered or derived). */
+export const RATE_SIGNIFICANT_DIGITS = 12;
+const MAX_RATE_DECIMALS = 14;
+/** Sanity bounds: covers KWD→IRR (≈ 140,000) and IRR→KWD (≈ 0.0000073) with room to spare. */
+const MIN_RATE = { num: 1n, den: 10n ** 10n };
+const MAX_RATE = { num: 10n ** 10n, den: 1n };
+
+export interface Fraction {
+  num: bigint;
+  den: bigint;
+}
+
+export type RateError = 'EMPTY' | 'INVALID' | 'ZERO' | 'OUT_OF_RANGE' | 'TOO_PRECISE';
+export type RateParseResult = { ok: true; rate: string } | { ok: false; error: RateError };
+
+const pow10 = (n: number) => 10n ** BigInt(n);
+
+/** "0096.6400" -> "96.64", "5." -> "5", ".5" -> "0.5". Assumes /^\d*\.?\d*$/. */
+function normalizeDecimal(text: string): string {
+  const [rawWhole = '', rawFraction = ''] = text.split('.');
+  const whole = rawWhole.replace(/^0+(?=\d)/, '') || '0';
+  const fraction = rawFraction.replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+function significantDigits(normalized: string): number {
+  return normalized.replace('.', '').replace(/^0+/, '').length;
+}
+
+/** Exact fraction of a normalized rate string. */
+export function rateToFraction(rate: string): Fraction {
+  const [whole = '0', fraction = ''] = rate.split('.');
+  return { num: BigInt(whole + fraction), den: pow10(fraction.length) };
+}
+
+const lessThan = (a: Fraction, b: Fraction) => a.num * b.den < b.num * a.den;
+
+/** Validate and normalize a rate typed by the user or received from the network / a peer. */
+export function parseRate(input: unknown): RateParseResult {
+  if (typeof input !== 'string') return { ok: false, error: 'INVALID' };
+  const cleaned = input.replace(/[\s,]/g, '');
+  if (cleaned === '' || cleaned === '.') return { ok: false, error: 'EMPTY' };
+  if (!/^\d*\.?\d*$/.test(cleaned)) return { ok: false, error: 'INVALID' };
+
+  const rate = normalizeDecimal(cleaned);
+  if (/^0(\.0*)?$/.test(rate)) return { ok: false, error: 'ZERO' };
+  const decimals = rate.includes('.') ? rate.split('.')[1]!.length : 0;
+  if (decimals > MAX_RATE_DECIMALS || significantDigits(rate) > RATE_SIGNIFICANT_DIGITS + 3) {
+    return { ok: false, error: 'TOO_PRECISE' };
+  }
+  const value = rateToFraction(rate);
+  if (lessThan(value, MIN_RATE) || lessThan(MAX_RATE, value))
+    return { ok: false, error: 'OUT_OF_RANGE' };
+  return { ok: true, rate };
+}
+
+/** True for a rate exactly as stored (already normalized and in range). */
+export const isCanonicalRate = (value: unknown): value is string => {
+  const parsed = parseRate(value);
+  return parsed.ok && parsed.rate === value;
+};
+
+/** Live TextInput filter for the rate field. */
+export function sanitizeRateInput(next: string, previous: string): string {
+  const stripped = next.replace(/[\s,]/g, '');
+  return /^\d{0,10}(\.\d{0,14})?$/.test(stripped) ? stripped : previous;
+}
+
+/** Positive fraction rounded half-up to an integer. */
+function roundHalfUp(num: bigint, den: bigint): bigint {
+  return (2n * num + den) / (2n * den);
+}
+
+/**
+ * Convert `amountMinor` of currency `from` into minor units of `to` at `rate` (to per 1 from),
+ * rounded half-up. Example: 2500 USD cents at "96.64" → 241600 paise (₹2,416).
+ */
+export function convertMinor(
+  amountMinor: number,
+  rate: string,
+  from: CurrencyCode,
+  to: CurrencyCode,
+): number {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
+    throw new RangeError(`Invalid amount: ${amountMinor}`);
+  const r = rateToFraction(rate);
+  const num = BigInt(amountMinor) * r.num * pow10(minorDigits(to));
+  const den = r.den * pow10(minorDigits(from));
+  const result = roundHalfUp(num, den);
+  if (result > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError('Converted amount too large');
+  return Number(result);
+}
+
+export interface ForeignAmount {
+  /** The bill's currency (never the group currency). */
+  currency: CurrencyCode;
+  /** Bill total in minor units of `currency`. */
+  amountMinor: number;
+  /** Canonical rate string: group-currency units per 1 unit of `currency`. */
+  rate: string;
+}
+
+export type ForeignError =
+  | { code: 'FX_SAME_CURRENCY' }
+  | { code: 'FX_UNKNOWN_CURRENCY' }
+  | { code: 'FX_INVALID_AMOUNT' }
+  | { code: 'FX_INVALID_RATE'; error: RateError | 'NOT_CANONICAL' }
+  | { code: 'FX_TOTAL_ZERO' }
+  | { code: 'FX_TOTAL_TOO_LARGE'; max: number };
+
+/**
+ * Group-currency total of a foreign bill, with every check the server repeats. The bill amount is
+ * capped in its own currency, the result in the group's.
+ */
+export function foreignTotal(
+  foreign: ForeignAmount,
+  groupCurrency: CurrencyCode,
+  isKnownCurrency: (code: string) => boolean,
+): { ok: true; totalMinor: number } | { ok: false; error: ForeignError } {
+  if (foreign.currency === groupCurrency) return { ok: false, error: { code: 'FX_SAME_CURRENCY' } };
+  if (!isKnownCurrency(foreign.currency))
+    return { ok: false, error: { code: 'FX_UNKNOWN_CURRENCY' } };
+  const { amountMinor } = foreign;
+  if (
+    !Number.isSafeInteger(amountMinor) ||
+    amountMinor <= 0 ||
+    amountMinor > maxAmountMinor(foreign.currency)
+  ) {
+    return { ok: false, error: { code: 'FX_INVALID_AMOUNT' } };
+  }
+  const parsed = parseRate(foreign.rate);
+  if (!parsed.ok) return { ok: false, error: { code: 'FX_INVALID_RATE', error: parsed.error } };
+  if (parsed.rate !== foreign.rate)
+    return { ok: false, error: { code: 'FX_INVALID_RATE', error: 'NOT_CANONICAL' } };
+
+  const max = maxAmountMinor(groupCurrency);
+  let totalMinor: number;
+  try {
+    totalMinor = convertMinor(amountMinor, foreign.rate, foreign.currency, groupCurrency);
+  } catch {
+    return { ok: false, error: { code: 'FX_TOTAL_TOO_LARGE', max } };
+  }
+  if (totalMinor === 0) return { ok: false, error: { code: 'FX_TOTAL_ZERO' } };
+  if (totalMinor > max) return { ok: false, error: { code: 'FX_TOTAL_TOO_LARGE', max } };
+  return { ok: true, totalMinor };
+}
+
+/**
+ * Convert lines (shares or payers, in the bill's currency) to the group currency so they sum to
+ * exactly `groupTotalMinor`: each line gets its proportional part, leftover units go by largest
+ * remainder (same tiebreak as splits). Converting each line on its own and rounding would drift:
+ * three $10 shares at 83.333 would not add up to the rounded ₹2,500 total.
+ */
+export function convertLines(
+  groupTotalMinor: number,
+  lines: readonly { memberId: MemberId; amountPaise: number }[],
+): ShareLine[] {
+  const weights = lines.map((l) => ({ memberId: l.memberId, value: l.amountPaise }));
+  if (weights.every((w) => w.value === 0)) throw new RangeError('Nothing to convert');
+  return allocateByWeights(groupTotalMinor, weights);
+}
+
+// ── Rates from the daily table ─────────────────────────────────────────
+
+/**
+ * A float from a JSON rates feed as a decimal string with at most `sig` significant digits
+ * (96.64 -> "96.64", 1.5e-7 -> "0.00000015"). Returns null for non-finite or non-positive input.
+ */
+export function decimalFromNumber(
+  value: number,
+  sig: number = RATE_SIGNIFICANT_DIGITS,
+): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const [mantissa = '', exponentText = '0'] = value.toPrecision(sig).split('e');
+  const exponent = Number(exponentText);
+  const [intPart = '', fracPart = ''] = mantissa.split('.');
+  const digits = intPart + fracPart;
+  // Position of the decimal point within `digits` after applying the exponent.
+  const point = intPart.length + exponent;
+  let text: string;
+  if (point <= 0) text = `0.${'0'.repeat(-point)}${digits}`;
+  else if (point >= digits.length) text = digits + '0'.repeat(point - digits.length);
+  else text = `${digits.slice(0, point)}.${digits.slice(point)}`;
+  return normalizeDecimal(text);
+}
+
+/**
+ * a / b rounded half-up to `sig` significant digits (and at most `maxDecimals` decimals), as a
+ * normalized decimal string.
+ */
+function divideToSignificant(a: Fraction, b: Fraction, sig: number, maxDecimals = 40): string {
+  // q = (a.num * b.den) / (a.den * b.num)
+  const num = a.num * b.den;
+  const den = a.den * b.num;
+  // Scale so the integer quotient has at least `sig` digits.
+  let scale = 0;
+  while ((num * pow10(scale)) / den < pow10(sig - 1)) scale++;
+  while (scale > 0 && (num * pow10(scale - 1)) / den >= pow10(sig)) scale--;
+  scale = Math.min(scale, maxDecimals);
+  const q = roundHalfUp(num * pow10(scale), den);
+  const digits = q.toString();
+  if (scale === 0) return digits;
+  const padded = digits.padStart(scale + 1, '0');
+  return normalizeDecimal(`${padded.slice(0, -scale)}.${padded.slice(-scale)}`);
+}
+
+/**
+ * Rate for a bill in `from` paid into a `to` group, from two "units per 1 USD" table values:
+ * to-units per from-unit = perUsd[to] / perUsd[from]. Null when either value is missing/invalid.
+ */
+export function crossRate(
+  fromPerUsd: string | undefined,
+  toPerUsd: string | undefined,
+): string | null {
+  if (!fromPerUsd || !toPerUsd) return null;
+  const from = parseRate(fromPerUsd);
+  const to = parseRate(toPerUsd);
+  if (!from.ok || !to.ok) return null;
+  const rate = divideToSignificant(
+    rateToFraction(to.rate),
+    rateToFraction(from.rate),
+    RATE_SIGNIFICANT_DIGITS,
+    MAX_RATE_DECIMALS,
+  );
+  const checked = parseRate(rate);
+  return checked.ok ? checked.rate : null;
+}
+
+/** Readable rate: ≥ 1 keeps up to 4 decimals ("96.6412"), < 1 keeps 4 significant digits. */
+export function formatRate(rate: string): string {
+  const parsed = parseRate(rate);
+  if (!parsed.ok) return rate;
+  const value = rateToFraction(parsed.rate);
+  if (value.num >= value.den) {
+    const [whole = '0', fraction = ''] = parsed.rate.split('.');
+    const short = fraction.slice(0, 4).replace(/0+$/, '');
+    return short ? `${whole}.${short}` : whole;
+  }
+  return divideToSignificant(value, { num: 1n, den: 1n }, 4);
+}

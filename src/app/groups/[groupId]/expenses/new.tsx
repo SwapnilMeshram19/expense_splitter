@@ -29,7 +29,12 @@ export default function NewExpenseScreen() {
 
   const save = (draft: DraftParts): string | null => {
     const result = createExpense(appContext, { ...draft, groupId, actorMemberId: setup.me });
-    if (!result.ok) return describeExpenseError(result.error, nameOf);
+    if (!result.ok) {
+      return describeExpenseError(result.error, nameOf, {
+        entry: draft.foreign?.currency ?? setup.groupCurrency,
+        group: setup.groupCurrency,
+      });
+    }
     router.back();
     return null;
   };
@@ -41,6 +46,8 @@ export default function NewExpenseScreen() {
         members={setup.members}
         initialState={setup.initialState}
         categorySuggestions={setup.categorySuggestions}
+        groupCurrency={setup.groupCurrency}
+        recentCurrencies={setup.recentCurrencies}
         submitLabel="Save expense"
         onSubmit={save}
       />

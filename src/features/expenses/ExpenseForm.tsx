@@ -1,18 +1,28 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { EXPENSE_CATEGORIES } from '@/db/schema';
 import { categoryLabelKey, MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
+import {
+  currencyInfo,
+  currencyPrefix,
+  formatMoney,
+  sanitizeMoneyInput,
+  type CurrencyCode,
+} from '@/domain/currency';
 import { MAX_DESCRIPTION_LENGTH } from '@/domain/expenseValidation';
-import { formatPaise, sanitizeAmountInput } from '@/domain/money';
+import { formatRate, sanitizeRateInput } from '@/domain/fx';
+import { suggestRate, type SuggestedRate } from '@/features/fx/rateCache';
+import { useRateTable } from '@/features/fx/useRateTable';
 import { formatIsoDate, fromIsoDate, toLocalIsoDate } from '@/lib/dates';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CATEGORY_STYLE } from '@/ui/CategoryTile';
+import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { Input } from '@/ui/Field';
 import { Icon, type IconName } from '@/ui/Icon';
 import { MemberPicker } from '@/ui/MemberPicker';
@@ -22,7 +32,9 @@ import { useTheme, type Theme } from '@/ui/theme';
 
 import {
   analyzeForm,
+  effectiveRateText,
   sanitizeSplitInput,
+  withCurrency,
   type DraftParts,
   type ExpenseFormState,
   type FormMember,
@@ -35,6 +47,10 @@ interface ExpenseFormProps {
   submitLabel: string;
   /** Custom category names already used in the group, offered as one-tap suggestions. */
   categorySuggestions?: readonly string[];
+  /** Balances, payers and shares are always in this currency. */
+  groupCurrency: CurrencyCode;
+  /** Foreign currencies used before in this group, offered first in the picker. */
+  recentCurrencies?: readonly CurrencyCode[];
   /** Save the draft. Return an error message to show, or null on success. */
   onSubmit: (draft: DraftParts) => string | null;
 }
@@ -56,6 +72,8 @@ export function ExpenseForm({
   initialState,
   submitLabel,
   categorySuggestions = [],
+  groupCurrency,
+  recentCurrencies = [],
   onSubmit,
 }: ExpenseFormProps) {
   const theme = useTheme();
@@ -63,8 +81,17 @@ export function ExpenseForm({
   const [error, setError] = useState<string | null>(null);
   const [showIosDate, setShowIosDate] = useState(false);
 
+  const isForeign = state.currency !== groupCurrency;
+  const rateTable = useRateTable(isForeign);
+  const suggestion = isForeign ? suggestRate(rateTable, state.currency, groupCurrency) : null;
+  const suggestedRate = suggestion?.rate ?? null;
+
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
-  const analysis = useMemo(() => analyzeForm(state, memberIds), [state, memberIds]);
+  const analysis = useMemo(
+    () => analyzeForm(state, memberIds, groupCurrency, suggestedRate),
+    [state, memberIds, groupCurrency, suggestedRate],
+  );
+  const entryCurrency = analysis.entryCurrency;
   const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? 'Someone';
 
   const update = (patch: Partial<ExpenseFormState>) => {
@@ -76,7 +103,10 @@ export function ExpenseForm({
     const key = VALUE_KEYS[mode];
     setState((s) => {
       const previous = s[key][memberId] ?? '';
-      return { ...s, [key]: { ...s[key], [memberId]: sanitizeSplitInput(mode, text, previous) } };
+      return {
+        ...s,
+        [key]: { ...s[key], [memberId]: sanitizeSplitInput(mode, text, previous, s.currency) },
+      };
     });
     setError(null);
   };
@@ -86,7 +116,10 @@ export function ExpenseForm({
       const previous = s.payerAmounts[memberId] ?? '';
       return {
         ...s,
-        payerAmounts: { ...s.payerAmounts, [memberId]: sanitizeAmountInput(text, previous) },
+        payerAmounts: {
+          ...s.payerAmounts,
+          [memberId]: sanitizeMoneyInput(text, previous, s.currency),
+        },
       };
     });
     setError(null);
@@ -131,8 +164,15 @@ export function ExpenseForm({
     if (message) setError(message);
   };
 
-  const formatPreview = (paise: number | undefined) =>
-    paise === undefined ? '' : `${analysis.previewIsEstimate ? '≈ ' : ''}${formatPaise(paise)}`;
+  const setCurrency = (currency: CurrencyCode) => {
+    setState((s) => withCurrency(s, currency));
+    setError(null);
+  };
+
+  const formatPreview = (minor: number | undefined) =>
+    minor === undefined
+      ? ''
+      : `${analysis.previewIsEstimate ? '≈ ' : ''}${formatMoney(minor, entryCurrency)}`;
 
   const smallInput = [
     styles.smallInput,
@@ -148,24 +188,52 @@ export function ExpenseForm({
       >
         {/* ---- Amount ---- */}
         <View style={styles.amountBlock}>
-          <AppText variant="label" color={theme.muted}>
-            Amount
-          </AppText>
+          <View style={styles.amountLabelRow}>
+            <AppText variant="label" color={theme.muted}>
+              Amount
+            </AppText>
+            <CurrencyPicker
+              label="Bill currency"
+              value={state.currency}
+              onChange={setCurrency}
+              pinned={[groupCurrency, ...recentCurrencies]}
+              variant="pill"
+            />
+          </View>
           <View style={styles.amountRow}>
             <AppText style={styles.rupee} color={theme.muted}>
-              ₹
+              {currencyPrefix(entryCurrency)}
             </AppText>
             <TextInput
               value={state.amountText}
-              onChangeText={(text) => update({ amountText: sanitizeAmountInput(text, state.amountText) })}
+              onChangeText={(text) =>
+                update({ amountText: sanitizeMoneyInput(text, state.amountText, entryCurrency) })
+              }
               placeholder="0"
-              keyboardType="decimal-pad"
-              accessibilityLabel="Amount in rupees"
+              keyboardType={currencyInfo(entryCurrency).digits === 0 ? 'number-pad' : 'decimal-pad'}
+              accessibilityLabel={`Amount in ${currencyInfo(entryCurrency).name}`}
               autoFocus={state.description === '' && state.amountText === ''}
               style={styles.amountInput}
             />
           </View>
         </View>
+
+        {isForeign ? (
+          <RateCard
+            state={state}
+            groupCurrency={groupCurrency}
+            suggestion={suggestion}
+            convertedTotal={analysis.convertedTotal}
+            onChangeRate={(text) =>
+              update({
+                rateText: sanitizeRateInput(text, effectiveRateText(state, suggestedRate)),
+                rateEdited: true,
+              })
+            }
+            onUseSuggested={() => update({ rateText: '', rateEdited: false })}
+            theme={theme}
+          />
+        ) : null}
 
         {/* ---- Description + date ---- */}
         <Card style={styles.fieldsCard}>
@@ -410,6 +478,98 @@ export function ExpenseForm({
   );
 }
 
+const SOURCE_LABEL: Record<SuggestedRate['sources'][number], string> = {
+  frankfurter: 'Frankfurter',
+  'exchangerate-api': 'ExchangeRate-API',
+};
+
+/** Foreign bill: the rate (prefilled from today's table, editable for card markup) and the result. */
+function RateCard({
+  state,
+  groupCurrency,
+  suggestion,
+  convertedTotal,
+  onChangeRate,
+  onUseSuggested,
+  theme,
+}: {
+  state: ExpenseFormState;
+  groupCurrency: CurrencyCode;
+  suggestion: SuggestedRate | null;
+  convertedTotal: number | null;
+  onChangeRate: (text: string) => void;
+  onUseSuggested: () => void;
+  theme: Theme;
+}) {
+  const value = effectiveRateText(state, suggestion?.rate ?? null);
+  const differsFromToday =
+    state.rateEdited && suggestion !== null && suggestion.rate !== state.rateText;
+  const needsAttribution = suggestion?.sources.includes('exchangerate-api') ?? false;
+
+  let caption: string;
+  if (!state.rateEdited && suggestion) {
+    const sources = suggestion.sources.map((s) => SOURCE_LABEL[s]).join(' + ');
+    caption = `Mid-market rate as of ${formatIsoDate(suggestion.asOf)} (${sources}). Change it to match your card or exchange receipt.`;
+  } else if (state.rateEdited) {
+    caption = 'This rate is saved with the expense and won’t change later.';
+  } else {
+    caption = `No rate on this phone yet. Type the rate from your card statement or exchange receipt.`;
+  }
+
+  return (
+    <Card style={styles.rateCard}>
+      <View style={styles.rateRow}>
+        <Icon name="currency" color={theme.muted} size={20} />
+        <AppText style={styles.medium}>1 {state.currency} =</AppText>
+        <TextInput
+          value={value}
+          onChangeText={onChangeRate}
+          placeholder="Rate"
+          keyboardType="decimal-pad"
+          accessibilityLabel={`Exchange rate: ${groupCurrency} for 1 ${state.currency}`}
+          style={[
+            styles.rateInput,
+            { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+          ]}
+        />
+        <AppText style={styles.medium}>{groupCurrency}</AppText>
+      </View>
+      <AppText variant="caption" color={theme.muted}>
+        {caption}
+      </AppText>
+      {differsFromToday ? (
+        <Pressable
+          onPress={onUseSuggested}
+          accessibilityRole="button"
+          hitSlop={8}
+          style={styles.linkButton}
+        >
+          <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+            Use today’s rate ({formatRate(suggestion.rate)})
+          </AppText>
+        </Pressable>
+      ) : null}
+      {convertedTotal !== null ? (
+        <AppText variant="label" style={styles.bold} accessibilityLiveRegion="polite">
+          = {formatMoney(convertedTotal, groupCurrency, { forceDecimals: true })} in the group’s
+          balances
+        </AppText>
+      ) : null}
+      {needsAttribution && !state.rateEdited ? (
+        <Pressable
+          onPress={() => void Linking.openURL('https://www.exchangerate-api.com')}
+          accessibilityRole="link"
+          hitSlop={8}
+        >
+          <AppText variant="caption" color={theme.onPrimarySoft}>
+            Rates By Exchange Rate API
+          </AppText>
+        </Pressable>
+      ) : null}
+    </Card>
+  );
+}
+
 function SectionTitle({ children }: { children: string }) {
   return (
     <AppText variant="label" accessibilityRole="header" style={styles.section}>
@@ -470,6 +630,19 @@ const styles = StyleSheet.create({
   medium: { fontWeight: '500' },
   bold: { fontWeight: '600' },
   amountBlock: { alignItems: 'center', paddingVertical: 8 },
+  amountLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rateCard: { gap: 8, padding: 14, borderRadius: 18 },
+  rateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rateInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 16,
+    textAlign: 'right',
+  },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rupee: { fontSize: 28, lineHeight: 36, fontWeight: '500' },
   amountInput: {

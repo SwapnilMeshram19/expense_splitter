@@ -1,7 +1,12 @@
-import type { GroupDeleteError, GroupError, GroupUpdateError } from '@/db/repositories/groups';
+import type {
+  GroupCurrencyError,
+  GroupDeleteError,
+  GroupError,
+  GroupUpdateError,
+} from '@/db/repositories/groups';
 import type { MemberError } from '@/db/repositories/members';
 import type { NameError } from '@/db/repositories/names';
-import { formatPaise } from '@/domain/money';
+import { DEFAULT_CURRENCY, formatMoney, type CurrencyCode } from '@/domain/currency';
 
 export function describeNameError(error: NameError, subject: string): string {
   switch (error.code) {
@@ -15,7 +20,21 @@ export function describeNameError(error: NameError, subject: string): string {
 }
 
 export function describeGroupError(error: GroupError): string {
+  if (error.target === 'currency') return 'Pick a supported currency.';
   return describeNameError(error.error, error.target === 'group' ? 'Group name' : 'Each name');
+}
+
+export function describeGroupCurrencyError(error: GroupCurrencyError): string {
+  switch (error.code) {
+    case 'GROUP_NOT_FOUND':
+      return 'This group no longer exists.';
+    case 'NOT_A_MEMBER':
+      return 'You’re not a member of this group.';
+    case 'UNKNOWN_CURRENCY':
+      return 'Pick a supported currency.';
+    case 'CURRENCY_LOCKED':
+      return 'The currency can’t change once the group has expenses or payments. Add bills in other currencies with their own rate instead.';
+  }
 }
 
 export function describeGroupUpdateError(error: GroupUpdateError): string {
@@ -42,7 +61,10 @@ export function describeGroupDeleteError(error: GroupDeleteError): string {
   }
 }
 
-export function describeMemberError(error: MemberError): string {
+export function describeMemberError(
+  error: MemberError,
+  currency: CurrencyCode = DEFAULT_CURRENCY,
+): string {
   switch (error.code) {
     case 'NAME_REQUIRED':
     case 'NAME_TOO_LONG':
@@ -58,7 +80,7 @@ export function describeMemberError(error: MemberError): string {
       return 'You can’t remove yourself.';
     case 'MEMBER_HAS_BALANCE':
       return error.balancePaise < 0
-        ? `They still owe ${formatPaise(-error.balancePaise)}. Settle up first.`
-        : `They are still owed ${formatPaise(error.balancePaise)}. Settle up first.`;
+        ? `They still owe ${formatMoney(-error.balancePaise, currency)}. Settle up first.`
+        : `They are still owed ${formatMoney(error.balancePaise, currency)}. Settle up first.`;
   }
 }

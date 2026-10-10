@@ -53,6 +53,7 @@ const ICONS = {
   lock: { ios: 'lock', android: 0xe897 }, // lock
   calendar: { ios: 'calendar', android: 0xe935 }, // calendar_today
   rupee: { ios: 'indianrupeesign', android: 0xeaf7 }, // currency_rupee
+  currency: { ios: 'dollarsign.arrow.circlepath', android: 0xeb70 }, // currency_exchange
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

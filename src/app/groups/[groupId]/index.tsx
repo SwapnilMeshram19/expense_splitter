@@ -11,7 +11,7 @@ import { deleteSettlement } from '@/db/repositories/settlements';
 import type { Settlement } from '@/db/schema';
 import { getDeviceUserId } from '@/db/session';
 import type { Debt } from '@/domain/balances';
-import { formatPaise } from '@/domain/money';
+import { formatMoney } from '@/domain/currency';
 import { describeMyExpenseShare } from '@/features/balances/describe';
 import {
   GROUP_VIEW_TABLES,
@@ -105,6 +105,8 @@ export default function GroupDetailScreen() {
   }
 
   const { me, canEdit } = view;
+  const { currency } = view.group;
+  const money = (minor: number) => formatMoney(minor, currency);
   const nameOf = (id: string) => (id === me ? 'You' : (view.names.get(id) ?? 'Unknown member'));
 
   const openSettle = (params: { from?: string; to?: string; amount?: string } = {}) =>
@@ -121,7 +123,7 @@ export default function GroupDetailScreen() {
     if (!canEdit || !me) return;
     Alert.alert(
       'Delete this payment?',
-      `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${formatPaise(settlement.amountPaise)}. Balances will go back to how they were before it.`,
+      `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${money(settlement.amountPaise)}. Balances will go back to how they were before it.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -129,7 +131,9 @@ export default function GroupDetailScreen() {
           style: 'destructive',
           onPress: () => {
             const result = deleteSettlement(appContext, settlement.id, me);
-            if (!result.ok) Alert.alert('Could not delete', describeSettlementError(result.error, nameOf));
+            if (!result.ok) {
+              Alert.alert('Could not delete', describeSettlementError(result.error, nameOf, currency));
+            }
           },
         },
       ],
@@ -147,7 +151,14 @@ export default function GroupDetailScreen() {
         />
       ) : null}
       {canEdit ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
-      <SummaryCard view={view} theme={theme} nameOf={nameOf} onSettle={() => setSegment('balances')} onRecord={() => openSettle()} />
+      <SummaryCard
+        view={view}
+        theme={theme}
+        nameOf={nameOf}
+        money={money}
+        onSettle={() => setSegment('balances')}
+        onRecord={() => openSettle()}
+      />
       {view.invalidCount > 0 ? (
         <Banner
           tone="warning"
@@ -168,13 +179,18 @@ export default function GroupDetailScreen() {
           </AppText>
         );
       case 'expense': {
-        const share = describeMyExpenseShare(item.myNet, item.involved);
-        const [shareLabel, shareAmount] = splitShareLabel(share.label);
+        const share = describeMyExpenseShare(item.myNet, item.involved, currency);
         const firstPayer = item.payers[0];
+        const { expense } = item;
+        // A foreign bill reads in the currency it was paid in, with the group amount alongside.
+        const total =
+          expense.originalCurrency && expense.originalAmountMinor !== null
+            ? `${formatMoney(expense.originalAmountMinor, expense.originalCurrency)} (${money(expense.amountPaise)})`
+            : money(expense.amountPaise);
         const paidBy =
           item.payers.length === 1 && firstPayer
-            ? `${nameOf(firstPayer.memberId)} paid ${formatPaise(item.expense.amountPaise)}`
-            : `${item.payers.length} people paid ${formatPaise(item.expense.amountPaise)}`;
+            ? `${nameOf(firstPayer.memberId)} paid ${total}`
+            : `${item.payers.length} people paid ${total}`;
         return (
           <Pressable
             onPress={() =>
@@ -198,11 +214,11 @@ export default function GroupDetailScreen() {
             </View>
             <View style={styles.right}>
               <AppText variant="caption" color={theme.muted}>
-                {shareLabel}
+                {share.lead}
               </AppText>
-              {shareAmount ? (
+              {share.amount ? (
                 <AppText variant="label" color={toneColor(theme, share.tone)} style={styles.bold}>
-                  {shareAmount}
+                  {share.amount}
                 </AppText>
               ) : null}
             </View>
@@ -236,7 +252,7 @@ export default function GroupDetailScreen() {
               </AppText>
             </View>
             <AppText variant="amount" color={theme.onPrimarySoft}>
-              {formatPaise(s.amountPaise)}
+              {money(s.amountPaise)}
             </AppText>
           </Pressable>
         );
@@ -254,6 +270,8 @@ export default function GroupDetailScreen() {
             me={me}
             canEdit={canEdit}
             nameOf={nameOf}
+            money={money}
+            upi={currency === 'INR'}
             theme={theme}
             onRecord={() =>
               openSettle({ from: item.debt.fromMemberId, to: item.debt.toMemberId, amount: String(item.debt.amountPaise) })
@@ -278,7 +296,7 @@ export default function GroupDetailScreen() {
             <AppText variant="label" color={toneColor(theme, tone)} style={styles.bold}>
               {item.balance === 0
                 ? 'settled'
-                : `${item.balance > 0 ? 'gets back' : 'owes'} ${formatPaise(Math.abs(item.balance))}`}
+                : `${item.balance > 0 ? 'gets back' : 'owes'} ${money(Math.abs(item.balance))}`}
             </AppText>
           </View>
         );
@@ -362,22 +380,18 @@ export default function GroupDetailScreen() {
   );
 }
 
-/** "you lent ₹600" → ["you lent", "₹600"]; labels without an amount stay whole. */
-function splitShareLabel(label: string): [string, string | null] {
-  const index = label.indexOf('₹');
-  return index > 0 ? [label.slice(0, index).trim(), label.slice(index)] : [label, null];
-}
-
 function SummaryCard({
   view,
   theme,
   nameOf,
+  money,
   onSettle,
   onRecord,
 }: {
   view: GroupView;
   theme: Theme;
   nameOf: (id: string) => string;
+  money: (minor: number) => string;
   onSettle: () => void;
   onRecord: () => void;
 }) {
@@ -397,7 +411,7 @@ function SummaryCard({
           </AppText>
           {myBalance !== 0 ? (
             <AppText variant="title" color={myBalance > 0 ? theme.positive : theme.negative}>
-              {formatPaise(Math.abs(myBalance))}
+              {money(Math.abs(myBalance))}
             </AppText>
           ) : null}
         </View>
@@ -431,7 +445,7 @@ function SummaryCard({
                   {owesMe ? `${nameOf(t.fromMemberId)} owes you` : `You owe ${nameOf(t.toMemberId)}`}
                 </AppText>
                 <AppText variant="label" color={owesMe ? theme.positive : theme.negative} style={styles.bold}>
-                  {formatPaise(t.amountPaise)}
+                  {money(t.amountPaise)}
                 </AppText>
               </View>
             );
@@ -454,6 +468,8 @@ function TransferRow({
   me,
   canEdit,
   nameOf,
+  money,
+  upi,
   theme,
   onRecord,
   onPay,
@@ -463,6 +479,9 @@ function TransferRow({
   me: string | null;
   canEdit: boolean;
   nameOf: (id: string) => string;
+  money: (minor: number) => string;
+  /** INR group: offer UPI pay/request. Other currencies are recorded after paying some other way. */
+  upi: boolean;
   theme: Theme;
   onRecord: () => void;
   onPay: () => void;
@@ -472,6 +491,7 @@ function TransferRow({
   const iReceive = t.toMemberId === me;
   const sentence = `${nameOf(t.fromMemberId)} ${iPay ? 'pay' : 'pays'} ${iReceive ? 'you' : nameOf(t.toMemberId)}`;
   const amountColor = iPay ? theme.negative : iReceive ? theme.positive : theme.text;
+  const withUpi = upi && (iPay || iReceive);
 
   return (
     <Card style={styles.transferCard}>
@@ -483,12 +503,12 @@ function TransferRow({
           {sentence}
         </AppText>
         <AppText variant="amount" color={amountColor}>
-          {formatPaise(t.amountPaise)}
+          {money(t.amountPaise)}
         </AppText>
       </View>
       {canEdit ? (
         <View style={styles.transferActions}>
-          {iPay ? (
+          {withUpi && iPay ? (
             <Button
               label="Pay with UPI"
               icon="arrowForward"
@@ -496,7 +516,7 @@ function TransferRow({
               style={styles.grow}
               accessibilityLabel={`Pay ${nameOf(t.toMemberId)} with UPI`}
             />
-          ) : iReceive ? (
+          ) : withUpi && iReceive ? (
             <Button
               label="Request"
               variant="soft"
@@ -506,10 +526,10 @@ function TransferRow({
             />
           ) : null}
           <Button
-            label={iPay || iReceive ? 'Record' : 'Record payment'}
+            label={withUpi ? 'Record' : 'Record payment'}
             variant="secondary"
             onPress={onRecord}
-            style={iPay || iReceive ? undefined : styles.grow}
+            style={withUpi ? undefined : styles.grow}
             accessibilityLabel={`Record payment from ${nameOf(t.fromMemberId)} to ${nameOf(t.toMemberId)}`}
           />
         </View>

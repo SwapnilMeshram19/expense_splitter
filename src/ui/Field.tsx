@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type TextInputProps, type TextStyle } from 'react-native';
 
+import { currencyInfo, currencyPrefix, DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
+
 import { AppText } from './AppText';
 import { TextInput } from './Text';
 import { useTheme } from './theme';
@@ -26,31 +28,39 @@ export function Input({ style, ...rest }: TextInputProps & { style?: StyleProp<T
   );
 }
 
-/** Large ₹ amount entry used by the payment screens. Value is the raw text (sanitised by the caller). */
+/**
+ * Large amount entry used by the payment screens, prefixed with the currency's symbol (₹ by
+ * default). Value is the raw text (sanitised by the caller for the same currency).
+ */
 export function AmountInput({
   value,
   onChangeText,
   autoFocus,
-  accessibilityLabel = 'Amount in rupees',
+  currency = DEFAULT_CURRENCY,
+  accessibilityLabel,
 }: {
   value: string;
   onChangeText: (text: string) => void;
   autoFocus?: boolean;
+  currency?: CurrencyCode;
   accessibilityLabel?: string;
 }) {
   const theme = useTheme();
+  const info = currencyInfo(currency);
   return (
     <View style={[styles.amountRow, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       <AppText color={theme.muted} style={styles.rupee}>
-        ₹
+        {currencyPrefix(currency)}
       </AppText>
       <TextInput
         value={value}
         onChangeText={onChangeText}
         placeholder="0"
-        keyboardType="decimal-pad"
+        keyboardType={info.digits === 0 ? 'number-pad' : 'decimal-pad'}
         autoFocus={autoFocus}
-        accessibilityLabel={accessibilityLabel}
+        accessibilityLabel={
+          accessibilityLabel ?? (currency === 'INR' ? 'Amount in rupees' : `Amount in ${info.name}`)
+        }
         style={styles.amountInput}
       />
     </View>

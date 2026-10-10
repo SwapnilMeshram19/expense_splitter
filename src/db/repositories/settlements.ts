@@ -1,10 +1,12 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
-import { MAX_AMOUNT_PAISE, type Paise } from '@/domain/money';
+import { maxAmountMinor } from '@/domain/currency';
+import type { Paise } from '@/domain/money';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
 import { activityLog, settlements, type Settlement, type SettlementMethod } from '../schema';
+import { groupCurrency } from './groups';
 import { activeMemberIds } from './members';
 
 export const MAX_NOTE_LENGTH = 100;
@@ -15,6 +17,7 @@ export interface SettlementDraft {
   fromMemberId: string;
   /** Member who received it. */
   toMemberId: string;
+  /** Minor units of the group currency. */
   amountPaise: Paise;
   method: SettlementMethod;
   note?: string;
@@ -69,7 +72,7 @@ export function recordSettlement(
   if (
     !Number.isSafeInteger(draft.amountPaise) ||
     draft.amountPaise <= 0 ||
-    draft.amountPaise > MAX_AMOUNT_PAISE
+    draft.amountPaise > maxAmountMinor(groupCurrency(ctx.db, draft.groupId))
   ) {
     return err({ code: 'INVALID_AMOUNT' });
   }

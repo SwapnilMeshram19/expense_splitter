@@ -7,7 +7,7 @@ import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { groupMembersQuery } from '@/db/repositories/members';
 import { getDeviceUserId } from '@/db/session';
-import { formatPaise } from '@/domain/money';
+import { formatMoney } from '@/domain/currency';
 import { loadOverview, OVERVIEW_TABLES, type MyTransfer } from '@/features/overview/loadOverview';
 import { getPendingUpiPayment } from '@/features/upi/pendingUpiPayment';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
@@ -75,7 +75,11 @@ export default function SettleTab() {
         ) : null}
 
         {toPay.length > 0 ? (
-          <Section title="You owe" total={overview.iOwe} color={theme.negative}>
+          <Section
+            title="You owe"
+            totals={overview.totals.filter((x) => x.iOwe > 0).map((x) => formatMoney(x.iOwe, x.currency))}
+            color={theme.negative}
+          >
             {toPay.map((t) => (
               <PayCard key={key(t)} transfer={t} />
             ))}
@@ -83,7 +87,13 @@ export default function SettleTab() {
         ) : null}
 
         {toReceive.length > 0 ? (
-          <Section title="Owed to you" total={overview.owedToMe} color={theme.positive}>
+          <Section
+            title="Owed to you"
+            totals={overview.totals
+              .filter((x) => x.owedToMe > 0)
+              .map((x) => formatMoney(x.owedToMe, x.currency))}
+            color={theme.positive}
+          >
             <Card style={styles.listCard}>
               {toReceive.map((t, index) => (
                 <ReceiveRow key={key(t)} transfer={t} last={index === toReceive.length - 1} />
@@ -100,12 +110,13 @@ const key = (t: MyTransfer) => `${t.groupId}:${t.direction}:${t.counterpartyId}`
 
 function Section({
   title,
-  total,
+  totals,
   color,
   children,
 }: {
   title: string;
-  total: number;
+  /** One formatted total per currency; never added across currencies. */
+  totals: string[];
   color: string;
   children: React.ReactNode;
 }) {
@@ -115,17 +126,30 @@ function Section({
         <AppText variant="heading" style={styles.grow}>
           {title}
         </AppText>
-        <AppText variant="amount" color={color}>
-          {formatPaise(total)}
-        </AppText>
+        <View style={styles.totals}>
+          {totals.map((text) => (
+            <AppText key={text} variant="amount" color={color}>
+              {text}
+            </AppText>
+          ))}
+        </View>
       </View>
       {children}
     </View>
   );
 }
 
+/** UPI moves rupees only: other currencies are settled however people pay, then recorded. */
+const canUseUpi = (t: MyTransfer) => t.currency === 'INR';
+
 function PayCard({ transfer: t }: { transfer: MyTransfer }) {
   const theme = useTheme();
+  const amount = formatMoney(t.amountPaise, t.currency);
+  const record = () =>
+    router.push({
+      pathname: '/groups/[groupId]/settle',
+      params: { groupId: t.groupId, from: t.meId, to: t.counterpartyId, amount: String(t.amountPaise) },
+    });
   return (
     <Card style={styles.payCard}>
       <View style={styles.personRow}>
@@ -139,16 +163,16 @@ function PayCard({ transfer: t }: { transfer: MyTransfer }) {
           </AppText>
         </View>
         <AppText variant="heading" color={theme.negative}>
-          {formatPaise(t.amountPaise)}
+          {amount}
         </AppText>
       </View>
-      {t.canEdit ? (
+      {t.canEdit && canUseUpi(t) ? (
         <View style={styles.actions}>
           <Button
             label="Pay with UPI"
             icon="arrowForward"
             style={styles.grow}
-            accessibilityLabel={`Pay ${t.counterpartyName} ${formatPaise(t.amountPaise)} with UPI`}
+            accessibilityLabel={`Pay ${t.counterpartyName} ${amount} with UPI`}
             onPress={() =>
               router.push({
                 pathname: '/groups/[groupId]/pay',
@@ -160,14 +184,16 @@ function PayCard({ transfer: t }: { transfer: MyTransfer }) {
             label="Record cash"
             variant="secondary"
             accessibilityLabel={`Record a cash payment to ${t.counterpartyName}`}
-            onPress={() =>
-              router.push({
-                pathname: '/groups/[groupId]/settle',
-                params: { groupId: t.groupId, from: t.meId, to: t.counterpartyId, amount: String(t.amountPaise) },
-              })
-            }
+            onPress={record}
           />
         </View>
+      ) : t.canEdit ? (
+        <Button
+          label="Record payment"
+          variant="secondary"
+          accessibilityLabel={`Record a payment of ${amount} to ${t.counterpartyName}`}
+          onPress={record}
+        />
       ) : (
         <AppText variant="caption" color={theme.warning}>
           Read-only: this group is no longer shared with you.
@@ -179,6 +205,8 @@ function PayCard({ transfer: t }: { transfer: MyTransfer }) {
 
 function ReceiveRow({ transfer: t, last }: { transfer: MyTransfer; last: boolean }) {
   const theme = useTheme();
+  const amount = formatMoney(t.amountPaise, t.currency);
+  const upi = canUseUpi(t);
   return (
     <View style={[styles.receiveRow, !last && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
       <Avatar seed={t.counterpartyId} name={t.counterpartyName} />
@@ -192,22 +220,36 @@ function ReceiveRow({ transfer: t, last }: { transfer: MyTransfer; last: boolean
       </View>
       <View style={styles.receiveRight}>
         <AppText variant="amount" color={theme.positive}>
-          {formatPaise(t.amountPaise)}
+          {amount}
         </AppText>
         {t.canEdit ? (
           <Pressable
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel={`Request ${formatPaise(t.amountPaise)} from ${t.counterpartyName}`}
+            accessibilityLabel={
+              upi
+                ? `Request ${amount} from ${t.counterpartyName}`
+                : `Record ${amount} received from ${t.counterpartyName}`
+            }
             onPress={() =>
-              router.push({
-                pathname: '/groups/[groupId]/request',
-                params: { groupId: t.groupId, from: t.counterpartyId, amount: String(t.amountPaise) },
-              })
+              upi
+                ? router.push({
+                    pathname: '/groups/[groupId]/request',
+                    params: { groupId: t.groupId, from: t.counterpartyId, amount: String(t.amountPaise) },
+                  })
+                : router.push({
+                    pathname: '/groups/[groupId]/settle',
+                    params: {
+                      groupId: t.groupId,
+                      from: t.counterpartyId,
+                      to: t.meId,
+                      amount: String(t.amountPaise),
+                    },
+                  })
             }
           >
             <AppText variant="label" color={theme.onPrimarySoft} style={styles.link}>
-              Request
+              {upi ? 'Request' : 'Record'}
             </AppText>
           </Pressable>
         ) : null}
@@ -222,6 +264,7 @@ const styles = StyleSheet.create({
   emptyCard: { gap: 8 },
   section: { gap: 10 },
   sectionHeader: { flexDirection: 'row', alignItems: 'baseline' },
+  totals: { alignItems: 'flex-end' },
   grow: { flex: 1, minWidth: 0 },
   payCard: { gap: 12, padding: 14, borderRadius: 18 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

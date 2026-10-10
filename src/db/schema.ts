@@ -2,7 +2,8 @@
  * Local SQLite schema. Mirrors the future Supabase (Postgres) schema.
  *
  * Conventions:
- * - Money: integer paise. Never REAL.
+ * - Money: integer minor units of the group's currency (paise for INR; columns keep the
+ *   historical `_paise` names). Never REAL. Exchange rates are exact decimal TEXT.
  * - System timestamps: UTC epoch ms (integer). Calendar dates: 'YYYY-MM-DD' text.
  * - Syncable tables are never hard-deleted (deleted_at tombstones).
  * - version = last server-acknowledged version (0 = never synced), used as the base for
@@ -69,6 +70,11 @@ export const groups = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     simplifyDebts: integer('simplify_debts', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * ISO 4217 code every amount in the group is in. Chosen at creation; can only change while the
+     * group has no expenses or payments at all (the server enforces the same).
+     */
+    currency: text('currency').notNull().default('INR'),
     ...syncColumns(),
   },
   (t) => [check('groups_name_not_blank', sql`length(trim(${t.name})) > 0`)],
@@ -113,8 +119,21 @@ export const expenses = sqliteTable(
     categoryLabel: text('category_label'),
     /** Local calendar date 'YYYY-MM-DD'. Not a timestamp, so it can never shift by timezone. */
     expenseDate: text('expense_date').notNull(),
-    /** Raw split as entered, so the user can re-edit it exactly. */
+    /**
+     * Raw split as entered, so the user can re-edit it exactly. For a foreign bill its amounts are
+     * in original_currency; payers/shares rows are always in the group currency.
+     */
     splitInput: text('split_input', { mode: 'json' }).$type<StoredSplitInput>().notNull(),
+    /**
+     * Foreign bill: all three set, or all three null. amount_paise is the converted total
+     * (original_amount_minor × fx_rate, rounded). The rate is locked here when the expense is saved.
+     * No CHECK in SQLite (adding one needs a table rebuild); src/domain validates every local write
+     * and the server has the CHECK.
+     */
+    originalCurrency: text('original_currency'),
+    originalAmountMinor: integer('original_amount_minor'),
+    /** Decimal string: group-currency units per 1 unit of original_currency. */
+    fxRate: text('fx_rate'),
     createdByMemberId: text('created_by_member_id')
       .notNull()
       .references(() => members.id),
@@ -140,6 +159,8 @@ export const expensePayers = sqliteTable(
       .notNull()
       .references(() => members.id),
     amountPaise: integer('amount_paise').notNull(),
+    /** Foreign bills: what this person paid in the bill's currency (for exact re-editing). */
+    originalAmountMinor: integer('original_amount_minor'),
   },
   (t) => [
     primaryKey({ columns: [t.expenseId, t.memberId] }),

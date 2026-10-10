@@ -26,7 +26,7 @@ export function loadRecentActivity(
   limit: number = ACTIVITY_PAGE_SIZE,
 ): RecentActivityItem[] {
   const rows = db
-    .select({ entry: activityLog, groupName: groups.name })
+    .select({ entry: activityLog, groupName: groups.name, currency: groups.currency })
     .from(activityLog)
     .innerJoin(groups, eq(activityLog.groupId, groups.id))
     .where(isNull(groups.deletedAt))
@@ -35,27 +35,31 @@ export function loadRecentActivity(
     .all();
 
   // One members query and one "me" lookup per group, not per row.
-  const perGroup = new Map<string, { me: string | null; nameOf: (id: string) => string }>();
-  const contextFor = (groupId: string) => {
+  const perGroup = new Map<
+    string,
+    { me: string | null; nameOf: (id: string) => string; currency: string }
+  >();
+  const contextFor = (groupId: string, currency: string) => {
     let context = perGroup.get(groupId);
     if (!context) {
       const names = new Map(groupMembersQuery(db, groupId).all().map((m) => [m.id, m.displayName]));
       context = {
         me: findSelfMemberId(db, groupId, deviceUserId),
         nameOf: (id: string) => names.get(id) ?? 'Someone',
+        currency,
       };
       perGroup.set(groupId, context);
     }
     return context;
   };
 
-  return rows.map(({ entry, groupName }) => ({
+  return rows.map(({ entry, groupName, currency }) => ({
     id: entry.id,
     groupId: entry.groupId,
     groupName,
     createdAt: entry.createdAt,
     time: formatTimestamp(entry.createdAt),
-    ...describeActivity(entry, contextFor(entry.groupId)),
+    ...describeActivity(entry, contextFor(entry.groupId, currency)),
   }));
 }
 

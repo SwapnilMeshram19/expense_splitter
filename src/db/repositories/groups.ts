@@ -1,10 +1,11 @@
 import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 
 import { computeBalances } from '@/domain/balances';
+import { DEFAULT_CURRENCY, isSupportedCurrency, type CurrencyCode } from '@/domain/currency';
 import { err, ok, type Result } from '@/lib/result';
 
 import type { AppDb, RepoContext } from '../context';
-import { activityLog, groups, members, type Group } from '../schema';
+import { activityLog, expenses, groups, members, settlements, type Group } from '../schema';
 import { loadGroupLedger } from './ledger';
 import { activeMemberIds } from './members';
 import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
@@ -16,11 +17,20 @@ export interface CreateGroupInput {
   /** Other people to add as placeholder members. */
   otherMemberNames: string[];
   deviceUserId: string;
+  /** ISO 4217 code for every amount in the group. Default INR. */
+  currency?: CurrencyCode;
 }
 
 export type GroupError =
   | { target: 'group'; error: NameError }
-  | { target: 'member'; error: NameError };
+  | { target: 'member'; error: NameError }
+  | { target: 'currency'; error: { code: 'UNKNOWN_CURRENCY' } };
+
+export type GroupCurrencyError =
+  | { code: 'GROUP_NOT_FOUND' }
+  | { code: 'NOT_A_MEMBER' }
+  | { code: 'UNKNOWN_CURRENCY' }
+  | { code: 'CURRENCY_LOCKED' };
 
 export type GroupUpdateError = NameError | { code: 'GROUP_NOT_FOUND' } | { code: 'NOT_A_MEMBER' };
 
@@ -43,6 +53,32 @@ export function getGroup(db: AppDb, groupId: string): Group | null {
   );
 }
 
+/** The group's currency (INR for a group that no longer exists locally). */
+export function groupCurrency(db: AppDb, groupId: string): CurrencyCode {
+  return (
+    db.select({ currency: groups.currency }).from(groups).where(eq(groups.id, groupId)).get()
+      ?.currency ?? DEFAULT_CURRENCY
+  );
+}
+
+/**
+ * True once the group has any expense or payment, including deleted ones: a deleted expense can be
+ * restored, and its amounts are in the currency it was recorded in. Same rule as the server.
+ */
+export function isCurrencyLocked(db: AppDb, groupId: string): boolean {
+  const expense = db
+    .select({ id: expenses.id })
+    .from(expenses)
+    .where(eq(expenses.groupId, groupId))
+    .get();
+  if (expense) return true;
+  return !!db
+    .select({ id: settlements.id })
+    .from(settlements)
+    .where(eq(settlements.groupId, groupId))
+    .get();
+}
+
 /** Create a group with the self member and placeholders, atomically. */
 export function createGroup(
   ctx: RepoContext,
@@ -58,7 +94,12 @@ export function createGroup(
     if (memberNameError) return err({ target: 'member', error: memberNameError });
   }
   const duplicate = findDuplicateName(memberNames);
-  if (duplicate) return err({ target: 'member', error: { code: 'DUPLICATE_NAME', name: duplicate } });
+  if (duplicate)
+    return err({ target: 'member', error: { code: 'DUPLICATE_NAME', name: duplicate } });
+
+  const currency = input.currency ?? DEFAULT_CURRENCY;
+  if (!isSupportedCurrency(currency))
+    return err({ target: 'currency', error: { code: 'UNKNOWN_CURRENCY' } });
 
   const groupId = ctx.newId();
   const t = ctx.now();
@@ -73,7 +114,7 @@ export function createGroup(
   const selfMemberId = memberRows[0]!.id;
 
   ctx.db.transaction((tx) => {
-    tx.insert(groups).values({ id: groupId, name, createdAt: t, updatedAt: t }).run();
+    tx.insert(groups).values({ id: groupId, name, currency, createdAt: t, updatedAt: t }).run();
     tx.insert(members).values(memberRows).run();
     tx.insert(activityLog)
       .values({
@@ -83,7 +124,7 @@ export function createGroup(
         entityId: groupId,
         action: 'create',
         actorMemberId: selfMemberId,
-        after: { name, members: memberNames },
+        after: { name, members: memberNames, currency },
         createdAt: t,
       })
       .run();
@@ -159,6 +200,46 @@ export function setSimplifyDebts(
         actorMemberId: input.actorMemberId,
         before: { simplifyDebts: group.simplifyDebts },
         after: { simplifyDebts: input.simplifyDebts },
+        createdAt: t,
+      })
+      .run();
+  });
+
+  return ok(undefined);
+}
+
+/**
+ * Change the group's currency. Only while it has no expenses or payments: amounts are never
+ * re-denominated. A mistaken currency on a group with data means starting a new group.
+ */
+export function setGroupCurrency(
+  ctx: RepoContext,
+  input: { groupId: string; currency: CurrencyCode; actorMemberId: string },
+): Result<void, GroupCurrencyError> {
+  const group = checkAccess(ctx, input.groupId, input.actorMemberId);
+  // checkAccess only reports GROUP_NOT_FOUND / NOT_A_MEMBER.
+  if (isError(group))
+    return err(group as Extract<GroupCurrencyError, { code: 'GROUP_NOT_FOUND' | 'NOT_A_MEMBER' }>);
+  if (!isSupportedCurrency(input.currency)) return err({ code: 'UNKNOWN_CURRENCY' });
+  if (group.currency === input.currency) return ok(undefined);
+  if (isCurrencyLocked(ctx.db, group.id)) return err({ code: 'CURRENCY_LOCKED' });
+
+  const t = ctx.now();
+  ctx.db.transaction((tx) => {
+    tx.update(groups)
+      .set({ currency: input.currency, updatedAt: t, dirty: true })
+      .where(eq(groups.id, group.id))
+      .run();
+    tx.insert(activityLog)
+      .values({
+        id: ctx.newId(),
+        groupId: group.id,
+        entityType: 'group',
+        entityId: group.id,
+        action: 'update',
+        actorMemberId: input.actorMemberId,
+        before: { currency: group.currency },
+        after: { currency: input.currency },
         createdAt: t,
       })
       .run();

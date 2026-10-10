@@ -5,13 +5,14 @@ import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
 import type { Group } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt } from '@/domain/balances';
+import { DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
 import type { Paise } from '@/domain/money';
 import { simplifyDebts } from '@/domain/simplify';
 
 export interface GroupSummary {
   group: Group;
   me: string | null;
-  /** My net balance in this group: > 0 I'm owed, < 0 I owe. */
+  /** My net balance in this group, minor units of group.currency: > 0 I'm owed, < 0 I owe. */
   myBalance: Paise;
   activeMemberCount: number;
   lost: boolean;
@@ -22,6 +23,8 @@ export interface GroupSummary {
 export interface MyTransfer {
   groupId: string;
   groupName: string;
+  /** The group's currency; amountPaise is in its minor units. */
+  currency: CurrencyCode;
   /** My member id in that group (the payer for 'pay', the receiver for 'receive'). */
   meId: string;
   /** 'pay': I pay the counterparty. 'receive': the counterparty pays me. */
@@ -32,29 +35,45 @@ export interface MyTransfer {
   canEdit: boolean;
 }
 
-export interface Overview {
-  groups: GroupSummary[];
-  /** Sum of my positive group balances (₹ owed to me across groups). */
+/** My totals in one currency, summed over the groups that use it. */
+export interface CurrencyTotal {
+  currency: CurrencyCode;
+  /** Sum of my positive group balances. */
   owedToMe: Paise;
   /** Sum of my negative group balances, as a positive number. */
   iOwe: Paise;
   net: Paise;
-  /** Payments that involve me, per group, largest first; same suggestions as the group screen. */
+}
+
+export interface Overview {
+  groups: GroupSummary[];
+  /**
+   * One entry per currency I have a non-zero balance in: INR first, then the rest by code.
+   * Empty when I'm settled up everywhere. Never converted between currencies (see loadOverview).
+   */
+  totals: CurrencyTotal[];
+  /** Payments that involve me, per group; INR first, then by currency, largest first within one. */
   transfers: MyTransfer[];
 }
+
+/** INR first (the home currency), then alphabetical. */
+export const compareCurrencies = (a: CurrencyCode, b: CurrencyCode): number =>
+  a === b ? 0 : a === DEFAULT_CURRENCY ? -1 : b === DEFAULT_CURRENCY ? 1 : a < b ? -1 : 1;
 
 /**
  * Cross-group figures for the Home and Settle tabs.
  *
  * Balances are netted per group, never across groups: Rahul owing me ₹500 in "Goa" and me owing
  * Rahul ₹300 in "Flat" stay two payments, because each group's ledger only settles inside itself.
- * Everything is INR, so the totals are plain integer-paise sums (no rounding involved).
+ *
+ * Totals are kept per currency and never converted: "₹1,200 + $45" is exact, while a single
+ * converted figure would move every day with the rate and match nothing anyone actually pays.
+ * Within one currency the totals are plain integer sums (no rounding involved).
  */
 export function loadOverview(db: AppDb, deviceUserId: string): Overview {
   const groups: GroupSummary[] = [];
   const transfers: MyTransfer[] = [];
-  let owedToMe = 0;
-  let iOwe = 0;
+  const totals = new Map<CurrencyCode, CurrencyTotal>();
 
   for (const group of activeGroupsQuery(db).all()) {
     const me = findSelfMemberId(db, group.id, deviceUserId);
@@ -75,8 +94,16 @@ export function loadOverview(db: AppDb, deviceUserId: string): Overview {
     });
 
     if (!me || myBalance === 0) continue;
-    if (myBalance > 0) owedToMe += myBalance;
-    else iOwe += -myBalance;
+    const total = totals.get(group.currency) ?? {
+      currency: group.currency,
+      owedToMe: 0,
+      iOwe: 0,
+      net: 0,
+    };
+    if (myBalance > 0) total.owedToMe += myBalance;
+    else total.iOwe += -myBalance;
+    total.net = total.owedToMe - total.iOwe;
+    totals.set(group.currency, total);
 
     const names = new Map(members.map((m) => [m.id, m.displayName]));
     const debts: Debt[] = group.simplifyDebts
@@ -90,6 +117,7 @@ export function loadOverview(db: AppDb, deviceUserId: string): Overview {
       transfers.push({
         groupId: group.id,
         groupName: group.name,
+        currency: group.currency,
         meId: me,
         direction,
         counterpartyId,
@@ -100,15 +128,20 @@ export function loadOverview(db: AppDb, deviceUserId: string): Overview {
     }
   }
 
-  // Largest first; ties in a stable, readable order so rows don't jump between renders.
+  // Amounts only compare within a currency. Ties in a stable, readable order so rows don't jump.
   transfers.sort(
     (a, b) =>
+      compareCurrencies(a.currency, b.currency) ||
       b.amountPaise - a.amountPaise ||
       a.groupName.localeCompare(b.groupName) ||
       a.counterpartyName.localeCompare(b.counterpartyName) ||
       a.counterpartyId.localeCompare(b.counterpartyId),
   );
-  return { groups, owedToMe, iOwe, net: owedToMe - iOwe, transfers };
+  return {
+    groups,
+    totals: [...totals.values()].sort((a, b) => compareCurrencies(a.currency, b.currency)),
+    transfers,
+  };
 }
 
 /** Tables the overview reads: 'settings' holds the lost-access list. */

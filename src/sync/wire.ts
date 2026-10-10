@@ -1,6 +1,7 @@
 /**
  * Wire format shared with the server (supabase/migrations/*_sync_endpoints.sql):
- * snake_case, money in paise, timestamps as UTC epoch ms, calendar dates 'YYYY-MM-DD'.
+ * snake_case, money in minor units of the group currency (fields keep the `_paise` names),
+ * timestamps as UTC epoch ms, calendar dates 'YYYY-MM-DD', exchange rates as decimal strings.
  */
 import type {
   ActivityLogEntry,
@@ -16,6 +17,8 @@ export type VersionedTable = Exclude<WireTable, 'activity'>;
 export interface WireLine {
   member_id: string;
   amount_paise: number;
+  /** Payer lines of foreign bills only: the amount in the bill's currency. Omitted otherwise. */
+  original_amount_minor?: number;
 }
 
 interface Lifecycle {
@@ -28,6 +31,8 @@ export interface WireGroup extends Lifecycle {
   id: string;
   name: string;
   simplify_debts: boolean;
+  /** ISO 4217. Absent from servers before multi-currency (= INR). */
+  currency?: string;
 }
 
 export interface WireMember extends Lifecycle {
@@ -49,6 +54,16 @@ export interface WireExpense extends Lifecycle {
   expense_date: string;
   split_input: unknown;
   created_by_member_id: string;
+  /** Foreign bill (all three or none). Absent from servers before multi-currency. */
+  original_currency?: string | null;
+  original_amount_minor?: number | null;
+  fx_rate?: string | null;
+  /**
+   * Push only, never stored: the group currency this row's amounts are in. The server refuses the
+   * row if the group's currency differs, and refuses rows WITHOUT it in non-INR groups (builds
+   * from before multi-currency would read yen as paise).
+   */
+  group_currency?: string;
   payers: WireLine[];
   shares: WireLine[];
 }
@@ -63,6 +78,8 @@ export interface WireSettlement extends Lifecycle {
   note: string | null;
   settled_at: number;
   created_by_member_id: string;
+  /** Push only, never stored: see WireExpense.group_currency. */
+  group_currency?: string;
 }
 
 export interface WireActivity {
@@ -120,13 +137,30 @@ export function sortLines(lines: readonly WireLine[]): WireLine[] {
   return [...lines].sort((a, b) => (a.member_id < b.member_id ? -1 : a.member_id > b.member_id ? 1 : 0));
 }
 
-export const toWireLines = (lines: readonly { memberId: string; amountPaise: number }[]): WireLine[] =>
-  sortLines(lines.map((l) => ({ member_id: l.memberId, amount_paise: l.amountPaise })));
+interface LocalLine {
+  memberId: string;
+  amountPaise: number;
+  originalAmountMinor?: number | null;
+}
+
+export const toWireLines = (lines: readonly LocalLine[]): WireLine[] =>
+  sortLines(
+    lines.map((l) =>
+      typeof l.originalAmountMinor === 'number'
+        ? {
+            member_id: l.memberId,
+            amount_paise: l.amountPaise,
+            original_amount_minor: l.originalAmountMinor,
+          }
+        : { member_id: l.memberId, amount_paise: l.amountPaise },
+    ),
+  );
 
 export const groupToWire = (g: Group): WireGroup => ({
   id: g.id,
   name: g.name,
   simplify_debts: g.simplifyDebts,
+  currency: g.currency,
   created_at: g.createdAt,
   updated_at: g.updatedAt,
   deleted_at: g.deletedAt ?? null,
@@ -145,8 +179,8 @@ export const memberToWire = (m: Member): WireMember => ({
 
 export const expenseToWire = (
   e: Expense,
-  payers: readonly { memberId: string; amountPaise: number }[],
-  shares: readonly { memberId: string; amountPaise: number }[],
+  payers: readonly LocalLine[],
+  shares: readonly LocalLine[],
 ): WireExpense => ({
   id: e.id,
   group_id: e.groupId,
@@ -157,11 +191,15 @@ export const expenseToWire = (
   expense_date: e.expenseDate,
   split_input: e.splitInput,
   created_by_member_id: e.createdByMemberId,
+  original_currency: e.originalCurrency ?? null,
+  original_amount_minor: e.originalAmountMinor ?? null,
+  fx_rate: e.fxRate ?? null,
   created_at: e.createdAt,
   updated_at: e.updatedAt,
   deleted_at: e.deletedAt ?? null,
   payers: toWireLines(payers),
-  shares: toWireLines(shares),
+  // Shares never carry original amounts: they are recomputed from split_input.
+  shares: toWireLines(shares.map((l) => ({ memberId: l.memberId, amountPaise: l.amountPaise }))),
 });
 
 export const settlementToWire = (s: Settlement): WireSettlement => ({
@@ -204,7 +242,8 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-const SYNC_KEYS = new Set(['version', 'base_version']);
+/** Sync bookkeeping and push-only assertions: never part of the content. */
+const SYNC_KEYS = new Set(['version', 'base_version', 'group_currency']);
 
 function forComparison(row: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -218,6 +257,6 @@ function forComparison(row: object): Record<string, unknown> {
   return out;
 }
 
-/** Same user-visible content, ignoring sync bookkeeping (version / base_version). */
+/** Same user-visible content, ignoring sync bookkeeping (version / base_version / group_currency). */
 export const sameContent = (a: object, b: object): boolean =>
   stableStringify(forComparison(a)) === stableStringify(forComparison(b));

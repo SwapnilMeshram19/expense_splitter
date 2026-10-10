@@ -4,6 +4,13 @@
  * (before accepting a synced write). Pure TypeScript, zero dependencies.
  */
 import type { PayerLine } from './balances.ts';
+import {
+  DEFAULT_CURRENCY,
+  isSupportedCurrency,
+  maxAmountMinor,
+  type CurrencyCode,
+} from './currency.ts';
+import { convertLines, foreignTotal, type ForeignAmount, type ForeignError } from './fx.ts';
 import type { Paise } from './money.ts';
 import {
   computeSplit,
@@ -17,11 +24,18 @@ export const MAX_DESCRIPTION_LENGTH = 100;
 
 export interface ExpenseInput {
   description: string;
+  /** Total in minor units of the GROUP currency. For a foreign bill: the converted total. */
   amountPaise: Paise;
   /** Local calendar date 'YYYY-MM-DD'. */
   expenseDate: string;
+  /** Who paid, in the currency the bill was entered in (the bill's currency when foreign). */
   payers: readonly PayerLine[];
+  /** The split as entered, in the bill's currency when foreign. */
   splitInput: SplitInput;
+  /** Group currency. Default INR (data from before multi-currency). */
+  currency?: CurrencyCode;
+  /** Set when the bill was in another currency; converted at `foreign.rate`. */
+  foreign?: ForeignAmount | null;
 }
 
 export type ExpenseValidationError =
@@ -31,10 +45,22 @@ export type ExpenseValidationError =
   | { code: 'INVALID_PAYERS' }
   | { code: 'PAYER_SUM_MISMATCH'; expected: Paise; actual: Paise }
   | { code: 'UNKNOWN_MEMBER'; memberId: MemberId }
-  | { code: 'SPLIT'; error: SplitError };
+  | { code: 'SPLIT'; error: SplitError }
+  | { code: 'UNKNOWN_CURRENCY' }
+  | { code: 'FX'; error: ForeignError }
+  | { code: 'FX_TOTAL_MISMATCH'; expected: Paise; actual: Paise };
 
 export type ExpenseValidationResult =
-  | { ok: true; description: string; payers: PayerLine[]; shares: ShareLine[] }
+  | {
+      ok: true;
+      description: string;
+      /** Group currency, zero lines removed. */
+      payers: PayerLine[];
+      /** Group currency. */
+      shares: ShareLine[];
+      /** Foreign bills only: who paid, in the bill's currency (zero lines removed); else null. */
+      originalPayers: PayerLine[] | null;
+    }
   | { ok: false; error: ExpenseValidationError };
 
 const fail = (error: ExpenseValidationError): ExpenseValidationResult => ({ ok: false, error });
@@ -69,7 +95,11 @@ function splitMemberIds(input: SplitInput): MemberId[] {
 /**
  * Validate an expense against the members allowed on it.
  * On success returns normalized values ready to persist: trimmed description,
- * payers without zero lines, and computed shares.
+ * payers without zero lines, and computed shares — all in the group currency.
+ *
+ * Foreign bills are split in the bill's currency (so "$30 among 3" is exactly $10 each), then the
+ * total is converted once at the locked rate and the shares and payers are converted to sum to it
+ * exactly (largest remainder). The balance engine only ever sees group-currency amounts.
  */
 export function validateExpense(
   input: ExpenseInput,
@@ -82,7 +112,26 @@ export function validateExpense(
   }
   if (!isValidCalendarDate(input.expenseDate)) return fail({ code: 'INVALID_DATE' });
 
-  const split = computeSplit(input.amountPaise, input.splitInput);
+  const currency = input.currency ?? DEFAULT_CURRENCY;
+  if (!isSupportedCurrency(currency)) return fail({ code: 'UNKNOWN_CURRENCY' });
+  const foreign = input.foreign ?? null;
+
+  // Everything entered by the user (total, split, payers) is in the entry currency.
+  const entryCurrency = foreign ? foreign.currency : currency;
+  const entryTotal = foreign ? foreign.amountMinor : input.amountPaise;
+  if (foreign) {
+    const converted = foreignTotal(foreign, currency, isSupportedCurrency);
+    if (!converted.ok) return fail({ code: 'FX', error: converted.error });
+    if (converted.totalMinor !== input.amountPaise) {
+      return fail({
+        code: 'FX_TOTAL_MISMATCH',
+        expected: converted.totalMinor,
+        actual: input.amountPaise,
+      });
+    }
+  }
+
+  const split = computeSplit(entryTotal, input.splitInput, maxAmountMinor(entryCurrency));
   if (!split.ok) return fail({ code: 'SPLIT', error: split.error });
 
   if (input.payers.length === 0) return fail({ code: 'INVALID_PAYERS' });
@@ -100,20 +149,26 @@ export function validateExpense(
     payerIds.add(payer.memberId);
     paid += payer.amountPaise;
   }
-  if (paid !== input.amountPaise) {
-    return fail({ code: 'PAYER_SUM_MISMATCH', expected: input.amountPaise, actual: paid });
+  if (paid !== entryTotal) {
+    return fail({ code: 'PAYER_SUM_MISMATCH', expected: entryTotal, actual: paid });
   }
 
   for (const memberId of [...payerIds, ...splitMemberIds(input.splitInput)]) {
     if (!allowedMemberIds.has(memberId)) return fail({ code: 'UNKNOWN_MEMBER', memberId });
   }
 
+  const payers = input.payers
+    .filter((p) => p.amountPaise > 0)
+    .map((p) => ({ memberId: p.memberId, amountPaise: p.amountPaise }));
+
+  if (!foreign)
+    return { ok: true, description, payers, shares: split.shares, originalPayers: null };
+
   return {
     ok: true,
     description,
-    payers: input.payers
-      .filter((p) => p.amountPaise > 0)
-      .map((p) => ({ memberId: p.memberId, amountPaise: p.amountPaise })),
-    shares: split.shares,
+    payers: convertLines(input.amountPaise, payers),
+    shares: convertLines(input.amountPaise, split.shares),
+    originalPayers: payers,
   };
 }

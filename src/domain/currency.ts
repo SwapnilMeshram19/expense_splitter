@@ -1,0 +1,395 @@
+/**
+ * Currencies. Every amount in the app is an integer number of MINOR units of one currency
+ * (paise for INR, cents for USD, yen for JPY, fils for KWD). Column and field names still say
+ * "paise" for wire/database compatibility; read them as "minor units of the group currency".
+ *
+ * Minor-unit digits follow ISO 4217 (JPY 0, KWD 3). Formatting is table-driven and never uses
+ * Intl: ICU data differs across Hermes builds and Deno, and output must be identical everywhere.
+ * Lakh/crore grouping is used for INR only; every other currency groups in thousands.
+ *
+ * Pure TypeScript, zero dependencies: copied to the Edge Function by `npm run domain:sync`.
+ */
+import { formatPaise, formatPaiseCompact, MAX_AMOUNT_PAISE, parseRupeesToPaise } from './money';
+
+export type CurrencyCode = string;
+
+export interface CurrencyInfo {
+  code: CurrencyCode;
+  /** ISO 4217 minor-unit digits: 0, 2 or 3. */
+  digits: 0 | 2 | 3;
+  /** Prefix shown before the amount. Codes are used where a symbol would be ambiguous. */
+  symbol: string;
+  name: string;
+  /** 1 USD buys roughly 1,000 units or more: the per-amount cap is raised (see maxAmountMinor). */
+  high: boolean;
+}
+
+export const DEFAULT_CURRENCY: CurrencyCode = 'INR';
+
+/**
+ * Largest amount the server accepts in any currency (bigint column CHECK). Far below
+ * Number.MAX_SAFE_INTEGER, so balance sums of thousands of such amounts stay exact.
+ */
+export const MAX_AMOUNT_MINOR_ANY = 1_000_000_000_000;
+
+/** Per-amount cap in major units: ₹1 crore / $10M; 10^10 for high-denomination currencies. */
+const MAX_MAJOR_DEFAULT = 10_000_000;
+const MAX_MAJOR_HIGH = 10_000_000_000;
+
+// code, digits, symbol ('' = show the code), name. "*" after the digit marks a high-denomination
+// currency. Keep sorted by code. Funds, metals and SDR are left out on purpose.
+const TABLE = `
+AED 2  | UAE dirham
+AFN 2  | Afghan afghani
+ALL 2  | Albanian lek
+AMD 2  | Armenian dram
+AOA 2  | Angolan kwanza
+ARS 2  | Argentine peso
+AUD 2 A$ | Australian dollar
+AWG 2  | Aruban florin
+AZN 2  | Azerbaijani manat
+BAM 2  | Bosnia-Herzegovina mark
+BBD 2  | Barbadian dollar
+BDT 2 ৳ | Bangladeshi taka
+BGN 2  | Bulgarian lev
+BHD 3  | Bahraini dinar
+BIF 0* | Burundian franc
+BMD 2  | Bermudian dollar
+BND 2  | Brunei dollar
+BOB 2  | Bolivian boliviano
+BRL 2 R$ | Brazilian real
+BSD 2  | Bahamian dollar
+BTN 2 Nu. | Bhutanese ngultrum
+BWP 2  | Botswana pula
+BYN 2  | Belarusian ruble
+BZD 2  | Belize dollar
+CAD 2 C$ | Canadian dollar
+CDF 2* | Congolese franc
+CHF 2  | Swiss franc
+CLP 0* | Chilean peso
+CNY 2 CN¥ | Chinese yuan
+COP 2* | Colombian peso
+CRC 2  | Costa Rican colón
+CUP 2  | Cuban peso
+CVE 2  | Cape Verdean escudo
+CZK 2  | Czech koruna
+DJF 0  | Djiboutian franc
+DKK 2  | Danish krone
+DOP 2  | Dominican peso
+DZD 2  | Algerian dinar
+EGP 2  | Egyptian pound
+ERN 2  | Eritrean nakfa
+ETB 2  | Ethiopian birr
+EUR 2 € | Euro
+FJD 2  | Fijian dollar
+GBP 2 £ | British pound
+GEL 2  | Georgian lari
+GHS 2  | Ghanaian cedi
+GMD 2  | Gambian dalasi
+GNF 0* | Guinean franc
+GTQ 2  | Guatemalan quetzal
+GYD 2  | Guyanese dollar
+HKD 2 HK$ | Hong Kong dollar
+HNL 2  | Honduran lempira
+HTG 2  | Haitian gourde
+HUF 2  | Hungarian forint
+IDR 2* Rp | Indonesian rupiah
+ILS 2 ₪ | Israeli new shekel
+INR 2 ₹ | Indian rupee
+IQD 3* | Iraqi dinar
+IRR 2* | Iranian rial
+ISK 0  | Icelandic króna
+JMD 2  | Jamaican dollar
+JOD 3  | Jordanian dinar
+JPY 0 ¥ | Japanese yen
+KES 2  | Kenyan shilling
+KGS 2  | Kyrgyzstani som
+KHR 2* | Cambodian riel
+KMF 0  | Comorian franc
+KRW 0* ₩ | South Korean won
+KWD 3  | Kuwaiti dinar
+KYD 2  | Cayman Islands dollar
+KZT 2  | Kazakhstani tenge
+LAK 2* | Lao kip
+LBP 2* | Lebanese pound
+LKR 2  | Sri Lankan rupee
+LRD 2  | Liberian dollar
+LSL 2  | Lesotho loti
+LYD 3  | Libyan dinar
+MAD 2  | Moroccan dirham
+MDL 2  | Moldovan leu
+MGA 2* | Malagasy ariary
+MKD 2  | Macedonian denar
+MMK 2* | Myanmar kyat
+MNT 2* | Mongolian tögrög
+MOP 2  | Macanese pataca
+MRU 2  | Mauritanian ouguiya
+MUR 2  | Mauritian rupee
+MVR 2  | Maldivian rufiyaa
+MWK 2* | Malawian kwacha
+MXN 2 MX$ | Mexican peso
+MYR 2 RM | Malaysian ringgit
+MZN 2  | Mozambican metical
+NAD 2  | Namibian dollar
+NGN 2* ₦ | Nigerian naira
+NIO 2  | Nicaraguan córdoba
+NOK 2  | Norwegian krone
+NPR 2  | Nepalese rupee
+NZD 2 NZ$ | New Zealand dollar
+OMR 3  | Omani rial
+PAB 2  | Panamanian balboa
+PEN 2  | Peruvian sol
+PGK 2  | Papua New Guinean kina
+PHP 2 ₱ | Philippine peso
+PKR 2  | Pakistani rupee
+PLN 2  | Polish złoty
+PYG 0* | Paraguayan guaraní
+QAR 2  | Qatari riyal
+RON 2  | Romanian leu
+RSD 2  | Serbian dinar
+RUB 2  | Russian ruble
+RWF 0* | Rwandan franc
+SAR 2  | Saudi riyal
+SBD 2  | Solomon Islands dollar
+SCR 2  | Seychellois rupee
+SDG 2  | Sudanese pound
+SEK 2  | Swedish krona
+SGD 2 S$ | Singapore dollar
+SLE 2  | Sierra Leonean leone
+SOS 2  | Somali shilling
+SRD 2  | Surinamese dollar
+SSP 2  | South Sudanese pound
+STN 2  | São Tomé and Príncipe dobra
+SYP 2* | Syrian pound
+SZL 2  | Swazi lilangeni
+THB 2 ฿ | Thai baht
+TJS 2  | Tajikistani somoni
+TMT 2  | Turkmenistani manat
+TND 3  | Tunisian dinar
+TOP 2  | Tongan paʻanga
+TRY 2 ₺ | Turkish lira
+TTD 2  | Trinidad and Tobago dollar
+TWD 2 NT$ | New Taiwan dollar
+TZS 2* | Tanzanian shilling
+UAH 2 ₴ | Ukrainian hryvnia
+UGX 0* | Ugandan shilling
+USD 2 $ | US dollar
+UYU 2  | Uruguayan peso
+UZS 2* | Uzbekistani som
+VES 2  | Venezuelan bolívar
+VND 0* ₫ | Vietnamese đồng
+VUV 0  | Vanuatu vatu
+WST 2  | Samoan tālā
+XAF 0  | Central African CFA franc
+XCD 2  | East Caribbean dollar
+XCG 2  | Caribbean guilder
+XOF 0  | West African CFA franc
+XPF 0  | CFP franc
+YER 2  | Yemeni rial
+ZAR 2  | South African rand
+ZMW 2  | Zambian kwacha
+ZWG 2  | Zimbabwe gold
+`;
+
+function parseTable(raw: string): CurrencyInfo[] {
+  const out: CurrencyInfo[] = [];
+  for (const line of raw.split('\n')) {
+    const match = /^([A-Z]{3}) ([023])(\*?) ?(\S*) *\| (.+)$/.exec(line.trim());
+    if (!match) continue;
+    const [, code, digits, star, symbol, name] = match;
+    out.push({
+      code: code!,
+      digits: Number(digits) as 0 | 2 | 3,
+      symbol: symbol ?? '',
+      name: name!.trim(),
+      high: star === '*',
+    });
+  }
+  return out;
+}
+
+export const CURRENCIES: readonly CurrencyInfo[] = parseTable(TABLE);
+const BY_CODE = new Map(CURRENCIES.map((c) => [c.code, c] as const));
+
+/** Shown first in pickers: home currency, then the usual trip destinations for Indian travellers. */
+export const POPULAR_CURRENCIES: readonly CurrencyCode[] = [
+  'INR',
+  'USD',
+  'EUR',
+  'GBP',
+  'AED',
+  'THB',
+  'SGD',
+  'IDR',
+  'MYR',
+  'VND',
+  'LKR',
+  'NPR',
+  'JPY',
+  'AUD',
+];
+
+export const isSupportedCurrency = (code: unknown): code is CurrencyCode =>
+  typeof code === 'string' && BY_CODE.has(code);
+
+/** Info for a code. Unknown codes (data from a newer build) degrade to 2 digits, shown by code. */
+export function currencyInfo(code: CurrencyCode): CurrencyInfo {
+  return BY_CODE.get(code) ?? { code, digits: 2, symbol: '', name: code, high: false };
+}
+
+export const minorDigits = (code: CurrencyCode): number => currencyInfo(code).digits;
+
+/** Largest single amount (expense, payment) in minor units of `code`. INR keeps ₹1 crore. */
+export function maxAmountMinor(code: CurrencyCode): number {
+  if (code === 'INR') return MAX_AMOUNT_PAISE;
+  const info = currencyInfo(code);
+  const major = info.high ? MAX_MAJOR_HIGH : MAX_MAJOR_DEFAULT;
+  return Math.min(major * 10 ** info.digits, MAX_AMOUNT_MINOR_ANY);
+}
+
+/** Largest amount in readable form for messages: "₹1,00,00,000", "$10,000,000". */
+export const maxAmountLabel = (code: CurrencyCode): string =>
+  formatMoney(maxAmountMinor(code), code);
+
+/** "₹" / "$" / "AED" — what goes in front of an amount field. */
+export const currencyPrefix = (code: CurrencyCode): string => currencyInfo(code).symbol || code;
+
+/** Picker label: "USD · US dollar". */
+export const currencyLabel = (code: CurrencyCode): string => `${code} · ${currencyInfo(code).name}`;
+
+// ── Formatting ─────────────────────────────────────────────────────────
+
+/** 1234567 -> "1,234,567" */
+function groupThousands(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function withPrefix(code: CurrencyCode, body: string): string {
+  const symbol = currencyInfo(code).symbol;
+  // A code needs a gap ("AED 50"); a symbol hugs the number ("$50"), like ₹ does.
+  return symbol ? `${symbol}${body}` : `${code} ${body}`;
+}
+
+export interface MoneyFormatOptions {
+  /** Always show all minor digits (balances, settlements). Default: hide an all-zero fraction. */
+  forceDecimals?: boolean;
+  /** Include the symbol/code. Default true. */
+  symbol?: boolean;
+}
+
+/**
+ * Format minor units of `code`. INR is exactly formatPaise (₹1,23,456.78). Other currencies use
+ * thousands grouping: $1,234.56, ¥1,234, KWD 1.250.
+ */
+export function formatMoney(
+  minor: number,
+  code: CurrencyCode,
+  opts: MoneyFormatOptions = {},
+): string {
+  if (code === 'INR') return formatPaise(minor, opts);
+  const { forceDecimals = false, symbol = true } = opts;
+  if (!Number.isSafeInteger(minor)) throw new RangeError(`Invalid amount: ${minor}`);
+
+  const { digits } = currencyInfo(code);
+  const negative = minor < 0;
+  const abs = Math.abs(minor);
+  const scale = 10 ** digits;
+  const whole = Math.floor(abs / scale);
+  const fraction = abs % scale;
+
+  const decimals =
+    digits > 0 && (forceDecimals || fraction !== 0)
+      ? `.${String(fraction).padStart(digits, '0')}`
+      : '';
+  const body = `${groupThousands(String(whole))}${decimals}`;
+  return `${negative ? '-' : ''}${symbol ? withPrefix(code, body) : body}`;
+}
+
+/** Compact form for tight UI: ₹1.2L / ₹3.4Cr for INR, $12.5K / $3.4M / Rp1.2B elsewhere. Truncates. */
+export function formatMoneyCompact(minor: number, code: CurrencyCode): string {
+  if (code === 'INR') return formatPaiseCompact(minor);
+  const negative = minor < 0;
+  const whole = Math.floor(Math.abs(minor) / 10 ** minorDigits(code));
+  const units: [number, string][] = [
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  for (const [size, label] of units) {
+    if (whole >= size) {
+      const tenths = Math.floor((whole * 10) / size);
+      const dec = tenths % 10;
+      const body = `${Math.floor(tenths / 10)}${dec ? `.${dec}` : ''}${label}`;
+      return `${negative ? '-' : ''}${withPrefix(code, body)}`;
+    }
+  }
+  return formatMoney(minor, code);
+}
+
+/** Value for pre-filling an edit field: 24950 USD -> "249.50", 10000 USD -> "100", 1500 JPY -> "1500". */
+export function minorToInputString(minor: number, code: CurrencyCode): string {
+  return formatMoney(minor, code, { symbol: false }).replace(/,/g, '');
+}
+
+/** Totals in several currencies: "₹1,200 + $45.50". Zero entries are skipped; empty → "". */
+export function formatMoneyList(
+  entries: readonly { currency: CurrencyCode; minor: number }[],
+): string {
+  return entries
+    .filter((e) => e.minor !== 0)
+    .map((e) => formatMoney(e.minor, e.currency))
+    .join(' + ');
+}
+
+// ── Parsing ────────────────────────────────────────────────────────────
+
+export type AmountParseError = 'EMPTY' | 'INVALID' | 'TOO_MANY_DECIMALS' | 'ZERO' | 'TOO_LARGE';
+export type AmountParseResult =
+  { ok: true; minor: number } | { ok: false; error: AmountParseError };
+
+/**
+ * Parse typed text into minor units of `code`. Accepts "1,234.5", "$ 20", "AED 50". Rejects more
+ * decimals than the currency has (any for JPY), negatives, exponents, zero and amounts over the cap.
+ * INR keeps its exact existing behaviour (parseRupeesToPaise).
+ */
+export function parseAmount(input: string, code: CurrencyCode): AmountParseResult {
+  if (code === 'INR') {
+    const r = parseRupeesToPaise(input);
+    return r.ok ? { ok: true, minor: r.paise } : r;
+  }
+  const info = currencyInfo(code);
+  const prefix = info.symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let cleaned = input.replace(/[\s, ]/g, '');
+  cleaned = cleaned.replace(new RegExp(`^(${code}${prefix ? `|${prefix}` : ''})`, 'i'), '');
+  if (cleaned === '' || cleaned === '.') return { ok: false, error: 'EMPTY' };
+  if (!/^\d*(\.\d*)?$/.test(cleaned)) return { ok: false, error: 'INVALID' };
+
+  const dot = cleaned.indexOf('.');
+  const wholePart = dot === -1 ? cleaned : cleaned.slice(0, dot);
+  const decimalPart = dot === -1 ? '' : cleaned.slice(dot + 1);
+  if (decimalPart.length > info.digits) return { ok: false, error: 'TOO_MANY_DECIMALS' };
+
+  // Long digit strings lose precision in Number, but they are far above the cap and rejected.
+  const minor =
+    Number(wholePart) * 10 ** info.digits + Number(decimalPart.padEnd(info.digits, '0') || '0');
+  if (minor === 0) return { ok: false, error: 'ZERO' };
+  if (!Number.isSafeInteger(minor) || minor > maxAmountMinor(code))
+    return { ok: false, error: 'TOO_LARGE' };
+  return { ok: true, minor };
+}
+
+/**
+ * Restrict live TextInput text to a valid partial amount of `code`; returns `previous` when the
+ * new text is invalid. Whole-part digits are capped by the currency's limit.
+ */
+export function sanitizeMoneyInput(next: string, previous: string, code: CurrencyCode): string {
+  const stripped = next.replace(/[₹\s, ]/g, '');
+  if (stripped === '') return '';
+  const { digits } = currencyInfo(code);
+  const wholeDigits = String(Math.floor(maxAmountMinor(code) / 10 ** digits)).length;
+  const pattern =
+    digits === 0
+      ? new RegExp(`^\\d{0,${wholeDigits}}$`)
+      : new RegExp(`^\\d{0,${wholeDigits}}(\\.\\d{0,${digits}})?$`);
+  return pattern.test(stripped) ? stripped : previous;
+}

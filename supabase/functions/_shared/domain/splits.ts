@@ -3,7 +3,7 @@
  * Split engine. Pure TypeScript with zero dependencies, so it runs unchanged on
  * Hermes (app) and Deno (Supabase Edge Functions).
  *
- * All amounts are integer paise. Rounding uses the largest-remainder method with a
+ * All amounts are integer minor units of one currency (paise for INR). Rounding uses the largest-remainder method with a
  * deterministic tiebreak: shares always sum exactly to the total, no share is more
  * than 1 paisa away from its exact value, and the result does not depend on input order.
  */
@@ -146,8 +146,12 @@ function splitEqual(totalPaise: Paise, memberIds: readonly MemberId[]): SplitRes
   return ok(allocateByWeights(totalPaise, entries));
 }
 
-function splitExact(totalPaise: Paise, entries: readonly WeightedEntry[]): SplitResult {
-  const error = validateEntries(entries, MAX_AMOUNT_PAISE);
+function splitExact(
+  totalPaise: Paise,
+  entries: readonly WeightedEntry[],
+  maxAmount: number,
+): SplitResult {
+  const error = validateEntries(entries, maxAmount);
   if (error) return fail(error);
 
   const actual = entries.reduce((sum, e) => sum + e.value, 0);
@@ -174,7 +178,11 @@ function splitShares(totalPaise: Paise, entries: readonly WeightedEntry[]): Spli
   return ok(allocateByWeights(totalPaise, positiveOnly(entries)));
 }
 
-function splitItemized(totalPaise: Paise, items: readonly ItemInput[]): SplitResult {
+function splitItemized(
+  totalPaise: Paise,
+  items: readonly ItemInput[],
+  maxAmount: number,
+): SplitResult {
   if (items.length === 0) return fail({ code: 'NO_PARTICIPANTS' });
 
   // Stage 1: each item split equally among its assignees -> per-member subtotal.
@@ -182,7 +190,7 @@ function splitItemized(totalPaise: Paise, items: readonly ItemInput[]): SplitRes
 
   for (const [itemIndex, item] of items.entries()) {
     const { amountPaise, memberIds } = item;
-    if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0 || amountPaise > MAX_AMOUNT_PAISE) {
+    if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0 || amountPaise > maxAmount) {
       return fail({ code: 'ITEM_INVALID', itemIndex });
     }
     if (memberIds.length === 0) return fail({ code: 'ITEM_UNASSIGNED', itemIndex });
@@ -214,9 +222,16 @@ function rejectUnknownType(input: never): SplitResult {
   return fail({ code: 'INVALID_SPLIT_TYPE' });
 }
 
-/** Compute who owes what for an expense of `totalPaise`. Never throws for user input. */
-export function computeSplit(totalPaise: Paise, input: SplitInput): SplitResult {
-  if (!Number.isSafeInteger(totalPaise) || totalPaise <= 0 || totalPaise > MAX_AMOUNT_PAISE) {
+/**
+ * Compute who owes what for an expense of `totalPaise` (minor units of one currency). Never throws
+ * for user input. `maxAmount` is that currency's per-amount cap (default: ₹1 crore in paise).
+ */
+export function computeSplit(
+  totalPaise: Paise,
+  input: SplitInput,
+  maxAmount: number = MAX_AMOUNT_PAISE,
+): SplitResult {
+  if (!Number.isSafeInteger(totalPaise) || totalPaise <= 0 || totalPaise > maxAmount) {
     return fail({ code: 'INVALID_TOTAL' });
   }
 
@@ -224,13 +239,13 @@ export function computeSplit(totalPaise: Paise, input: SplitInput): SplitResult 
     case 'equal':
       return splitEqual(totalPaise, input.memberIds);
     case 'exact':
-      return splitExact(totalPaise, input.entries);
+      return splitExact(totalPaise, input.entries, maxAmount);
     case 'percentage':
       return splitPercentage(totalPaise, input.entries);
     case 'shares':
       return splitShares(totalPaise, input.entries);
     case 'itemized':
-      return splitItemized(totalPaise, input.items);
+      return splitItemized(totalPaise, input.items, maxAmount);
     default:
       return rejectUnknownType(input);
   }

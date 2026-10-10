@@ -1,4 +1,4 @@
-import { formatPaise } from '@/domain/money';
+import { DEFAULT_CURRENCY, formatMoney, isSupportedCurrency, type CurrencyCode } from '@/domain/currency';
 import { maskVpa } from '@/domain/upi';
 
 import type { WireTable } from './wire';
@@ -37,13 +37,19 @@ export function issueTitle(table: WireTable, row: Record<string, unknown> | null
   }
 }
 
-/** Human-readable lines describing one version of a row. */
+/**
+ * Human-readable lines describing one version of a row. `currencyOf` gives a group's currency
+ * (amounts on the wire are its minor units); default INR.
+ */
 export function summarizeRow(
   table: WireTable,
   row: Record<string, unknown> | null,
   nameOf: (memberId: string) => string,
+  currencyOf: (groupId: string) => CurrencyCode = () => DEFAULT_CURRENCY,
 ): string[] {
   if (!row) return ['Not on this phone'];
+  const currency = currencyOf(str(row.group_id));
+  const money = (minor: number) => formatMoney(minor, currency);
 
   const out: string[] = [];
   if (row.deleted_at !== null && row.deleted_at !== undefined) out.push('Deleted');
@@ -51,6 +57,7 @@ export function summarizeRow(
   switch (table) {
     case 'groups':
       out.push(`Name: ${str(row.name)}`);
+      if (typeof row.currency === 'string') out.push(`Currency: ${row.currency}`);
       break;
     case 'members': {
       out.push(`Name: ${str(row.display_name)}`);
@@ -59,21 +66,27 @@ export function summarizeRow(
       break;
     }
     case 'expenses': {
-      out.push(`${str(row.description)} · ${formatPaise(num(row.amount_paise))}`);
+      const original = str(row.original_currency);
+      const originalMinor = num(row.original_amount_minor);
+      const amount =
+        original && isSupportedCurrency(original) && originalMinor > 0
+          ? `${formatMoney(originalMinor, original)} (${money(num(row.amount_paise))})`
+          : money(num(row.amount_paise));
+      out.push(`${str(row.description)} · ${amount}`);
       out.push(`Date: ${formatIsoDate(str(row.expense_date))}`);
       const payers = lines(row.payers);
       const shares = lines(row.shares);
       if (payers.length > 0) {
-        out.push(`Paid by ${payers.map((p) => `${nameOf(p.memberId)} ${formatPaise(p.amount)}`).join(', ')}`);
+        out.push(`Paid by ${payers.map((p) => `${nameOf(p.memberId)} ${money(p.amount)}`).join(', ')}`);
       }
       if (shares.length > 0) {
-        out.push(`Split: ${shares.map((s) => `${nameOf(s.memberId)} ${formatPaise(s.amount)}`).join(', ')}`);
+        out.push(`Split: ${shares.map((s) => `${nameOf(s.memberId)} ${money(s.amount)}`).join(', ')}`);
       }
       break;
     }
     case 'settlements':
       out.push(
-        `${nameOf(str(row.from_member_id))} paid ${nameOf(str(row.to_member_id))} ${formatPaise(num(row.amount_paise))}`,
+        `${nameOf(str(row.from_member_id))} paid ${nameOf(str(row.to_member_id))} ${money(num(row.amount_paise))}`,
       );
       break;
     case 'activity':
@@ -100,9 +113,24 @@ export function rejectionReason(code: string | undefined, detail?: string): stri
     case 'UNKNOWN_MEMBER':
       return 'It refers to someone who isn’t in this group.';
     case 'INVALID_EXPENSE':
+      // FX, FX_SHAPE, FX_TOTAL_MISMATCH (sync-push) or an unknown group currency.
+      if (detail === 'UNKNOWN_CURRENCY' || detail?.startsWith('FX')) {
+        return 'The currency or exchange rate on this expense isn’t valid. Open it and save it again.';
+      }
       return 'The amounts or the split don’t add up.';
     case 'SHARES_MISMATCH':
+    case 'PAYERS_MISMATCH':
       return 'This version of the app calculated the split differently. Please update the app.';
+    case 'CURRENCY_LOCKED':
+      return 'Someone added an expense or payment to this group first, so its currency can’t change any more.';
+    case 'CURRENCY_MISMATCH':
+      return 'The group’s currency was changed on another phone. Check the amounts, then save this again.';
+    case 'UPGRADE_REQUIRED':
+      return 'This group uses a currency or bill that this version of the app doesn’t support. Please update the app.';
+    case 'INVALID_GROUP':
+      return detail === 'UNKNOWN_CURRENCY'
+        ? 'This version of the server doesn’t know the group’s currency.'
+        : 'The server couldn’t accept this change.';
     case 'MEMBER_HAS_BALANCE':
       return 'This person still owes or is owed money in the group, so they weren’t removed. Settle up first.';
     case 'GROUP_HAS_BALANCES':

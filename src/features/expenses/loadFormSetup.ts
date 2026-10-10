@@ -1,7 +1,8 @@
 import { db } from '@/db/client';
 import { isGroupLost, LOST_ACCESS_MESSAGE } from '@/db/repositories/access';
-import { getExpense, groupCategoryLabels } from '@/db/repositories/expenses';
+import { getExpense, groupBillCurrencies, groupCategoryLabels } from '@/db/repositories/expenses';
 import { getGroup } from '@/db/repositories/groups';
+import type { CurrencyCode } from '@/domain/currency';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
 import { getDeviceUserId } from '@/db/session';
 import { todayIsoDate } from '@/lib/dates';
@@ -21,12 +22,17 @@ export type FormSetup =
       initialState: ExpenseFormState;
       /** Custom category names already used in this group, most used first. */
       categorySuggestions: string[];
+      /** The group's currency: balances, payers and shares are always in it. */
+      groupCurrency: CurrencyCode;
+      /** Foreign currencies already used for bills in this group, most recent first. */
+      recentCurrencies: CurrencyCode[];
     }
   | { ok: false; message: string };
 
 /** Everything the add/edit expense screens need, read once when the screen opens. */
 export function loadFormSetup(groupId: string, expenseId: string | null): FormSetup {
-  if (!getGroup(db, groupId)) return { ok: false, message: 'This group no longer exists.' };
+  const group = getGroup(db, groupId);
+  if (!group) return { ok: false, message: 'This group no longer exists.' };
   if (isGroupLost(db, groupId)) return { ok: false, message: LOST_ACCESS_MESSAGE };
 
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
@@ -47,8 +53,16 @@ export function loadFormSetup(groupId: string, expenseId: string | null): FormSe
 
   const memberIds = members.map((m) => m.id);
   const initialState = detail
-    ? formStateFromExpense(detail, memberIds, me)
-    : initialFormState(memberIds, me, todayIsoDate());
+    ? formStateFromExpense(detail, memberIds, me, group.currency)
+    : initialFormState(memberIds, me, todayIsoDate(), group.currency);
 
-  return { ok: true, me, members, initialState, categorySuggestions: groupCategoryLabels(db, groupId) };
+  return {
+    ok: true,
+    me,
+    members,
+    initialState,
+    categorySuggestions: groupCategoryLabels(db, groupId),
+    groupCurrency: group.currency,
+    recentCurrencies: groupBillCurrencies(db, groupId),
+  };
 }

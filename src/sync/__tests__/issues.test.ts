@@ -123,6 +123,49 @@ describe('describeIssue', () => {
     ]);
   });
 
+  it('summarizes amounts in the group currency and shows foreign bills as entered', () => {
+    const lines = summarizeRow(
+      'expenses',
+      {
+        group_id: 'g',
+        description: 'Taxi',
+        amount_paise: 241600,
+        original_currency: 'USD',
+        original_amount_minor: 2500,
+        fx_rate: '96.64',
+        expense_date: '2026-10-01',
+        deleted_at: null,
+        payers: [{ member_id: 'a', amount_paise: 241600, original_amount_minor: 2500 }],
+        shares: [{ member_id: 'a', amount_paise: 241600 }],
+      },
+      () => 'Asha',
+      () => 'INR',
+    );
+    expect(lines[0]).toBe('Taxi · $25 (₹2,416)');
+    expect(
+      summarizeRow(
+        'settlements',
+        { group_id: 'g', from_member_id: 'a', to_member_id: 'b', amount_paise: 1500, deleted_at: null },
+        (id) => (id === 'a' ? 'Asha' : 'Rahul'),
+        (groupId) => (groupId === 'g' ? 'JPY' : 'INR'),
+      ),
+    ).toEqual(['Asha paid Rahul ¥1,500']);
+    expect(summarizeRow('groups', { name: 'Tokyo', currency: 'JPY', deleted_at: null }, () => '')).toEqual([
+      'Name: Tokyo',
+      'Currency: JPY',
+    ]);
+  });
+
+  it('explains currency rejections', () => {
+    expect(rejectionReason('CURRENCY_LOCKED')).toMatch(/can’t change any more/);
+    expect(rejectionReason('CURRENCY_MISMATCH')).toMatch(/changed on another phone/);
+    expect(rejectionReason('UPGRADE_REQUIRED')).toMatch(/update the app/);
+    expect(rejectionReason('PAYERS_MISMATCH')).toMatch(/update the app/);
+    expect(rejectionReason('INVALID_EXPENSE', 'FX_SHAPE')).toMatch(/exchange rate/);
+    expect(rejectionReason('INVALID_EXPENSE', 'FX_TOTAL_MISMATCH')).toMatch(/exchange rate/);
+    expect(rejectionReason('INVALID_EXPENSE')).toMatch(/don’t add up/);
+  });
+
   it('marks deleted rows and missing rows', () => {
     expect(summarizeRow('groups', { name: 'Goa', deleted_at: 5 }, () => '')).toEqual(['Deleted', 'Name: Goa']);
     expect(summarizeRow('groups', null, () => '')).toEqual(['Not on this phone']);

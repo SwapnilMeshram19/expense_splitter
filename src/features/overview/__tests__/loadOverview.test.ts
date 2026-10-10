@@ -20,8 +20,14 @@ beforeEach(() => {
 
 afterEach(() => t.close());
 
-function group(name: string, others: string[]) {
-  const created = createGroup(t.ctx, { name, selfName: 'Asha', otherMemberNames: others, deviceUserId });
+function group(name: string, others: string[], currency?: string) {
+  const created = createGroup(t.ctx, {
+    name,
+    selfName: 'Asha',
+    otherMemberNames: others,
+    deviceUserId,
+    currency,
+  });
   if (!created.ok) throw new Error('createGroup failed');
   t.advance(1000);
   const ids = new Map(activeMembersQuery(t.ctx.db, created.value.groupId).all().map((m) => [m.displayName, m.id]));
@@ -44,7 +50,7 @@ function expense(groupId: string, actor: string, payer: string, amountPaise: num
 
 describe('loadOverview', () => {
   it('is empty without groups', () => {
-    expect(loadOverview(t.ctx.db, deviceUserId)).toEqual({ groups: [], owedToMe: 0, iOwe: 0, net: 0, transfers: [] });
+    expect(loadOverview(t.ctx.db, deviceUserId)).toEqual({ groups: [], totals: [], transfers: [] });
   });
 
   it('nets per group, sums across groups and lists my transfers', () => {
@@ -59,9 +65,9 @@ describe('loadOverview', () => {
     const overview = loadOverview(t.ctx.db, deviceUserId);
     const myFlatDebt = -overview.groups.find((g) => g.group.id === flat.groupId)!.myBalance;
 
-    expect(overview.owedToMe).toBe(60000);
-    expect(overview.iOwe).toBe(myFlatDebt);
-    expect(overview.net).toBe(60000 - myFlatDebt);
+    expect(overview.totals).toEqual([
+      { currency: 'INR', owedToMe: 60000, iOwe: myFlatDebt, net: 60000 - myFlatDebt },
+    ]);
     expect(overview.groups.map((g) => g.group.name)).toEqual(['Flat', 'Goa']); // most recently updated first
 
     const pay = overview.transfers.filter((x) => x.direction === 'pay');
@@ -74,8 +80,8 @@ describe('loadOverview', () => {
       ['Rahul', 30000],
     ]);
     // My transfers add up to my balances exactly, so the Settle tab totals match Home.
-    expect(receive.reduce((s, x) => s + x.amountPaise, 0)).toBe(overview.owedToMe);
-    expect(pay.reduce((s, x) => s + x.amountPaise, 0)).toBe(overview.iOwe);
+    expect(receive.reduce((s, x) => s + x.amountPaise, 0)).toBe(overview.totals[0]!.owedToMe);
+    expect(pay.reduce((s, x) => s + x.amountPaise, 0)).toBe(overview.totals[0]!.iOwe);
   });
 
   it('drops settled-up debts after a settlement', () => {
@@ -93,7 +99,7 @@ describe('loadOverview', () => {
 
     const overview = loadOverview(t.ctx.db, deviceUserId);
     expect(overview.transfers).toEqual([]);
-    expect(overview.net).toBe(0);
+    expect(overview.totals).toEqual([]);
     expect(overview.groups[0]!.myBalance).toBe(0);
   });
 
@@ -105,7 +111,32 @@ describe('loadOverview', () => {
     const overview = loadOverview(t.ctx.db, deviceUserId);
     expect(overview.groups[0]).toEqual(expect.objectContaining({ lost: true, canEdit: false }));
     expect(overview.transfers[0]).toEqual(expect.objectContaining({ canEdit: false, amountPaise: 30000 }));
-    expect(overview.owedToMe).toBe(30000);
+    expect(overview.totals[0]!.owedToMe).toBe(30000);
+  });
+
+  it('keeps totals per currency and never adds amounts across currencies', () => {
+    const goa = group('Goa', ['Rahul']);
+    expense(goa.groupId, goa.me, goa.me, 60000, [goa.me, goa.id('Rahul')]); // Rahul owes me ₹300
+    const bali = group('Bali', ['Priya'], 'IDR');
+    // Priya paid Rp1,000,000.00 for two → I owe Rp500,000.00 (IDR has 2 minor digits).
+    expense(bali.groupId, bali.me, bali.id('Priya'), 100_000_000, [bali.me, bali.id('Priya')]);
+    const tokyo = group('Tokyo', ['Amit'], 'JPY');
+    expense(tokyo.groupId, tokyo.me, tokyo.me, 3001, [tokyo.me, tokyo.id('Amit')]); // ¥3,001 for two
+
+    const overview = loadOverview(t.ctx.db, deviceUserId);
+    const amitOwes = overview.transfers.find((x) => x.currency === 'JPY')!.amountPaise;
+    expect([1500, 1501]).toContain(amitOwes); // ¥ has no minor unit: whole yen only
+    expect(overview.totals).toEqual([
+      { currency: 'INR', owedToMe: 30000, iOwe: 0, net: 30000 },
+      { currency: 'IDR', owedToMe: 0, iOwe: 50_000_000, net: -50_000_000 },
+      { currency: 'JPY', owedToMe: amitOwes, iOwe: 0, net: amitOwes },
+    ]);
+    // INR first, then by currency code; each transfer carries its group's currency.
+    expect(overview.transfers.map((x) => [x.currency, x.counterpartyName, x.direction])).toEqual([
+      ['INR', 'Rahul', 'receive'],
+      ['IDR', 'Priya', 'pay'],
+      ['JPY', 'Amit', 'receive'],
+    ]);
   });
 });
 

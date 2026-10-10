@@ -30,7 +30,12 @@ export default function EditExpenseScreen() {
 
   const save = (draft: DraftParts): string | null => {
     const result = updateExpense(appContext, expenseId, { ...draft, groupId, actorMemberId: setup.me });
-    if (!result.ok) return describeExpenseError(result.error, nameOf);
+    if (!result.ok) {
+      return describeExpenseError(result.error, nameOf, {
+        entry: draft.foreign?.currency ?? setup.groupCurrency,
+        group: setup.groupCurrency,
+      });
+    }
     router.back();
     return null;
   };
@@ -44,7 +49,11 @@ export default function EditExpenseScreen() {
         onPress: () => {
           const result = deleteExpense(appContext, expenseId, setup.me);
           if (result.ok) router.back();
-          else Alert.alert('Could not delete', describeExpenseError(result.error, nameOf));
+          else
+            Alert.alert(
+              'Could not delete',
+              describeExpenseError(result.error, nameOf, { entry: setup.groupCurrency, group: setup.groupCurrency }),
+            );
         },
       },
     ]);
@@ -64,6 +73,8 @@ export default function EditExpenseScreen() {
         members={setup.members}
         initialState={setup.initialState}
         categorySuggestions={setup.categorySuggestions}
+        groupCurrency={setup.groupCurrency}
+        recentCurrencies={setup.recentCurrencies}
         submitLabel="Save changes"
         onSubmit={save}
       />

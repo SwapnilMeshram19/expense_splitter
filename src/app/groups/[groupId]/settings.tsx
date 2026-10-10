@@ -6,7 +6,14 @@ import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
-import { deleteGroup, getGroup, renameGroup, setSimplifyDebts } from '@/db/repositories/groups';
+import {
+  deleteGroup,
+  getGroup,
+  isCurrencyLocked,
+  renameGroup,
+  setGroupCurrency,
+  setSimplifyDebts,
+} from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import {
   activeMembersQuery,
@@ -19,12 +26,14 @@ import { MAX_NAME_LENGTH } from '@/db/repositories/names';
 import type { Group } from '@/db/schema';
 import { getDeviceUserId } from '@/db/session';
 import { computeBalances } from '@/domain/balances';
-import { formatPaise } from '@/domain/money';
+import { formatMoney, type CurrencyCode } from '@/domain/currency';
 import {
+  describeGroupCurrencyError,
   describeGroupDeleteError,
   describeGroupUpdateError,
   describeMemberError,
 } from '@/features/groups/messages';
+import { CurrencyPicker } from '@/ui/CurrencyPicker';
 import { useTheme, type Theme } from '@/ui/theme';
 import { Text, TextInput } from '@/ui/Text';
 import { isGroupLost } from '@/db/repositories/access';
@@ -47,7 +56,13 @@ function loadSettingsView(groupId: string) {
   const members: MemberRow[] = activeMembersQuery(db, groupId)
     .all()
     .map((m) => ({ id: m.id, displayName: m.displayName, balance: balances.get(m.id) ?? 0 }));
-   return { group, me, members, lost: isGroupLost(db, groupId) };
+  return {
+    group,
+    me,
+    members,
+    lost: isGroupLost(db, groupId),
+    currencyLocked: isCurrencyLocked(db, groupId),
+  };
 }
 
 function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
@@ -109,17 +124,36 @@ export default function GroupSettingsScreen() {
     );
   }
 
-  return <SettingsForm group={view.group} me={view.me} members={view.members} />;
+  return (
+    <SettingsForm
+      group={view.group}
+      me={view.me}
+      members={view.members}
+      currencyLocked={view.currencyLocked}
+    />
+  );
 }
 
-function balanceLabel(balance: number): string {
-  if (balance > 0) return `is owed ${formatPaise(balance)}`;
-  if (balance < 0) return `owes ${formatPaise(-balance)}`;
+function balanceLabel(balance: number, currency: CurrencyCode): string {
+  if (balance > 0) return `is owed ${formatMoney(balance, currency)}`;
+  if (balance < 0) return `owes ${formatMoney(-balance, currency)}`;
   return 'settled';
 }
 
-function SettingsForm({ group, me, members }: { group: Group; me: string; members: MemberRow[] }) {
+function SettingsForm({
+  group,
+  me,
+  members,
+  currencyLocked,
+}: {
+  group: Group;
+  me: string;
+  members: MemberRow[];
+  /** The group has expenses or payments (deleted ones too): its currency can't change. */
+  currencyLocked: boolean;
+}) {
   const theme = useTheme();
+  const { currency } = group;
   const [groupName, setGroupName] = useState(group.name);
   const [newMemberName, setNewMemberName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,10 +173,15 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
     if (!result.ok) setError(describeGroupUpdateError(result.error));
   };
 
+  const changeCurrency = (next: CurrencyCode) => {
+    const result = setGroupCurrency(appContext, { groupId: group.id, currency: next, actorMemberId: me });
+    setError(result.ok ? null : describeGroupCurrencyError(result.error));
+  };
+
   const add = () => {
     const result = addMember(appContext, { groupId: group.id, displayName: newMemberName, actorMemberId: me });
     if (!result.ok) {
-      setError(describeMemberError(result.error));
+      setError(describeMemberError(result.error, currency));
       return;
     }
     setNewMemberName('');
@@ -159,7 +198,7 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
     if (!editingId) return;
     const result = renameMember(appContext, { memberId: editingId, displayName: editName, actorMemberId: me });
     if (!result.ok) {
-      setError(describeMemberError(result.error));
+      setError(describeMemberError(result.error, currency));
       return;
     }
     setEditingId(null);
@@ -170,7 +209,7 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
     if (member.balance !== 0) {
       Alert.alert(
         `Can’t remove ${member.displayName} yet`,
-        `${member.displayName} ${balanceLabel(member.balance)}. Record the payments first, then remove them.`,
+        `${member.displayName} ${balanceLabel(member.balance, currency)}. Record the payments first, then remove them.`,
       );
       return;
     }
@@ -184,7 +223,7 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
           style: 'destructive',
           onPress: () => {
             const result = removeMember(appContext, { memberId: member.id, actorMemberId: me });
-            if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error));
+            if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error, currency));
           },
         },
       ],
@@ -225,6 +264,19 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
             </Pressable>
           ) : null}
         </View>
+
+        <Text style={[styles.label, { color: theme.muted }]}>Currency</Text>
+        <CurrencyPicker
+          label="Group currency"
+          value={currency}
+          onChange={changeCurrency}
+          disabled={currencyLocked}
+        />
+        <Text style={{ color: theme.muted, fontSize: 13 }}>
+          {currencyLocked
+            ? 'Balances are kept in this currency, so it can’t change once there are expenses or payments. Bills in other currencies are converted when you add them.'
+            : 'Every balance in the group is kept in this currency. You can change it until the first expense or payment.'}
+        </Text>
 
         <View style={[styles.row, styles.switchRow]}>
           <View style={styles.flex}>
@@ -276,7 +328,9 @@ function SettingsForm({ group, me, members }: { group: Group; me: string; member
                   {member.displayName}
                   {isMe ? ' (you)' : ''}
                 </Text>
-                <Text style={{ color: theme.muted, fontSize: 13 }}>{balanceLabel(member.balance)}</Text>
+                <Text style={{ color: theme.muted, fontSize: 13 }}>
+                  {balanceLabel(member.balance, currency)}
+                </Text>
               </View>
               <Pressable onPress={() => startRename(member)} style={styles.inlineButton} hitSlop={6}>
                 <Text style={{ color: theme.primary }}>Rename</Text>

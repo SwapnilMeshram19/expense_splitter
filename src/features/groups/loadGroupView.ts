@@ -134,7 +134,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     .all()
     .map((entry) => ({
       key: entry.id,
-      ...describeActivity(entry, { me, nameOf }),
+      ...describeActivity(entry, { me, nameOf, currency: group.currency }),
       time: formatTimestamp(entry.createdAt),
     }));
 

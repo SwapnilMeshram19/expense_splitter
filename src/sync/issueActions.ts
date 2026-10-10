@@ -210,6 +210,14 @@ export function loadIssueViews(ctx: RepoContext): IssueView[] {
       .map((m) => [m.id, m.name] as const),
   );
   const nameOf = (memberId: string) => names.get(memberId) ?? 'someone';
+  const currencies = new Map(
+    ctx.db
+      .select({ id: groups.id, currency: groups.currency })
+      .from(groups)
+      .all()
+      .map((g) => [g.id, g.currency] as const),
+  );
+  const currencyOf = (groupId: string) => currencies.get(groupId) ?? 'INR';
 
   return issues.map((issue) => {
     const local = localWire(ctx, issue.table, issue.id);
@@ -219,8 +227,11 @@ export function loadIssueViews(ctx: RepoContext): IssueView[] {
       key: keyOf(issue.table, issue.id),
       issue,
       title: issueTitle(issue.table, local ?? server),
-      mine: summarizeRow(issue.table, local, nameOf),
-      theirs: issue.kind === 'conflict' && server ? summarizeRow(issue.table, server, nameOf) : null,
+      mine: summarizeRow(issue.table, local, nameOf, currencyOf),
+      theirs:
+        issue.kind === 'conflict' && server
+          ? summarizeRow(issue.table, server, nameOf, currencyOf)
+          : null,
       reason: issue.kind === 'rejected' ? rejectionReason(issue.code, issue.detail) : null, canDiscard:
         issue.kind === 'rejected' && versioned && (rowState(ctx, issue.table as VersionedTable, issue.id)?.version ?? 0) > 0,
     };

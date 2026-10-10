@@ -148,6 +148,16 @@ export function collectPushBatch(ctx: RepoContext, limit: number = MAX_BATCH_ROW
   const remember = (table: VersionedTable, row: { id: string; updatedAt: number }) =>
     sentUpdatedAt.set(keyOf(table, row.id), row.updatedAt);
 
+  // Every expense/settlement asserts the currency its amounts are in (see WireExpense.group_currency).
+  const currencyOf = new Map(
+    db
+      .select({ id: groups.id, currency: groups.currency })
+      .from(groups)
+      .all()
+      .map((g) => [g.id, g.currency]),
+  );
+  const groupCurrency = (groupId: string) => currencyOf.get(groupId) ?? 'INR';
+
   const batch: PushBatch = {
     groups: groupRows.map((g) => {
       remember('groups', g);
@@ -165,12 +175,17 @@ export function collectPushBatch(ctx: RepoContext, limit: number = MAX_BATCH_ROW
           payerRows.filter((p) => p.expenseId === e.id),
           shareRows.filter((s) => s.expenseId === e.id),
         ),
+        group_currency: groupCurrency(e.groupId),
         base_version: e.version,
       };
     }),
     settlements: settlementRows.map((s) => {
       remember('settlements', s);
-      return { ...settlementToWire(s), base_version: s.version };
+      return {
+        ...settlementToWire(s),
+        group_currency: groupCurrency(s.groupId),
+        base_version: s.version,
+      };
     }),
     activity: activityRows.map(activityToWire),
   };
@@ -248,6 +263,8 @@ function writeGroup(tx: Tx, g: Incoming<WireGroup>, mode: WriteMode): void {
   const values = {
     name: g.name,
     simplifyDebts: g.simplify_debts,
+    // A server from before multi-currency doesn't send it: every group there is INR.
+    currency: typeof g.currency === 'string' ? g.currency : 'INR',
     createdAt: g.created_at,
     updatedAt: g.updated_at,
     deletedAt: g.deleted_at,
@@ -290,6 +307,11 @@ function writeExpense(tx: Tx, e: Incoming<WireExpense>, mode: WriteMode): void {
     expenseDate: e.expense_date,
     splitInput: e.split_input as StoredSplitInput,
     createdByMemberId: e.created_by_member_id,
+    // Absent only from servers before multi-currency, where no foreign bills exist.
+    originalCurrency: typeof e.original_currency === 'string' ? e.original_currency : null,
+    originalAmountMinor:
+      typeof e.original_amount_minor === 'number' ? e.original_amount_minor : null,
+    fxRate: typeof e.fx_rate === 'string' ? e.fx_rate : null,
     createdAt: e.created_at,
     updatedAt: e.updated_at,
     deletedAt: e.deleted_at,
@@ -305,7 +327,15 @@ function writeExpense(tx: Tx, e: Incoming<WireExpense>, mode: WriteMode): void {
   }
   if (e.payers.length > 0) {
     tx.insert(expensePayers)
-      .values(e.payers.map((l) => ({ expenseId: e.id, memberId: l.member_id, amountPaise: l.amount_paise })))
+      .values(
+        e.payers.map((l) => ({
+          expenseId: e.id,
+          memberId: l.member_id,
+          amountPaise: l.amount_paise,
+          originalAmountMinor:
+            typeof l.original_amount_minor === 'number' ? l.original_amount_minor : null,
+        })),
+      )
       .run();
   }
   if (e.shares.length > 0) {

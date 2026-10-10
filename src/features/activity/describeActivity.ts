@@ -4,7 +4,13 @@
  * so they are parsed defensively: malformed entries degrade to "X made a change".
  */
 import type { ActivityLogEntry } from '@/db/schema';
-import { formatPaise } from '@/domain/money';
+import {
+  currencyLabel,
+  DEFAULT_CURRENCY,
+  formatMoney,
+  isSupportedCurrency,
+  type CurrencyCode,
+} from '@/domain/currency';
 import { METHOD_LABELS } from '@/features/settlements/messages';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 
@@ -18,6 +24,8 @@ export interface ActivityContext {
   me: string | null;
   /** Display name for a member id (may include members who left). */
   nameOf: (memberId: string) => string;
+  /** The group's currency; amounts in snapshots are its minor units. Default INR. */
+  currency?: CurrencyCode;
 }
 
 type Json = Record<string, unknown>;
@@ -61,6 +69,16 @@ function lines(record: Json | null, key: string): Line[] | null {
   return result;
 }
 
+/** The foreign-bill part of an expense snapshot ({ currency, amountMinor, rate }), if valid. */
+function foreignOf(record: Json | null): { currency: string; amountMinor: number } | null {
+  const foreign = asRecord(record?.foreign);
+  const currency = str(foreign, 'currency');
+  const amountMinor = num(foreign, 'amountMinor');
+  if (currency === null || amountMinor === null || !isSupportedCurrency(currency)) return null;
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) return null;
+  return { currency, amountMinor };
+}
+
 const sameLines = (a: Line[] | null, b: Line[] | null) => {
   const key = (l: Line[] | null) =>
     JSON.stringify([...(l ?? [])].sort((x, y) => (x.memberId < y.memberId ? -1 : 1)));
@@ -95,6 +113,16 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
   const payersText = (payers: Line[] | null) =>
     payers && payers.length > 0 ? payers.map((p) => object(p.memberId)).join(', ') : 'someone';
 
+  const groupCurrency = ctx.currency ?? DEFAULT_CURRENCY;
+  const money = (minor: number) => formatMoney(minor, groupCurrency);
+  /** "₹2,416" or, for a bill paid in another currency, "$25 (₹2,416)". */
+  const expenseAmount = (record: Json | null, minor: number) => {
+    const foreign = foreignOf(record);
+    return foreign
+      ? `${formatMoney(foreign.amountMinor, foreign.currency)} (${money(minor)})`
+      : money(minor);
+  };
+
   const actor = subject(entry.actorMemberId);
   const before = asRecord(entry.before);
   const after = asRecord(entry.after);
@@ -114,7 +142,15 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
       }
       if (entry.action === 'create') {
         const name = str(after, 'name');
-        return { title: `${actor} created the group${name ? ` “${name}”` : ''}`, detail: null };
+        const currency = str(after, 'currency');
+        return {
+          title: `${actor} created the group${name ? ` “${name}”` : ''}`,
+          // Rupee groups were the only kind before multi-currency: only call out the others.
+          detail:
+            currency && currency !== DEFAULT_CURRENCY && isSupportedCurrency(currency)
+              ? `Currency: ${currencyLabel(currency)}`
+              : null,
+        };
       }
       if (entry.action === 'delete') return { title: `${actor} deleted the group`, detail: null };
       if (entry.action === 'update') {
@@ -122,6 +158,11 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         const newName = str(after, 'name');
         if (oldName !== null && newName !== null) {
           return { title: `${actor} renamed the group`, detail: `${oldName} → ${newName}` };
+        }
+        const oldCurrency = str(before, 'currency');
+        const newCurrency = str(after, 'currency');
+        if (oldCurrency !== null && newCurrency !== null) {
+          return { title: `${actor} changed the group’s currency`, detail: `${oldCurrency} → ${newCurrency}` };
         }
         const simplify = bool(after, 'simplifyDebts');
         if (simplify !== null) {
@@ -176,7 +217,10 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         if (description === null || amount === null) return fallback;
         const verb = entry.action === 'create' ? 'added' : 'deleted';
         const paidBy = entry.action === 'create' ? ` · paid by ${payersText(lines(snapshot, 'payers'))}` : '';
-        return { title: `${actor} ${verb} “${description}”`, detail: `${formatPaise(amount)}${paidBy}` };
+        return {
+          title: `${actor} ${verb} “${description}”`,
+          detail: `${expenseAmount(snapshot, amount)}${paidBy}`,
+        };
       }
       if (entry.action === 'update') {
         const description = str(after, 'description');
@@ -189,8 +233,11 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         }
         const oldAmount = num(before, 'amountPaise');
         const newAmount = num(after, 'amountPaise');
-        if (oldAmount !== null && newAmount !== null && oldAmount !== newAmount) {
-          changes.push(`${formatPaise(oldAmount)} → ${formatPaise(newAmount)}`);
+        if (oldAmount !== null && newAmount !== null) {
+          // The bill's own amount can change while the converted one doesn't (and vice versa).
+          const oldText = expenseAmount(before, oldAmount);
+          const newText = expenseAmount(after, newAmount);
+          if (oldText !== newText) changes.push(`${oldText} → ${newText}`);
         }
         const oldDate = str(before, 'expenseDate');
         const newDate = str(after, 'expenseDate');
@@ -242,13 +289,13 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         const methodLabel = method && method in METHOD_LABELS ? METHOD_LABELS[method as keyof typeof METHOD_LABELS] : null;
         return {
           title: `${actor} recorded a payment`,
-          detail: `${subject(from)} paid ${object(to)} ${formatPaise(amount)}${methodLabel ? ` · ${methodLabel}` : ''}`,
+          detail: `${subject(from)} paid ${object(to)} ${money(amount)}${methodLabel ? ` · ${methodLabel}` : ''}`,
         };
       }
       if (entry.action === 'delete') {
         return {
           title: `${actor} deleted a payment`,
-          detail: `${subject(from)} → ${object(to)} ${formatPaise(amount)}`,
+          detail: `${subject(from)} → ${object(to)} ${money(amount)}`,
         };
       }
       return fallback;

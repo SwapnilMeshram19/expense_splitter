@@ -417,3 +417,7 @@ enabled = true
 [functions.sync-push]
 # The function verifies the user itself (auth.getUser), which works with any JWT signing key type.
 verify_jwt = false
+
+[functions.fx-refresh]
+# Called only by pg_cron; it checks the x-cron-secret header itself.
+verify_jwt = false
