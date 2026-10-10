@@ -1,7 +1,8 @@
 // Daily exchange rates → private.fx_rates (via public.fx_rates_upsert).
 //
 // Called by pg_cron (see 20261011120000_multi_currency.sql) with the shared secret in
-// `x-cron-secret`. Deployed with --no-verify-jwt: the secret, not a user token, is the auth.
+// `x-cron-secret`, checked against Vault (fx_cron_secret) by public.fx_cron_secret_ok.
+// Deployed with --no-verify-jwt: the secret, not a user token, is the auth.
 //
 // Sources, both free and keyless:
 //   1. Frankfurter v2 (api.frankfurter.dev): blended central-bank rates, ~220 currencies.
@@ -30,15 +31,6 @@ interface RateRow {
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-}
-
-/** Constant-time comparison so the secret can't be guessed byte by byte from response timing. */
-function sameSecret(a: string, b: string): boolean {
-  const x = new TextEncoder().encode(a);
-  const y = new TextEncoder().encode(b);
-  let diff = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
-  return diff === 0;
 }
 
 function secretKey(): string {
@@ -108,11 +100,19 @@ function parseFallback(payload: unknown, wanted: Set<string>): RateRow[] {
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'METHOD_NOT_ALLOWED' });
-  const expected = Deno.env.get('FX_CRON_SECRET');
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, secretKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  // The secret lives only in Vault (fx_cron_secret), shared with the pg_cron jobs.
   const given = req.headers.get('x-cron-secret');
-  if (!expected || expected.length < 16 || !given || !sameSecret(given, expected)) {
-    return json(401, { error: 'UNAUTHORIZED' });
+  if (!given || given.length < 16 || given.length > 256) return json(401, { error: 'UNAUTHORIZED' });
+  const { data: allowed, error: authError } = await admin.rpc('fx_cron_secret_ok', { p_secret: given });
+  if (authError) {
+    console.error('fx-refresh: secret check failed', authError.code);
+    return json(500, { error: 'AUTH_CHECK_FAILED' });
   }
+  if (allowed !== true) return json(401, { error: 'UNAUTHORIZED' });
 
   const rows = new Map<string, RateRow>();
   rows.set('USD', { code: 'USD', per_usd: '1', as_of: new Date().toISOString().slice(0, 10), source: 'frankfurter' });
@@ -139,9 +139,6 @@ Deno.serve(async (req) => {
     return json(502, { error: 'NO_RATES', errors });
   }
 
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, secretKey(), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
   const { data, error } = await admin.rpc('fx_rates_upsert', { p_rows: [...rows.values()] });
   if (error) {
     console.error('fx-refresh: upsert failed', error.code);
