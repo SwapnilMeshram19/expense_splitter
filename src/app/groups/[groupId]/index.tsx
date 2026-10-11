@@ -351,6 +351,11 @@ export default function GroupDetailScreen() {
                 />
               ) : null}
               <HeaderIconButton
+                icon="insights"
+                label="Spending insights"
+                onPress={() => router.push({ pathname: '/groups/[groupId]/insights', params: { groupId } })}
+              />
+              <HeaderIconButton
                 icon="settings"
                 label="Group settings"
                 onPress={() => router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } })}

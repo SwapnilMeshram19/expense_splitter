@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import type { ExpenseCategory } from '@/db/schema';
+import { CATEGORY_NAMES } from '@/features/expenses/categoryNames';
 
 import { AVATAR_SWATCHES } from './avatarColors';
 import { Icon, type IconName } from './Icon';
@@ -8,16 +9,16 @@ import { useTheme } from './theme';
 
 /** Icon and swatch per category. Swatch indexes point into AVATAR_SWATCHES (all ≥ 4.5:1). */
 export const CATEGORY_STYLE: Record<ExpenseCategory, { icon: IconName; swatch: number; label: string }> = {
-  general: { icon: 'catGeneral', swatch: 4, label: 'General' },
-  food: { icon: 'catFood', swatch: 6, label: 'Food & drinks' },
-  groceries: { icon: 'catGroceries', swatch: 7, label: 'Groceries' },
-  travel: { icon: 'catTravel', swatch: 3, label: 'Travel' },
-  transport: { icon: 'catTransport', swatch: 0, label: 'Transport' },
-  stay: { icon: 'catStay', swatch: 5, label: 'Stay' },
-  shopping: { icon: 'catShopping', swatch: 1, label: 'Shopping' },
-  utilities: { icon: 'catUtilities', swatch: 2, label: 'Utilities' },
-  entertainment: { icon: 'catEntertainment', swatch: 6, label: 'Entertainment' },
-  other: { icon: 'catOther', swatch: 4, label: 'Other' },
+  general: { icon: 'catGeneral', swatch: 4, label: CATEGORY_NAMES.general },
+  food: { icon: 'catFood', swatch: 6, label: CATEGORY_NAMES.food },
+  groceries: { icon: 'catGroceries', swatch: 7, label: CATEGORY_NAMES.groceries },
+  travel: { icon: 'catTravel', swatch: 3, label: CATEGORY_NAMES.travel },
+  transport: { icon: 'catTransport', swatch: 0, label: CATEGORY_NAMES.transport },
+  stay: { icon: 'catStay', swatch: 5, label: CATEGORY_NAMES.stay },
+  shopping: { icon: 'catShopping', swatch: 1, label: CATEGORY_NAMES.shopping },
+  utilities: { icon: 'catUtilities', swatch: 2, label: CATEGORY_NAMES.utilities },
+  entertainment: { icon: 'catEntertainment', swatch: 6, label: CATEGORY_NAMES.entertainment },
+  other: { icon: 'catOther', swatch: 4, label: CATEGORY_NAMES.other },
 };
 
 /** Unknown categories (newer app version via sync) render as 'other'. */
