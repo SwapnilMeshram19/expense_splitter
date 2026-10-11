@@ -62,6 +62,7 @@ const ICONS = {
   download: { ios: 'arrow.down.circle', android: 0xe171 }, // download
   repeat: { ios: 'repeat', android: 0xe040 }, // repeat
   insights: { ios: 'chart.bar', android: 0xe26b }, // bar_chart
+  chat: { ios: 'message', android: 0xe0b7 }, // chat
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -9,6 +9,8 @@ import { recordSettlement } from '@/db/repositories/settlements';
 import { formatPaise, paiseToInputString, parseRupeesToPaise, sanitizeAmountInput } from '@/domain/money';
 import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE } from '@/domain/upi';
 import { describeSettlementError } from '@/features/settlements/messages';
+import { reminderMessage } from '@/features/share/messages';
+import { ShareButtons } from '@/features/share/ShareButtons';
 import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
 import { isRecentDuplicate } from '@/features/upi/duplicates';
 import { loadRequestSetup, type RequestSetup } from '@/features/upi/loaders';
@@ -101,11 +103,14 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
     );
   };
 
-  const shareDetails = () => {
-    if (!myVpa) return;
-    const what = amountPaise !== null ? `${formatPaise(amountPaise)} ` : '';
-    void Share.share({ message: `Please pay me ${what}on UPI for “${setup.groupName}”: ${myVpa}` });
-  };
+  const reminder = () =>
+    reminderMessage({
+      groupName: setup.groupName,
+      currency: 'INR',
+      debtorName: payer.name,
+      amountPaise: overLimit ? null : amountPaise,
+      upiId: myVpa,
+    });
 
   const hint =
     setup.payerDebtPaise > 0
@@ -175,7 +180,12 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
           onPress={markReceived}
           disabled={amountPaise === null}
         />
-        {myVpa ? <LinkButton label="Share my UPI details instead" onPress={shareDetails} /> : null}
+        <Text style={[styles.label, { color: theme.muted }]}>Not together? Send a reminder</Text>
+        <ShareButtons
+          label="Remind on WhatsApp"
+          accessibilityLabel={`Remind ${payer.name} on WhatsApp`}
+          getText={reminder}
+        />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>

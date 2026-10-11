@@ -3,12 +3,15 @@ import { useMemo } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
+import { db } from '@/db/client';
 import { deleteExpense, updateExpense } from '@/db/repositories/expenses';
 import { ExpenseForm } from '@/features/expenses/ExpenseForm';
 import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
 import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
+import { expenseShareText } from '@/features/share/loaders';
+import { shareTextOnWhatsApp } from '@/features/share/shareText';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
@@ -88,6 +91,15 @@ export default function EditExpenseScreen() {
                   }
                 />
               ) : null}
+              <HeaderIconButton
+                icon="chat"
+                label="Share this expense"
+                onPress={() => {
+                  // Shares the saved expense, not unsaved edits in the form.
+                  const text = expenseShareText(db, expenseId);
+                  if (text) void shareTextOnWhatsApp(text);
+                }}
+              />
               <HeaderIconButton icon="delete" label="Delete expense" color={theme.negative} onPress={confirmDelete} />
             </View>
           ),

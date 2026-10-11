@@ -24,6 +24,8 @@ import {
 } from '@/features/insights/exportReport';
 import { INSIGHTS_TABLES, loadInsightsSource } from '@/features/insights/loadInsights';
 import { MonthChart } from '@/features/insights/MonthChart';
+import { spendingMessage } from '@/features/share/messages';
+import { ShareButtons } from '@/features/share/ShareButtons';
 import { todayIsoDate } from '@/lib/dates';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
@@ -159,6 +161,23 @@ export default function InsightsScreen() {
           <AppText variant="caption" color={theme.muted} numberOfLines={1}>
             Largest: {summary.largest.description} · {money(summary.largest.amount)}
           </AppText>
+        ) : null}
+        {scope === 'group' && summary.count > 0 ? (
+          <ShareButtons
+            label="Share summary"
+            accessibilityLabel="Share this spending summary on WhatsApp"
+            style={styles.shareRow}
+            getText={() =>
+              spendingMessage({
+                groupName: source.group.name,
+                currency,
+                periodName,
+                total: summary.total,
+                count: summary.count,
+                categories: insights.categories,
+              })
+            }
+          />
         ) : null}
       </Card>
 
@@ -366,4 +385,5 @@ const styles = StyleSheet.create({
   fill: { height: '100%', borderRadius: 3 },
   pct: { width: 36, textAlign: 'right' },
   exportRow: { flexDirection: 'row', gap: 10 },
+  shareRow: { marginTop: 6 },
 });

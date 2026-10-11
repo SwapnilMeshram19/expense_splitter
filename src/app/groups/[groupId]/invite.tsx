@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
@@ -9,6 +9,7 @@ import { groups } from '@/db/schema';
 import { useAuth } from '@/features/auth/authStore';
 import { createInvite, revokeAllInvites, type CreatedInvite } from '@/features/invites/inviteApi';
 import { buildShareMessage, describeInviteStatus, formatInviteCode } from '@/features/invites/messages';
+import { ShareButtons } from '@/features/share/ShareButtons';
 import { syncNow } from '@/sync/syncService';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
@@ -73,11 +74,6 @@ export default function InviteScreen() {
     else setMessage(describeInviteStatus(result.error.status));
   };
 
-  const share = async () => {
-    if (!invite) return;
-    await Share.share({ message: buildShareMessage(group.name, invite.code) });
-  };
-
   const revoke = () =>
     Alert.alert(
       'Stop all invite links?',
@@ -116,9 +112,13 @@ export default function InviteScreen() {
         <View style={[styles.card, { borderColor: theme.border, backgroundColor: theme.surface }]}>
           <Text style={[styles.code, { color: theme.text }]}>{formatInviteCode(invite.code)}</Text>
           <Text style={{ color: theme.muted, textAlign: 'center' }}>Expires {expiryLabel(invite.expiresAt)}</Text>
-          <Pressable onPress={() => void share()} style={[styles.primaryButton, { backgroundColor: theme.primary }]}>
-            <Text style={{ color: theme.onPrimary, fontWeight: '600' }}>Share link</Text>
-          </Pressable>
+          <ShareButtons
+            label="Send on WhatsApp"
+            accessibilityLabel="Send the invite link on WhatsApp"
+            variant="primary"
+            getText={() => buildShareMessage(group.name, invite.code)}
+            style={styles.shareRow}
+          />
         </View>
       ) : (
         <Pressable
@@ -151,4 +151,5 @@ const styles = StyleSheet.create({
   code: { fontSize: 30, fontWeight: '700', letterSpacing: 4, textAlign: 'center' },
   primaryButton: { borderRadius: 25, minHeight: 50, justifyContent: 'center', paddingHorizontal: 24, alignItems: 'center', marginTop: 8 },
   linkButton: { paddingVertical: 12, alignItems: 'center' },
+  shareRow: { marginTop: 8 },
 });

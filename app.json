@@ -9,6 +9,11 @@
       "ios"
     ],
     "userInterfaceStyle": "automatic",
+    "ios": {
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["upi", "whatsapp"]
+      }
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",

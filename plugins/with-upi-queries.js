@@ -1,14 +1,17 @@
 /**
- * Android 11+ package visibility: lets Linking.canOpenURL('upi://pay') see installed UPI apps.
- * Declares only the upi scheme, not QUERY_ALL_PACKAGES (restricted by Play policy).
- * Linking.openURL works without this; only the "is a UPI app installed?" hint depends on it.
+ * Android 11+ package visibility: lets Linking.canOpenURL see installed UPI apps ('upi://pay')
+ * and WhatsApp ('whatsapp://send', also WhatsApp Business). Declares only these schemes, not
+ * QUERY_ALL_PACKAGES (restricted by Play policy). Linking.openURL works without this; only the
+ * "is it installed?" checks depend on it.
  */
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const UPI_INTENT = {
+const SCHEMES = ['upi', 'whatsapp'];
+
+const viewIntent = (scheme) => ({
   action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }],
-  data: [{ $: { 'android:scheme': 'upi' } }],
-};
+  data: [{ $: { 'android:scheme': scheme } }],
+});
 
 module.exports = function withUpiQueries(config) {
   return withAndroidManifest(config, (cfg) => {
@@ -17,10 +20,12 @@ module.exports = function withUpiQueries(config) {
     if (manifest.queries.length === 0) manifest.queries.push({});
     const block = manifest.queries[0];
     block.intent = block.intent ?? [];
-    const present = block.intent.some((intent) =>
-      (intent.data ?? []).some((d) => d.$ && d.$['android:scheme'] === 'upi'),
-    );
-    if (!present) block.intent.push(UPI_INTENT);
+    for (const scheme of SCHEMES) {
+      const present = block.intent.some((intent) =>
+        (intent.data ?? []).some((d) => d.$ && d.$['android:scheme'] === scheme),
+      );
+      if (!present) block.intent.push(viewIntent(scheme));
+    }
     return cfg;
   });
 };

@@ -23,6 +23,9 @@ import {
 } from '@/features/groups/loadGroupView';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
+import { balancesMessage, reminderMessage } from '@/features/share/messages';
+import { ShareButtons } from '@/features/share/ShareButtons';
+import { shareTextOnWhatsApp } from '@/features/share/shareText';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { todayIsoDate } from '@/lib/dates';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
@@ -52,6 +55,7 @@ type Row =
   | { kind: 'section'; key: string; title: string }
   | { kind: 'transfer'; key: string; debt: Debt }
   | { kind: 'record'; key: string }
+  | { kind: 'share'; key: string }
   | { kind: 'balance'; key: string; memberId: string; balance: number }
   | { kind: 'activity'; key: string; item: ActivityRow }
   | { kind: 'empty'; key: string; text: string };
@@ -83,6 +87,7 @@ function rowsFor(segment: Segment, view: GroupView): Row[] {
     rows.push({ kind: 'transfer', key: `t-${debt.fromMemberId}-${debt.toMemberId}`, debt });
   }
   if (view.canEdit) rows.push({ kind: 'record', key: 'record' });
+  if (view.expenseCount > 0) rows.push({ kind: 'share', key: 'share' });
   rows.push({ kind: 'section', key: 'sec-bal', title: 'Balances' });
   for (const m of view.memberBalances) rows.push({ kind: 'balance', key: `b-${m.id}`, memberId: m.id, balance: m.balance });
   return rows;
@@ -288,11 +293,45 @@ export default function GroupDetailScreen() {
             }
             onPay={() => openPay(item.debt.toMemberId, item.debt.amountPaise)}
             onRequest={() => openRequest(item.debt.fromMemberId, item.debt.amountPaise)}
+            onRemind={() =>
+              void shareTextOnWhatsApp(
+                reminderMessage({
+                  groupName: view.group.name,
+                  currency,
+                  debtorName: view.names.get(item.debt.fromMemberId) ?? 'there',
+                  amountPaise: item.debt.amountPaise,
+                  upiId: me ? (view.upiIds.get(me) ?? null) : null,
+                }),
+              )
+            }
           />
         );
       case 'record':
         return (
           <Button label="Record a payment" variant="secondary" icon="add" onPress={() => openSettle()} style={styles.recordButton} />
+        );
+      case 'share':
+        return (
+          <View style={styles.shareBlock}>
+            <AppText variant="caption" color={theme.muted}>
+              Send who pays whom to the group chat
+              {currency === 'INR' && view.upiIds.size > 0 ? ', with UPI IDs' : ''}.
+            </AppText>
+            <ShareButtons
+              label="Share on WhatsApp"
+              getText={() =>
+                balancesMessage({
+                  groupName: view.group.name,
+                  currency,
+                  transfers: view.transfers,
+                  names: view.names,
+                  upiIds: view.upiIds,
+                  totalSpent: view.totalSpent,
+                  expenseCount: view.expenseCount,
+                })
+              }
+            />
+          </View>
         );
       case 'balance': {
         const tone = item.balance > 0 ? 'positive' : item.balance < 0 ? 'negative' : 'neutral';
@@ -507,6 +546,7 @@ function TransferRow({
   onRecord,
   onPay,
   onRequest,
+  onRemind,
 }: {
   debt: Debt;
   me: string | null;
@@ -519,6 +559,8 @@ function TransferRow({
   onRecord: () => void;
   onPay: () => void;
   onRequest: () => void;
+  /** Non-UPI groups: nudge the payer on WhatsApp (UPI groups do it from the Request screen). */
+  onRemind: () => void;
 }) {
   const iPay = t.fromMemberId === me;
   const iReceive = t.toMemberId === me;
@@ -557,12 +599,21 @@ function TransferRow({
               style={styles.grow}
               accessibilityLabel={`Get paid by ${nameOf(t.fromMemberId)}`}
             />
+          ) : iReceive ? (
+            <Button
+              label="Remind"
+              icon="chat"
+              variant="soft"
+              onPress={onRemind}
+              style={styles.grow}
+              accessibilityLabel={`Remind ${nameOf(t.fromMemberId)} on WhatsApp`}
+            />
           ) : null}
           <Button
-            label={withUpi ? 'Record' : 'Record payment'}
+            label={withUpi || iReceive ? 'Record' : 'Record payment'}
             variant="secondary"
             onPress={onRecord}
-            style={withUpi ? undefined : styles.grow}
+            style={withUpi || iReceive ? undefined : styles.grow}
             accessibilityLabel={`Record payment from ${nameOf(t.fromMemberId)} to ${nameOf(t.toMemberId)}`}
           />
         </View>
@@ -606,6 +657,7 @@ const styles = StyleSheet.create({
   transferTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   transferActions: { flexDirection: 'row', gap: 8 },
   recordButton: { marginBottom: 4 },
+  shareBlock: { gap: 8, paddingTop: 12, paddingBottom: 4 },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   activityRow: { paddingVertical: 12, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
   emptyText: { paddingVertical: 12 },

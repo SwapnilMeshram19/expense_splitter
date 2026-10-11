@@ -10,6 +10,7 @@ import type { Expense, Group, Settlement } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt, type PayerLine } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
 import { simplifyDebts } from '@/domain/simplify';
+import { isValidVpa } from '@/domain/upi';
 import { describeActivity, formatTimestamp } from '@/features/activity/describeActivity';
 import { formatIsoDate, toLocalIsoDate } from '@/lib/dates';
 
@@ -54,6 +55,10 @@ export interface GroupView {
   activity: ActivityRow[];
   /** Progress against the group's budget, or null without one. */
   budget: BudgetStatus | null;
+  /** Valid UPI IDs of members who have one, for the WhatsApp balances message. */
+  upiIds: Map<string, string>;
+  /** Sum of all (non-deleted) expenses, group currency minor units. */
+  totalSpent: number;
 }
 
 /** "Today" / "Yesterday" / "7 Oct 2026", against the phone's local calendar day. */
@@ -158,6 +163,12 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     myBalance: me ? (balances.get(me) ?? 0) : 0,
     activity,
     budget: groupBudgetStatus(db, group, todayIso),
+    upiIds: new Map(
+      allMembers.flatMap((m) =>
+        m.deletedAt === null && isValidVpa(m.upiVpa) ? [[m.id, m.upiVpa] as const] : [],
+      ),
+    ),
+    totalSpent: expenseRows.reduce((sum, row) => sum + row.expense.amountPaise, 0),
   };
 }
 
