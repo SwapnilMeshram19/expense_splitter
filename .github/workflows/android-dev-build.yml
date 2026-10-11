@@ -1,15 +1,9 @@
 name: Android dev build
 
+# Manual only (Actions → Android dev build → Run workflow): a new APK is needed only when a native
+# module, app.json or a config plugin changes, and each build takes ~20-40 runner minutes.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - package.json
-      - package-lock.json
-      - app.json
-      - modules/**
-      - .github/workflows/android-dev-build.yml
 
 concurrency:
   group: android-dev-build
@@ -68,4 +62,4 @@ jobs:
         with:
           name: expense-splitter-dev-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
+          retention-days: 7

@@ -1,13 +1,21 @@
 name: CI
 
+# One job per push to main: typecheck, lint, tests and the domain-copy check (was a separate
+# workflow). Feature branches aren't pushed any more, so nothing runs twice.
 on:
   push:
     branches: [main]
-  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -20,6 +28,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Domain copy in sync
+        run: |
+          node scripts/sync-domain.mjs
+          if [ -n "$(git status --porcelain -- supabase/functions/_shared/domain)" ]; then
+            git status --porcelain -- supabase/functions/_shared/domain
+            echo "::error::src/domain changed without re-running 'npm run domain:sync'. Run it and commit."
+            exit 1
+          fi
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test -- --ci
