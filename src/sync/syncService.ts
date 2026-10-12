@@ -97,7 +97,14 @@ export function syncNow(): Promise<SyncOutcome> {
         return 'signedOut';
       }
       emit({ ...status, state: 'syncing', message: null, errorCode: null });
-      await runSync(appContext, supabaseTransport);
+      const started = Date.now();
+      const report = await runSync(appContext, supabaseTransport);
+      // Dev builds: one line per cycle, so a sync loop or a slow pull shows up in the Metro log.
+      if (__DEV__) {
+        console.log(
+          `[sync] ok in ${Date.now() - started} ms: pushed ${report.pushed}, pulled ${report.pulled}, conflicts ${report.conflicts}, rejected ${report.rejected}`,
+        );
+      }
       emit({ state: 'idle', lastSyncedAt: Date.now(), message: null, errorCode: null, ...counts() });
       successListeners.forEach((listener) => listener());
       return 'ok';

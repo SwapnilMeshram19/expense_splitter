@@ -256,7 +256,11 @@ export const activityLog = sqliteTable(
       .$defaultFn(() => Date.now()),
     dirty: integer('dirty', { mode: 'boolean' }).notNull().default(true),
   },
-  (t) => [index('activity_group_created_idx').on(t.groupId, t.createdAt)],
+  (t) => [
+    index('activity_group_created_idx').on(t.groupId, t.createdAt),
+    // Activity tab: newest across all groups (ORDER BY created_at DESC, id DESC LIMIT n).
+    index('activity_created_idx').on(t.createdAt, t.id),
+  ],
 );
 
 /** One line of a recurring rule's template, in minor units of the group currency. */

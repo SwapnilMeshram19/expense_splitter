@@ -73,6 +73,7 @@ async function run(): Promise<void> {
     return;
   }
 
+  if (__DEV__) console.log(`[sync] start (${reason ?? 'unknown'})`);
   const outcome = await syncNow();
   if (outcome === 'ok' || outcome === 'signedOut') {
     failures = 0;

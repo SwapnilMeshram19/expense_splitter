@@ -43,6 +43,13 @@
       "when": 1791647872396,
       "tag": "0005_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791805763943,
+      "tag": "0006_activity_created_index",
+      "breakpoints": true
     }
   ]
 }

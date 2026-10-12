@@ -1,29 +1,28 @@
 import { addDatabaseChangeListener } from 'expo-sqlite';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
+import { createChangeBatcher } from './changeBatcher';
+
 /**
  * Per-table change counters, fed by a single SQLite change listener for the whole app.
  * Requires the DB to be opened with enableChangeListener (see db/client.ts).
+ *
+ * SQLite reports every changed ROW. A sync that pulls 500 rows used to re-render every live
+ * screen (Home, Settle, Activity, the open group…) 500 times, each re-running its queries: the
+ * app crawled for seconds after signing in and after each big pull. Changes are now batched and
+ * published at most once per BATCH_MS, so a 500-row pull costs a handful of recomputes.
  */
-const tableVersions = new Map<string, number>();
-const subscribers = new Set<() => void>();
+const BATCH_MS = 120;
+
+const batcher = createChangeBatcher(BATCH_MS);
 let listening = false;
 
-function ensureListening(): void {
-  if (listening) return;
-  listening = true;
-  addDatabaseChangeListener((event) => {
-    tableVersions.set(event.tableName, (tableVersions.get(event.tableName) ?? 0) + 1);
-    subscribers.forEach((notify) => notify());
-  });
-}
-
 function subscribe(notify: () => void): () => void {
-  ensureListening();
-  subscribers.add(notify);
-  return () => {
-    subscribers.delete(notify);
-  };
+  if (!listening) {
+    listening = true;
+    addDatabaseChangeListener((event) => batcher.record(event.tableName));
+  }
+  return batcher.subscribe(notify);
 }
 
 /**
@@ -36,14 +35,7 @@ function subscribe(notify: () => void): () => void {
 export function useLiveData<T>(tables: readonly string[], compute: () => T): T {
   const tableKey = tables.join(',');
 
-  const getSnapshot = useCallback(
-    () =>
-      tableKey
-        .split(',')
-        .map((table) => tableVersions.get(table) ?? 0)
-        .join(':'),
-    [tableKey],
-  );
+  const getSnapshot = useCallback(() => batcher.snapshot(tableKey.split(',')), [tableKey]);
 
   // A string snapshot compares by value, so unrelated table changes don't re-render.
   const version = useSyncExternalStore(subscribe, getSnapshot);

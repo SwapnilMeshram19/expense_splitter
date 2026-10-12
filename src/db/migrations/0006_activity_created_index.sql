@@ -1,0 +1,1 @@
+CREATE INDEX `activity_created_idx` ON `activity_log` (`created_at`,`id`);
