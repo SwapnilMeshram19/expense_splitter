@@ -17,6 +17,7 @@ import {
   type SettlementMethod,
   type StoredSplitInput,
 } from '@/db/schema';
+import { SYNC_LOST_GROUPS_KEY } from '@/db/repositories/access';
 import { isPristineOccurrence } from '@/db/repositories/recurring';
 import { isBudgetPeriod } from '@/domain/budget';
 import { err, ok, type Result } from '@/lib/result';
@@ -45,7 +46,7 @@ import {
 export const MAX_BATCH_ROWS = 400;
 export const SYNC_CURSOR_KEY = 'sync_cursor';
 export const SYNC_ISSUES_KEY = 'sync_issues';
-export const SYNC_LOST_GROUPS_KEY = 'sync_lost_group_ids';
+export { SYNC_LOST_GROUPS_KEY } from '@/db/repositories/access';
 /** Same key as issueActions.SYNC_REFETCH_GROUPS_KEY (kept here to avoid an import cycle). */
 const REFETCH_GROUPS_KEY = 'sync_refetch_group_ids';
 

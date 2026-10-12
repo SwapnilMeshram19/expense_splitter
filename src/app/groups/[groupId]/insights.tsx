@@ -17,11 +17,8 @@ import {
   type Period,
   type PeriodSummary,
 } from '@/features/insights/compute';
-import {
-  exportGroup,
-  ExportUnavailableError,
-  type ExportFormat,
-} from '@/features/insights/exportReport';
+import { exportModulesInstalled, ExportUnavailableError } from '@/features/insights/exportSupport';
+import type { ExportFormat } from '@/features/insights/fileNames';
 import { INSIGHTS_TABLES, loadInsightsSource } from '@/features/insights/loadInsights';
 import { MonthChart } from '@/features/insights/MonthChart';
 import { spendingMessage } from '@/features/share/messages';
@@ -85,8 +82,14 @@ export default function InsightsScreen() {
     scope === 'group' && source.budget?.period === 'monthly' ? source.budget.limit : null;
 
   const runExport = async (format: ExportFormat) => {
+    if (!exportModulesInstalled()) {
+      Alert.alert('Update the app to export', 'This version of the app can’t make files yet.');
+      return;
+    }
     setExporting(format);
     try {
+      // Loaded on tap: its native modules may be missing from an older app build.
+      const { exportGroup } = await import('@/features/insights/exportReport');
       await exportGroup(source, { format, period, today });
     } catch (error) {
       Alert.alert(

@@ -1,11 +1,17 @@
 import { eq } from 'drizzle-orm';
 
-import { SYNC_LOST_GROUPS_KEY } from '@/sync/engine';
-
 import type { AppDb } from '../context';
 import { settings } from '../schema';
 
-export const LOST_ACCESS_MESSAGE = 'You no longer have access to this group, so it can’t be changed.';
+/**
+ * Settings key holding the ids of groups the server says this account lost access to. Lives here
+ * (not in the sync engine, which writes it) so repositories don't import the engine: that made a
+ * require cycle access → engine → recurring → access.
+ */
+export const SYNC_LOST_GROUPS_KEY = 'sync_lost_group_ids';
+
+export const LOST_ACCESS_MESSAGE =
+  'You no longer have access to this group, so it can’t be changed.';
 
 /**
  * True when the last sync found that the server no longer shows us this group (we were removed).

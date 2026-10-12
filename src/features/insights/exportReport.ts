@@ -3,6 +3,7 @@ import { printToFileAsync } from 'expo-print';
 import { isAvailableAsync, shareAsync } from 'expo-sharing';
 
 import { monthLabel, type Period } from './compute';
+import { ExportUnavailableError } from './exportSupport';
 import { exportFileName, type ExportFormat } from './fileNames';
 import { buildExpensesCsv } from './csv';
 import type { InsightsSource } from './loadInsights';
@@ -19,11 +20,7 @@ import { buildReportHtml } from './reportHtml';
 
 export type { ExportFormat } from './fileNames';
 
-export class ExportUnavailableError extends Error {
-  constructor() {
-    super('Sharing is not available on this device');
-  }
-}
+export { ExportUnavailableError } from './exportSupport';
 
 const exportsDir = () => new Directory(Paths.cache, 'exports');
 
