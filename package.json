@@ -27,6 +27,7 @@
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.12",
     "expo-localization": "~57.0.2",
+    "expo-notifications": "~57.0.22",
     "expo-print": "~57.0.2",
     "expo-router": "~57.0.25",
     "expo-secure-store": "~57.0.4",
@@ -82,7 +83,8 @@
     "db:generate": "drizzle-kit generate",
     "domain:sync": "node scripts/sync-domain.mjs",
     "functions:deploy": "supabase functions deploy sync-push --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt",
-    "functions:deploy:fx": "supabase functions deploy fx-refresh --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt"
+    "functions:deploy:fx": "supabase functions deploy fx-refresh --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt",
+    "functions:deploy:push": "supabase functions deploy push-send --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt"
   },
   "private": true,
   "allowScripts": {

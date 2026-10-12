@@ -212,8 +212,30 @@ export async function signInWithGoogle(): Promise<Result<void, string | null>> {
   }
 }
 
+const beforeSignOut = new Set<() => Promise<void>>();
+
+/**
+ * Work that needs the session one last time (e.g. telling the server to stop sending push
+ * notifications to this phone). Each task gets at most 5 s; sign-out never waits longer or fails
+ * because of one.
+ */
+export function onBeforeSignOut(task: () => Promise<void>): () => void {
+  beforeSignOut.add(task);
+  return () => {
+    beforeSignOut.delete(task);
+  };
+}
+
 /** This phone only, works offline. Local groups and the account binding are kept. */
 export async function signOut(): Promise<Result<void, string>> {
+  await Promise.all(
+    [...beforeSignOut].map((task) =>
+      Promise.race([
+        task().catch((e: unknown) => devLog('before sign-out task failed', e)),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ]),
+    ),
+  );
   const result = await run('signOut', () => getSupabase().auth.signOut({ scope: 'local' }));
   // Forget the chosen Google account so the next sign-in shows the chooser again.
   await clearGoogleCredential().catch(() => undefined);

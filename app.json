@@ -86,6 +86,14 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#0A6AA1",
+          "defaultChannel": "activity"
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "./plugins/with-upi-queries",

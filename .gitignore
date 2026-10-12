@@ -44,3 +44,6 @@ example
 supabase/functions/node_modules/
 /deno.lock
 *.patch
+
+# Firebase config (push notifications): written by CI from the GOOGLE_SERVICES_JSON secret
+google-services.json

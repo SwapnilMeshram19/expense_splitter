@@ -22,6 +22,7 @@ import {
 import { currencyLabel, formatMoney } from '@/domain/currency';
 import { GoogleButton } from '@/features/auth/GoogleButton';
 import { useMyProfile } from '@/features/auth/useMyProfile';
+import { NotificationsCard } from '@/features/notifications/NotificationsCard';
 import { chooseHomeCurrency } from '@/features/region/deviceLocales';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { SyncPanel } from '@/sync/SyncPanel';
@@ -69,6 +70,7 @@ export default function AccountTab() {
         ) : (
           <SignInCard notice={auth.notice} />
         )}
+        <NotificationsCard signedIn={auth.status === 'signedIn'} />
         <RegionCard />
         <AppearanceCard />
         <LinksCard signedIn={auth.status === 'signedIn'} />

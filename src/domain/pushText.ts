@@ -1,0 +1,279 @@
+/**
+ * Push notification texts, built on the server (Edge Function push-send) from what
+ * public.claim_push_notifications returns. Pure, copied to the function by domain:sync.
+ *
+ * Input comes from the database, so it is parsed defensively: a malformed entry is skipped, never
+ * sent half-built. Texts are short (Android shows ~2 lines collapsed) and never include notes,
+ * receipts or UPI IDs: push messages pass through Google.
+ */
+
+import {
+  formatMoney,
+  isSupportedCurrency,
+  setIndianGroupingForInr,
+  usesIndianGroupingForInr,
+} from './currency';
+
+export interface ExpenseEvent {
+  type: 'expense';
+  expenseId: string;
+  description: string;
+  amount: number;
+  share: number;
+  paid: number;
+  actor: string | null;
+  recurring: boolean;
+}
+
+export interface PaymentEvent {
+  type: 'payment';
+  settlementId: string;
+  amount: number;
+  fromName: string;
+  toName: string;
+  /** Which side the recipient is on. */
+  role: 'from' | 'to';
+  actor: string | null;
+}
+
+export interface BudgetEvent {
+  type: 'budget';
+  /** 1: 80% reached, 2: over. */
+  level: 1 | 2;
+  limit: number;
+  spent: number;
+  /** 'total' or 'YYYY-MM'. */
+  period: string;
+}
+
+export type PushEvent = ExpenseEvent | PaymentEvent | BudgetEvent;
+
+export interface PushEntry {
+  token: string;
+  indianGrouping: boolean;
+  kind: 'activity' | 'budget';
+  groupId: string;
+  groupName: string;
+  currency: string;
+  events: PushEvent[];
+}
+
+export interface PushMessage {
+  title: string;
+  body: string;
+  /** FCM data: strings only. */
+  data: Record<string, string>;
+  /** Android: a newer notification with the same tag replaces the older one. */
+  tag: string | null;
+}
+
+export const PUSH_TITLE_MAX = 60;
+export const PUSH_BODY_MAX = 240;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MONTH = /^(\d{4})-(\d{2})$/;
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+const minor = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
+
+/** One line, no control characters, at most `max` characters (by code point). */
+export function clean(text: string, max: number): string {
+  const one = text
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chars = Array.from(one);
+  return chars.length <= max
+    ? one
+    : `${chars
+        .slice(0, max - 1)
+        .join('')
+        .trimEnd()}…`;
+}
+
+function parseEvent(raw: unknown): PushEvent | null {
+  if (!isRecord(raw)) return null;
+  if (raw.type === 'expense') {
+    const description = str(raw.description);
+    const amount = minor(raw.amount);
+    const share = minor(raw.share);
+    const paid = minor(raw.paid);
+    if (!description || amount === null || share === null || paid === null) return null;
+    if (typeof raw.expense_id !== 'string' || !UUID.test(raw.expense_id)) return null;
+    return {
+      type: 'expense',
+      expenseId: raw.expense_id.toLowerCase(),
+      description,
+      amount,
+      share,
+      paid,
+      actor: str(raw.actor),
+      recurring: raw.recurring === true,
+    };
+  }
+  if (raw.type === 'payment') {
+    const amount = minor(raw.amount);
+    const fromName = str(raw.from_name);
+    const toName = str(raw.to_name);
+    if (amount === null || !fromName || !toName) return null;
+    if (raw.role !== 'from' && raw.role !== 'to') return null;
+    if (typeof raw.settlement_id !== 'string' || !UUID.test(raw.settlement_id)) return null;
+    return {
+      type: 'payment',
+      settlementId: raw.settlement_id.toLowerCase(),
+      amount,
+      fromName,
+      toName,
+      role: raw.role,
+      actor: str(raw.actor),
+    };
+  }
+  if (raw.type === 'budget') {
+    const limit = minor(raw.limit);
+    const spent = minor(raw.spent);
+    const period = str(raw.period);
+    if (limit === null || limit === 0 || spent === null || !period) return null;
+    if (raw.level !== 1 && raw.level !== 2) return null;
+    if (period !== 'total' && !MONTH.test(period)) return null;
+    return { type: 'budget', level: raw.level, limit, spent, period };
+  }
+  return null;
+}
+
+/** The claim result as entries; anything malformed is left out. */
+export function parsePushEntries(raw: unknown): PushEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const entries: PushEntry[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const token = str(item.token);
+    const groupName = str(item.group_name);
+    const currency = str(item.currency);
+    if (!token || !groupName || !currency || !isSupportedCurrency(currency)) continue;
+    if (typeof item.group_id !== 'string' || !UUID.test(item.group_id)) continue;
+    if (item.kind !== 'activity' && item.kind !== 'budget') continue;
+    const events = (Array.isArray(item.events) ? item.events : [])
+      .map(parseEvent)
+      .filter((e): e is PushEvent => e !== null);
+    if (events.length === 0) continue;
+    entries.push({
+      token,
+      indianGrouping: item.indian_grouping !== false,
+      kind: item.kind,
+      groupId: item.group_id.toLowerCase(),
+      groupName,
+      currency,
+      events,
+    });
+  }
+  return entries;
+}
+
+const quote = (description: string) => `“${clean(description, 40)}”`;
+
+function listNames(items: readonly string[]): string {
+  const shown = items.slice(0, 2).map(quote);
+  const more = items.length - shown.length;
+  return more > 0 ? `${shown.join(', ')} and ${more} more` : shown.join(' and ');
+}
+
+function expenseText(events: readonly ExpenseEvent[], money: (n: number) => string): string {
+  const share = events.reduce((sum, e) => sum + e.share, 0);
+  const paid = events.reduce((sum, e) => sum + e.paid, 0);
+  const tail =
+    share > 0 ? ` · your share ${money(share)}` : paid > 0 ? ` · you paid ${money(paid)}` : '';
+
+  if (events.length === 1) {
+    const e = events[0]!;
+    const lead = e.recurring
+      ? `Repeating expense ${quote(e.description)} added`
+      : `${e.actor ? clean(e.actor, 30) : 'Someone'} added ${quote(e.description)}`;
+    return `${lead}: ${money(e.amount)}${tail}`;
+  }
+  const actors = [...new Set(events.map((e) => (e.recurring ? null : e.actor)))];
+  const who = actors.length === 1 && actors[0] ? `${clean(actors[0], 30)} added` : 'New:';
+  return `${who} ${events.length} expenses, ${listNames(events.map((e) => e.description))}${tail}`;
+}
+
+function paymentText(events: readonly PaymentEvent[], money: (n: number) => string): string {
+  if (events.length === 1) {
+    const p = events[0]!;
+    const from = clean(p.fromName, 30);
+    const to = clean(p.toName, 30);
+    if (p.role === 'to') return `${from} paid you ${money(p.amount)}`;
+    // I'm the payer and someone else recorded it (usually the receiver confirming).
+    if (p.actor && p.actor === p.toName) return `${to} confirmed your ${money(p.amount)} payment`;
+    return `Your ${money(p.amount)} payment to ${to} was recorded`;
+  }
+  const received = events.filter((p) => p.role === 'to').reduce((s, p) => s + p.amount, 0);
+  const sent = events.filter((p) => p.role === 'from').reduce((s, p) => s + p.amount, 0);
+  const parts = [];
+  if (received > 0) parts.push(`you received ${money(received)}`);
+  if (sent > 0) parts.push(`your ${money(sent)} in payments recorded`);
+  return `${events.length} payments: ${parts.join(', ')}`;
+}
+
+function periodName(period: string): string {
+  const m = MONTH.exec(period);
+  return m ? `${MONTHS[Number(m[2]) - 1] ?? ''} ${m[1]}` : '';
+}
+
+function budgetText(e: BudgetEvent, money: (n: number) => string): string {
+  const when = e.period === 'total' ? '' : ` for ${periodName(e.period)}`;
+  if (e.level === 2) {
+    return `Over budget${when}: ${money(e.spent)} spent, ${money(e.spent - e.limit)} more than the ${money(e.limit)} budget`;
+  }
+  const pct = Math.floor((e.spent * 100) / e.limit);
+  return `${pct}% of the ${money(e.limit)} budget used${when} (${money(e.spent)} spent)`;
+}
+
+/** Title and body for one entry. Formats amounts the way that phone's app does. */
+export function composePush(entry: PushEntry): PushMessage {
+  const previous = usesIndianGroupingForInr();
+  setIndianGroupingForInr(entry.indianGrouping);
+  try {
+    const money = (n: number) => formatMoney(n, entry.currency);
+    const title = clean(entry.groupName, PUSH_TITLE_MAX);
+    const data: Record<string, string> = { type: 'group', groupId: entry.groupId };
+
+    if (entry.kind === 'budget') {
+      // Only the highest level matters if both arrive in one batch.
+      const budget = entry.events
+        .filter((e): e is BudgetEvent => e.type === 'budget')
+        .sort((a, b) => b.level - a.level)[0]!;
+      return {
+        title,
+        body: clean(budgetText(budget, money), PUSH_BODY_MAX),
+        data,
+        tag: `budget-${entry.groupId}`,
+      };
+    }
+
+    const expenses = entry.events.filter((e): e is ExpenseEvent => e.type === 'expense');
+    const payments = entry.events.filter((e): e is PaymentEvent => e.type === 'payment');
+    const parts: string[] = [];
+    if (expenses.length > 0) parts.push(expenseText(expenses, money));
+    if (payments.length > 0) parts.push(paymentText(payments, money));
+    if (expenses.length === 1 && payments.length === 0) data.expenseId = expenses[0]!.expenseId;
+    return { title, body: clean(parts.join(' · '), PUSH_BODY_MAX), data, tag: null };
+  } finally {
+    setIndianGroupingForInr(previous);
+  }
+}

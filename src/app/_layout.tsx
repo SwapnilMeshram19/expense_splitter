@@ -12,6 +12,7 @@ import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
 import { startAuth } from '@/features/auth/authStore';
+import { startNotifications } from '@/features/notifications/notifications';
 import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startReceiptQueue } from '@/features/receipts/receiptStorage';
 import { startRecurringGenerator } from '@/features/recurring/runRecurring';
@@ -40,7 +41,10 @@ export default function RootLayout() {
     // Repeating expenses due today (also offline); the server's hourly job does the same.
     const stopRecurring = startRecurringGenerator();
     startSyncScheduler();
+    // Push registration, the weekly reminder, and opening a tapped notification.
+    const stopNotifications = startNotifications();
     return () => {
+      stopNotifications();
       unsubscribe();
       stopRegion();
       stopReceipts();
