@@ -25,25 +25,25 @@ const ROWS: readonly {
   {
     key: 'expenses',
     title: 'New expenses',
-    detail: 'When someone adds an expense you’re in',
+    detail: 'Expenses you’re part of',
     push: true,
   },
   {
     key: 'payments',
     title: 'Payments',
-    detail: 'When a payment to or from you is recorded',
+    detail: 'Payments to or from you',
     push: true,
   },
   {
     key: 'budget',
     title: 'Budget alerts',
-    detail: 'When a group reaches 80% of its budget, or goes over',
+    detail: 'At 80% and when over',
     push: true,
   },
   {
     key: 'weekly',
-    title: 'Weekly settle-up reminder',
-    detail: 'Sunday evening, if you owe or are owed money',
+    title: 'Weekly reminder',
+    detail: 'Sunday evening, if anything is unsettled',
     push: false,
   },
 ];
@@ -89,7 +89,7 @@ export function NotificationsCard({ signedIn }: { signedIn: boolean }) {
       {permission === 'denied' ? (
         <View style={[styles.notice, { backgroundColor: theme.warningSoft }]}>
           <AppText variant="label" color={theme.warning}>
-            Notifications are turned off for this app in your phone’s settings.
+            Turned off in your phone’s settings.
           </AppText>
           <Button
             label="Open settings"
@@ -100,7 +100,7 @@ export function NotificationsCard({ signedIn }: { signedIn: boolean }) {
       ) : permission === 'undetermined' ? (
         <Button
           label="Turn on notifications"
-          icon="chat"
+          icon="notifications"
           variant="soft"
           onPress={() => void requestPermission().then((granted) => granted && apply())}
         />
@@ -115,7 +115,7 @@ export function NotificationsCard({ signedIn }: { signedIn: boolean }) {
                 {row.title}
               </AppText>
               <AppText variant="caption" color={theme.muted}>
-                {disabled ? 'Sign in to get these from your groups' : row.detail}
+                {disabled ? 'Sign in to get these' : row.detail}
               </AppText>
             </View>
             <Switch
@@ -132,8 +132,7 @@ export function NotificationsCard({ signedIn }: { signedIn: boolean }) {
       })}
 
       <AppText variant="caption" color={theme.muted}>
-        Push notifications are delivered by Google (Firebase) and show the group, who and the
-        amount, never notes or receipts.
+        Never includes notes or receipts.
       </AppText>
     </Card>
   );

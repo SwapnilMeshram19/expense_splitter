@@ -22,6 +22,7 @@ export function LinkButton({ label, onPress, color }: { label: string; onPress: 
 
 const styles = StyleSheet.create({
   submit: { marginTop: 16 },
-  link: { paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
+  // Centred under the full-width main button, so the column of actions lines up.
+  link: { paddingVertical: 10, minHeight: 44, justifyContent: 'center', alignSelf: 'center' },
   linkText: { fontWeight: '600' },
 });

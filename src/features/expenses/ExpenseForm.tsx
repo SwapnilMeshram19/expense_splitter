@@ -342,11 +342,7 @@ export function ExpenseForm({
               <>
                 <AppText variant="caption" color={theme.muted}>
                   {describeSchedule(state.repeat, state.expenseDate)}
-                  {scheduleLocked
-                    ? ' (fixed once it has started; stop it and add a new one to change it)'
-                    : ''}
-                  . Added automatically for everyone in the group, even if nobody opens the app.
-                  Changes apply to future ones.
+                  {scheduleLocked ? ' · schedule is fixed' : ''}. Added automatically.
                 </AppText>
                 <View style={styles.endRow}>
                   <Pressable
@@ -448,7 +444,7 @@ export function ExpenseForm({
               </ScrollView>
             ) : null}
             <AppText variant="caption" color={theme.muted}>
-              Everyone in the group sees this name. Leave it empty for “Other”.
+              Shared with the group. Empty means “Other”.
             </AppText>
           </View>
         ) : null}
@@ -689,11 +685,11 @@ function RateCard({
   let caption: string;
   if (!state.rateEdited && suggestion) {
     const sources = suggestion.sources.map((s) => SOURCE_LABEL[s]).join(' + ');
-    caption = `Mid-market rate as of ${formatIsoDate(suggestion.asOf)} (${sources}). Change it to match your card or exchange receipt.`;
+    caption = `Rate of ${formatIsoDate(suggestion.asOf)} (${sources}). Edit to match your card.`;
   } else if (state.rateEdited) {
-    caption = 'This rate is saved with the expense and won’t change later.';
+    caption = 'Locked with this expense.';
   } else {
-    caption = `No rate on this phone yet. Type the rate from your card statement or exchange receipt.`;
+    caption = 'No rate yet. Enter it from your card statement.';
   }
 
   return (
@@ -731,8 +727,7 @@ function RateCard({
       ) : null}
       {convertedTotal !== null ? (
         <AppText variant="label" style={styles.bold} accessibilityLiveRegion="polite">
-          = {formatMoney(convertedTotal, groupCurrency, { forceDecimals: true })} in the group’s
-          balances
+          = {formatMoney(convertedTotal, groupCurrency, { forceDecimals: true })}
         </AppText>
       ) : null}
       {needsAttribution && !state.rateEdited ? (

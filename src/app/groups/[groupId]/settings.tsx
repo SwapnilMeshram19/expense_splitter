@@ -35,11 +35,17 @@ import {
 } from '@/features/groups/messages';
 import { getRegionPreference } from '@/features/region/regionPreference';
 import { BudgetEditor } from '@/features/groups/BudgetEditor';
-import { CurrencyPicker } from '@/ui/CurrencyPicker';
-import { useTheme, type Theme } from '@/ui/theme';
-import { Text, TextInput } from '@/ui/Text';
 import { isGroupLost } from '@/db/repositories/access';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
+import { AppText } from '@/ui/AppText';
+import { Avatar } from '@/ui/Avatar';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { CurrencyPicker } from '@/ui/CurrencyPicker';
+import { FieldLabel, Input } from '@/ui/Field';
+import { Icon, type IconName } from '@/ui/Icon';
+import { ListRow, listCardStyle } from '@/ui/ListRow';
+import { useTheme } from '@/ui/theme';
 
 const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
 
@@ -70,7 +76,7 @@ function loadSettingsView(groupId: string) {
 function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
   Alert.alert(
     `Delete “${group.name}”?`,
-    'The group and its history will be removed from your list.',
+    'It’s removed for everyone in the group.',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -96,13 +102,14 @@ export default function GroupSettingsScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Group settings' }} />
-        <Text style={{ color: theme.muted }}>This group no longer exists.</Text>
+        <AppText color={theme.muted}>This group no longer exists.</AppText>
       </View>
     );
   }
-    if (view.lost) {
+
+  if (view.lost) {
     return (
-      <View style={[styles.center, { padding: 16 }]}>
+      <View style={styles.padded}>
         <Stack.Screen options={{ title: 'Group settings' }} />
         <LostAccessBanner groupId={groupId} groupName={view.group.name} />
       </View>
@@ -111,17 +118,13 @@ export default function GroupSettingsScreen() {
 
   if (!view.me) {
     return (
-      <View style={styles.center}>
+      <View style={styles.padded}>
         <Stack.Screen options={{ title: 'Group settings' }} />
-        <Text style={[styles.notMember, { color: theme.text }]}>
-          You’re not a member of “{view.group.name}”, so you can’t change it.
-        </Text>
-        <Text style={[styles.notMember, { color: theme.muted }]}>
-          This usually means it was created before you set up your name, for example while testing.
-        </Text>
-        <Pressable onPress={() => confirmDeleteGroup(view.group, null)} style={styles.dangerButton}>
-          <Text style={{ color: theme.negative, fontWeight: '600' }}>Delete group</Text>
-        </Pressable>
+        <Card style={styles.card}>
+          <AppText variant="heading">You’re not in “{view.group.name}”</AppText>
+          <AppText color={theme.muted}>So you can’t change it. You can delete it from this phone.</AppText>
+          <Button label="Delete group" icon="delete" variant="danger" onPress={() => confirmDeleteGroup(view.group, null)} />
+        </Card>
       </View>
     );
   }
@@ -137,10 +140,12 @@ export default function GroupSettingsScreen() {
 }
 
 function balanceLabel(balance: number, currency: CurrencyCode): string {
-  if (balance > 0) return `is owed ${formatMoney(balance, currency)}`;
+  if (balance > 0) return `gets back ${formatMoney(balance, currency)}`;
   if (balance < 0) return `owes ${formatMoney(-balance, currency)}`;
   return 'settled';
 }
+
+type ErrorAt = 'group' | 'simplify' | 'people';
 
 function SettingsForm({
   group,
@@ -160,30 +165,42 @@ function SettingsForm({
   const [newMemberName, setNewMemberName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // Errors show in the card where the action happened, not at the bottom of a long screen.
+  const [error, setError] = useState<{ at: ErrorAt; text: string } | null>(null);
+  const fail = (at: ErrorAt, text: string) => setError({ at, text });
+  const errorFor = (at: ErrorAt) =>
+    error?.at === at ? (
+      <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+        {error.text}
+      </AppText>
+    ) : null;
 
-  const input = inputStyle(theme);
-  const nameChanged = groupName.trim() !== group.name;
+  const nameChanged = groupName.trim() !== group.name && groupName.trim() !== '';
+  const open = (pathname: '/groups/[groupId]/invite' | '/groups/[groupId]/recurring') =>
+    router.push({ pathname, params: { groupId: group.id } });
 
   const saveGroupName = () => {
     const result = renameGroup(appContext, { groupId: group.id, name: groupName, actorMemberId: me });
-    setError(result.ok ? null : describeGroupUpdateError(result.error));
+    if (result.ok) setError(null);
+    else fail('group', describeGroupUpdateError(result.error));
   };
 
   const toggleSimplify = (value: boolean) => {
     const result = setSimplifyDebts(appContext, { groupId: group.id, simplifyDebts: value, actorMemberId: me });
-    if (!result.ok) setError(describeGroupUpdateError(result.error));
+    if (!result.ok) fail('simplify', describeGroupUpdateError(result.error));
   };
 
   const changeCurrency = (next: CurrencyCode) => {
     const result = setGroupCurrency(appContext, { groupId: group.id, currency: next, actorMemberId: me });
-    setError(result.ok ? null : describeGroupCurrencyError(result.error));
+    if (result.ok) setError(null);
+    else fail('group', describeGroupCurrencyError(result.error));
   };
 
   const add = () => {
+    if (newMemberName.trim() === '') return;
     const result = addMember(appContext, { groupId: group.id, displayName: newMemberName, actorMemberId: me });
     if (!result.ok) {
-      setError(describeMemberError(result.error, currency));
+      fail('people', describeMemberError(result.error, currency));
       return;
     }
     setNewMemberName('');
@@ -200,7 +217,7 @@ function SettingsForm({
     if (!editingId) return;
     const result = renameMember(appContext, { memberId: editingId, displayName: editName, actorMemberId: me });
     if (!result.ok) {
-      setError(describeMemberError(result.error, currency));
+      fail('people', describeMemberError(result.error, currency));
       return;
     }
     setEditingId(null);
@@ -211,25 +228,21 @@ function SettingsForm({
     if (member.balance !== 0) {
       Alert.alert(
         `Can’t remove ${member.displayName} yet`,
-        `${member.displayName} ${balanceLabel(member.balance, currency)}. Record the payments first, then remove them.`,
+        `${member.displayName} ${balanceLabel(member.balance, currency)}. Settle up first.`,
       );
       return;
     }
-    Alert.alert(
-      `Remove ${member.displayName}?`,
-      'They won’t appear in new expenses. Past expenses keep their name.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            const result = removeMember(appContext, { memberId: member.id, actorMemberId: me });
-            if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error, currency));
-          },
+    Alert.alert(`Remove ${member.displayName}?`, 'Past expenses keep their name.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          const result = removeMember(appContext, { memberId: member.id, actorMemberId: me });
+          if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error, currency));
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (
@@ -240,174 +253,201 @@ function SettingsForm({
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-         <Pressable
-          onPress={() => router.push({ pathname: '/groups/[groupId]/invite', params: { groupId: group.id } })}
-          style={[styles.row, styles.linkRow, { borderColor: theme.border }]}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Invite people</Text>
-          <Text style={{ color: theme.muted }}>Share a link ›</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.push({ pathname: '/groups/[groupId]/recurring', params: { groupId: group.id } })}
-          style={[styles.row, styles.linkRow, { borderColor: theme.border }]}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.flex, { color: theme.text, fontSize: 16 }]}>Repeating expenses</Text>
-          <Text style={{ color: theme.muted }}>Rent, Wi-Fi… ›</Text>
-        </Pressable>
-
-        <Text style={[styles.label, { color: theme.muted }]}>Group name</Text>
-        <View style={styles.row}>
-          <TextInput
-            value={groupName}
-            onChangeText={(text) => {
-              setGroupName(text);
-              setError(null);
-            }}
-            maxLength={MAX_NAME_LENGTH}
-            style={[input, styles.flex]}
+        <Card style={listCardStyle}>
+          <ListRow icon="personAdd" title="Invite people" onPress={() => open('/groups/[groupId]/invite')} />
+          <ListRow
+            icon="repeat"
+            title="Repeating expenses"
+            detail="Rent, Wi-Fi…"
+            onPress={() => open('/groups/[groupId]/recurring')}
+            last
           />
-          {nameChanged ? (
-            <Pressable onPress={saveGroupName} style={styles.inlineButton}>
-              <Text style={{ color: theme.primary, fontWeight: '600' }}>Save</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        </Card>
 
-        <Text style={[styles.label, { color: theme.muted }]}>Currency</Text>
-        <CurrencyPicker
-          label="Group currency"
-          value={currency}
-          onChange={changeCurrency}
-          pinned={[getRegionPreference().homeCurrency]}
-          disabled={currencyLocked}
-        />
-        <Text style={{ color: theme.muted, fontSize: 13 }}>
-          {currencyLocked
-            ? 'Balances are kept in this currency, so it can’t change once there are expenses or payments. Bills in other currencies are converted when you add them.'
-            : 'Every balance in the group is kept in this currency. You can change it until the first expense or payment. Changing it removes the budget.'}
-        </Text>
-
-        <Text style={[styles.label, { color: theme.muted }]}>Budget</Text>
-        <BudgetEditor key={`${group.budgetPaise}-${group.budgetPeriod}-${group.currency}`} group={group} me={me} />
-
-        <View style={[styles.row, styles.switchRow]}>
-          <View style={styles.flex}>
-            <Text style={{ color: theme.text, fontSize: 16 }}>Simplify debts</Text>
-            <Text style={{ color: theme.muted, fontSize: 13 }}>
-              Suggest the fewest payments to settle everyone, even between people who didn’t share
-              an expense. Balances stay the same either way.
-            </Text>
+        <Card style={styles.card}>
+          <FieldLabel>Group name</FieldLabel>
+          <View style={styles.inlineRow}>
+            <Input
+              value={groupName}
+              onChangeText={(text) => {
+                setGroupName(text);
+                setError(null);
+              }}
+              maxLength={MAX_NAME_LENGTH}
+              accessibilityLabel="Group name"
+              returnKeyType="done"
+              onSubmitEditing={() => nameChanged && saveGroupName()}
+              style={styles.grow}
+            />
+            {nameChanged ? <Button label="Save" size="md" onPress={saveGroupName} /> : null}
           </View>
-          <Switch
-            value={group.simplifyDebts}
-            onValueChange={toggleSimplify}
-            accessibilityLabel="Simplify debts"
-            trackColor={{ false: theme.surfaceAlt, true: theme.primary }}
-            thumbColor={theme.surface}
-            ios_backgroundColor={theme.surfaceAlt}
-          />
-        </View>
 
-        <Text style={[styles.label, { color: theme.muted }]}>People</Text>
-        {members.map((member) => {
-          const isMe = member.id === me;
-          if (editingId === member.id) {
+          <FieldLabel>Currency</FieldLabel>
+          <CurrencyPicker
+            label="Group currency"
+            value={currency}
+            onChange={changeCurrency}
+            pinned={[getRegionPreference().homeCurrency]}
+            disabled={currencyLocked}
+          />
+          <AppText variant="caption" color={theme.muted}>
+            {currencyLocked ? 'Locked once the group has expenses.' : 'Can change until the first expense.'}
+          </AppText>
+          {errorFor('group')}
+        </Card>
+
+        <Card style={styles.card}>
+          <AppText variant="heading" accessibilityRole="header">
+            Budget
+          </AppText>
+          <BudgetEditor key={`${group.budgetPaise}-${group.budgetPeriod}-${group.currency}`} group={group} me={me} />
+        </Card>
+
+        <Card style={styles.card}>
+          <View style={styles.switchRow}>
+            <View style={styles.grow}>
+              <AppText variant="body" style={styles.medium}>
+                Simplify debts
+              </AppText>
+              <AppText variant="caption" color={theme.muted}>
+                Fewest payments to settle up.
+              </AppText>
+            </View>
+            <Switch
+              value={group.simplifyDebts}
+              onValueChange={toggleSimplify}
+              accessibilityLabel="Simplify debts"
+              trackColor={{ false: theme.surfaceAlt, true: theme.primary }}
+              thumbColor={theme.surface}
+              ios_backgroundColor={theme.surfaceAlt}
+            />
+          </View>
+          {errorFor('simplify')}
+        </Card>
+
+        <Card style={styles.card}>
+          <AppText variant="heading" accessibilityRole="header">
+            People · {members.length}
+          </AppText>
+          {members.map((member, index) => {
+            const isMe = member.id === me;
+            const divider = index < members.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth };
+            if (editingId === member.id) {
+              return (
+                <View key={member.id} style={[styles.memberRow, divider]}>
+                  <Input
+                    value={editName}
+                    onChangeText={(text) => {
+                      setEditName(text);
+                      setError(null);
+                    }}
+                    maxLength={MAX_NAME_LENGTH}
+                    accessibilityLabel={`New name for ${member.displayName}`}
+                    returnKeyType="done"
+                    onSubmitEditing={saveRename}
+                    style={styles.grow}
+                    autoFocus
+                  />
+                  <IconButton icon="check" label="Save name" color={theme.primary} onPress={saveRename} />
+                  <IconButton icon="close" label="Cancel" color={theme.muted} onPress={() => setEditingId(null)} />
+                </View>
+              );
+            }
             return (
-              <View key={member.id} style={styles.row}>
-                <TextInput
-                  value={editName}
-                  onChangeText={(text) => {
-                    setEditName(text);
-                    setError(null);
-                  }}
-                  maxLength={MAX_NAME_LENGTH}
-                  style={[input, styles.flex]}
-                  autoFocus
+              <View key={member.id} style={[styles.memberRow, divider]}>
+                <Avatar seed={member.id} name={member.displayName} size={36} />
+                <View style={styles.grow}>
+                  <AppText style={styles.medium} numberOfLines={1}>
+                    {member.displayName}
+                    {isMe ? ' (you)' : ''}
+                  </AppText>
+                  <AppText variant="caption" color={theme.muted}>
+                    {balanceLabel(member.balance, currency)}
+                  </AppText>
+                </View>
+                <IconButton
+                  icon="edit"
+                  label={`Rename ${member.displayName}`}
+                  color={theme.muted}
+                  onPress={() => startRename(member)}
                 />
-                <Pressable onPress={saveRename} style={styles.inlineButton}>
-                  <Text style={{ color: theme.primary, fontWeight: '600' }}>Save</Text>
-                </Pressable>
-                <Pressable onPress={() => setEditingId(null)} style={styles.inlineButton}>
-                  <Text style={{ color: theme.muted }}>Cancel</Text>
-                </Pressable>
+                {!isMe ? (
+                  <IconButton
+                    icon="personRemove"
+                    label={`Remove ${member.displayName}`}
+                    color={theme.negative}
+                    onPress={() => confirmRemove(member)}
+                  />
+                ) : (
+                  <View style={styles.iconSpacer} />
+                )}
               </View>
             );
-          }
-          return (
-            <View key={member.id} style={[styles.row, styles.memberRow, { borderBottomColor: theme.border }]}>
-              <View style={styles.flex}>
-                <Text style={{ color: theme.text, fontSize: 16 }}>
-                  {member.displayName}
-                  {isMe ? ' (you)' : ''}
-                </Text>
-                <Text style={{ color: theme.muted, fontSize: 13 }}>
-                  {balanceLabel(member.balance, currency)}
-                </Text>
-              </View>
-              <Pressable onPress={() => startRename(member)} style={styles.inlineButton} hitSlop={6}>
-                <Text style={{ color: theme.primary }}>Rename</Text>
-              </Pressable>
-              {!isMe ? (
-                <Pressable onPress={() => confirmRemove(member)} style={styles.inlineButton} hitSlop={6}>
-                  <Text style={{ color: theme.negative }}>Remove</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          );
-        })}
+          })}
+          <View style={styles.inlineRow}>
+            <Input
+              value={newMemberName}
+              onChangeText={(text) => {
+                setNewMemberName(text);
+                setError(null);
+              }}
+              placeholder="Add a person"
+              maxLength={MAX_NAME_LENGTH}
+              accessibilityLabel="New person’s name"
+              onSubmitEditing={add}
+              returnKeyType="done"
+              style={styles.grow}
+            />
+            <Button label="Add" icon="add" variant="soft" onPress={add} disabled={newMemberName.trim() === ''} />
+          </View>
+          {errorFor('people')}
+        </Card>
 
-        <View style={styles.row}>
-          <TextInput
-            value={newMemberName}
-            onChangeText={(text) => {
-              setNewMemberName(text);
-              setError(null);
-            }}
-            placeholder="Add a person"
-            placeholderTextColor={theme.muted}
-            maxLength={MAX_NAME_LENGTH}
-            style={[input, styles.flex]}
-            onSubmitEditing={add}
-            returnKeyType="done"
-          />
-          <Pressable onPress={add} style={styles.inlineButton}>
-            <Text style={{ color: theme.primary, fontWeight: '600' }}>Add</Text>
-          </Pressable>
-        </View>
-
-        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
-
-        <Pressable onPress={() => confirmDeleteGroup(group, me)} style={styles.dangerButton}>
-          <Text style={{ color: theme.negative, fontWeight: '600' }}>Delete group</Text>
-        </Pressable>
-        <Text style={{ color: theme.muted, fontSize: 13 }}>
-          Only possible when everyone is settled up.
-        </Text>
+        <Button label="Delete group" icon="delete" variant="danger" onPress={() => confirmDeleteGroup(group, me)} />
+        <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+          Everyone must be settled up first.
+        </AppText>
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
   );
 }
 
-const inputStyle = (theme: Theme) => [
-  styles.input,
-  { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border },
-];
+/** 44×44 icon-only action inside a row. */
+function IconButton({
+  icon,
+  label,
+  color,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Icon name={icon} color={color} size={20} />
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  notMember: { textAlign: 'center', fontSize: 15 },
-  container: { padding: 16, gap: 10, paddingBottom: 48 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 12 },
-  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  flex: { flex: 1 },
-  linkRow: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 52, justifyContent: 'center' },
-  switchRow: { marginTop: 12, gap: 16 },
-  memberRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  inlineButton: { paddingHorizontal: 6, paddingVertical: 8 },
-  dangerButton: { marginTop: 24, paddingVertical: 12, alignItems: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  padded: { padding: 20 },
+  container: { paddingHorizontal: 20, paddingTop: 8, gap: 14, paddingBottom: 48 },
+  card: { gap: 10 },
+  grow: { flex: 1, minWidth: 0 },
+  medium: { fontWeight: '500' },
+  centerText: { textAlign: 'center' },
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingVertical: 4 },
+  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  iconSpacer: { width: 44 },
 });

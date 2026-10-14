@@ -60,8 +60,7 @@ export function SyncPanel({ compact = false }: { compact?: boolean }) {
         </AppText>
       ) : null}
       <AppText variant="caption" color={theme.muted}>
-        Sync runs on its own: after you make a change, when you open the app, when you’re back
-        online, and when someone else in your groups makes a change.
+        Syncs automatically.
       </AppText>
       <Button label="Sync now" variant="soft" onPress={() => void syncNow()} busy={sync.state === 'syncing'} />
     </View>

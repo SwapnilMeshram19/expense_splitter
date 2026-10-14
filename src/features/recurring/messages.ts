@@ -18,7 +18,7 @@ export function describeRuleError(
     case 'SCHEDULE':
       return SCHEDULE[error.error];
     case 'SCHEDULE_LOCKED':
-      return 'How often and from when can’t change once it has started. Stop this one and add a new repeating expense.';
+      return 'The schedule is fixed once started. Stop it and add a new one.';
     case 'INVALID_TIME_ZONE':
       return 'Your phone’s time zone isn’t recognised. Check the date and time settings.';
     default:

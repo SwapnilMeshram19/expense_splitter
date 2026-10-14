@@ -10,7 +10,7 @@ export function LostAccessBanner({ groupId, groupName }: { groupId: string; grou
   const confirmForget = () =>
     Alert.alert(
       `Remove “${groupName}” from this phone?`,
-      'Its history on this phone will be deleted. Nothing changes for the people still in the group.',
+      'Deletes it from this phone only.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -29,8 +29,8 @@ export function LostAccessBanner({ groupId, groupName }: { groupId: string; grou
     <Banner
       tone="warning"
       icon="lock"
-      title="You no longer have access to this group"
-      body="Someone may have removed you. You can still read what’s saved on this phone, but it can’t be changed. If you’re added back, it updates on the next sync."
+      title="You no longer have access"
+      body="Read-only. If you’re added back, it updates automatically."
     >
       <Button label="Remove from this phone" variant="danger" onPress={confirmForget} />
     </Banner>

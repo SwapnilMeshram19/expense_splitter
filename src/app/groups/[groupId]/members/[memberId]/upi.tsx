@@ -49,7 +49,7 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
   };
 
   const confirmRemove = () =>
-    Alert.alert('Remove UPI ID?', 'People in this group won’t be able to pay with UPI from the app.', [
+    Alert.alert('Remove UPI ID?', 'Others can’t pay you by UPI in this group.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => save(null) },
     ]);
@@ -59,7 +59,7 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
       <View style={styles.container}>
         <Stack.Screen options={{ title }} />
         <Text style={[styles.value, { color: theme.text }]}>{member.vpa ?? 'Not added yet'}</Text>
-        <Text style={{ color: theme.muted }}>Only {member.name} can change this, since it’s linked to their account.</Text>
+        <Text style={{ color: theme.muted }}>Only {member.name} can change this.</Text>
       </View>
     );
   }
@@ -78,7 +78,7 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
             setText(value);
             setError(null);
           }}
-          placeholder="name@bank"
+          placeholder="name@bank or UPI link"
           placeholderTextColor={theme.muted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -89,15 +89,14 @@ function MemberUpiForm({ setup }: { setup: Ready }) {
           style={[styles.input, { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border }]}
         />
         {prefill && text === prefill ? (
-          <Text style={{ color: theme.muted }}>Filled in from another group. Check it, then tap Save.</Text>
+          <Text style={{ color: theme.muted }}>From another group. Check, then Save.</Text>
         ) : null}
         {preview ? <Text style={{ color: theme.muted }}>Will be saved as {preview}</Text> : null}
         <Text style={{ color: theme.muted }}>
           {member.isMe
-            ? `People in “${setup.groupName}” use this to pay you. Only members of this group can see it.`
-            : `You’re adding this for ${member.name}. Double-check it with them. Once ${member.name} joins the group, only they can change it.`}
+            ? 'Only members of this group can see it.'
+            : `Double-check it with ${member.name}.`}
         </Text>
-        <Text style={{ color: theme.muted }}>You can also paste a UPI payment link copied from a QR code.</Text>
 
         {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
 

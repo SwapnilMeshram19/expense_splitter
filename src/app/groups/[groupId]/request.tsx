@@ -94,8 +94,8 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
     Alert.alert(
       duplicate ? 'Already recorded?' : 'Mark as received?',
       duplicate
-        ? `A ${formatPaise(amountPaise)} payment from ${payer.name} to you was recorded in the last 2 days. Record this one as well?`
-        : `Only do this once ${formatPaise(amountPaise)} shows up in your UPI app or bank SMS.`,
+        ? `${formatPaise(amountPaise)} from ${payer.name} was recorded in the last 2 days. Record again?`
+        : `Only once ${formatPaise(amountPaise)} shows in your UPI app or bank SMS.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: duplicate ? 'Record anyway' : 'Mark received', onPress: save },
@@ -167,7 +167,7 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
               Ask {payer.name} to scan this with any UPI app. The amount is filled in.
             </Text>
             <Text style={{ color: theme.muted }}>{myVpa}</Text>
-            <Text style={{ color: theme.muted }}>Not scanning? Turn your screen brightness up.</Text>
+            <Text style={{ color: theme.muted }}>Not scanning? Raise screen brightness.</Text>
           </View>
         ) : (
           <Text style={{ color: theme.muted }}>Enter an amount to show the QR code.</Text>
@@ -180,9 +180,9 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
           onPress={markReceived}
           disabled={amountPaise === null}
         />
-        <Text style={[styles.label, { color: theme.muted }]}>Not together? Send a reminder</Text>
+        <Text style={[styles.label, { color: theme.muted }]}>Not together?</Text>
         <ShareButtons
-          label="Remind on WhatsApp"
+          label="Remind"
           accessibilityLabel={`Remind ${payer.name} on WhatsApp`}
           getText={reminder}
         />

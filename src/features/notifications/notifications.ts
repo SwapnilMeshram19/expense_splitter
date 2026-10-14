@@ -269,7 +269,7 @@ async function maybeAskOnce(): Promise<void> {
   setSetting(appContext, NOTIFICATIONS_ASKED_KEY, '1');
   Alert.alert(
     'Get notified?',
-    'Know when friends add expenses, pay you back, or a trip goes over budget. You can change this anytime in Account.',
+    'Know when friends add expenses or pay you back. Change it anytime in Account.',
     [
       { text: 'Not now', style: 'cancel', onPress: () => void (asking = false) },
       {

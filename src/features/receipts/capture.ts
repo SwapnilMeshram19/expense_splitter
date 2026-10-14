@@ -75,7 +75,7 @@ export function describeCaptureError(reason: Exclude<CaptureResult, { ok: true }
     case 'CANCELED':
       return null;
     case 'CAMERA_DENIED':
-      return 'Allow camera access in your phone’s settings to take a receipt photo, or choose one from the gallery.';
+      return 'Allow camera access in phone settings, or pick from the gallery.';
     case 'TOO_LARGE':
       return 'That photo is too large even after shrinking. Try a closer shot of just the receipt.';
     case 'FAILED':

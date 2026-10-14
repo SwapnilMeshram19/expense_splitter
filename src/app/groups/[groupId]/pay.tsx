@@ -152,7 +152,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     }
     awaitingReturn.current = false;
     clearPendingUpiPayment(appContext);
-    setError('No UPI app could open this payment. Copy the UPI ID below and pay from your UPI app, or record a cash payment.');
+    setError('No UPI app opened. Copy the UPI ID below and pay from your app.');
   };
 
   const paidAnotherWay = () => {
@@ -179,7 +179,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     }
     const ref = utr.replace(/\s+/g, '');
     if (ref !== '' && !UTR_PATTERN.test(ref)) {
-      setError('A UPI reference number has 12 digits. Leave it blank if you don’t have it.');
+      setError('UPI reference is 12 digits. Or leave it blank.');
       return;
     }
 
@@ -207,7 +207,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     if (isRecentDuplicate(db, groupId, me, payee.id, amountPaise)) {
       Alert.alert(
         'Already recorded?',
-        `A ${formatPaise(amountPaise)} payment from you to ${payee.name} was recorded in the last 2 days. Record this one as well?`,
+        `${formatPaise(amountPaise)} to ${payee.name} was recorded in the last 2 days. Record again?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Record anyway', onPress: save },
@@ -248,7 +248,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
       <View style={styles.container}>
         <Stack.Screen options={{ title: 'Pay with UPI' }} />
         <Text style={[styles.title, { color: theme.text }]}>Finish the payment in your UPI app</Text>
-        <Text style={{ color: theme.muted }}>Come back here when you’re done. We’ll ask whether it went through.</Text>
+        <Text style={{ color: theme.muted }}>Come back here when you’re done.</Text>
         <PrimaryButton label="I’m back" onPress={backFromUpiApp} />
       </View>
     );
@@ -260,10 +260,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
         <Stack.Screen options={{ title: 'Confirm payment' }} />
         <KeyboardAwareScrollView bottomOffset={62} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <Text style={[styles.title, { color: theme.text }]}>Did the payment to {payee.name} go through?</Text>
-          <Text style={{ color: theme.muted }}>
-            Check the success screen in your UPI app or your bank’s debit SMS. If it says “pending”, choose
-            “Not sure yet” and you’ll be reminded on the group screen.
-          </Text>
+          <Text style={{ color: theme.muted }}>Check your UPI app or bank SMS. Pending? Choose “Not sure yet”.</Text>
           {amountField('Amount paid')}
           <Text style={[styles.label, { color: theme.muted }]}>UPI reference no. (optional)</Text>
           <TextInput
@@ -294,8 +291,8 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
   let hint: string;
   if (setup.myDebtPaise === 0) hint = 'You don’t owe anything right now.';
   else if (amountPaise !== null && amountPaise > setup.myDebtPaise)
-    hint = `That’s more than you owe in total (${formatPaise(setup.myDebtPaise)}).`;
-  else hint = `You owe ${formatPaise(setup.myDebtPaise)} in total. Paying part of it is fine.`;
+    hint = `More than you owe (${formatPaise(setup.myDebtPaise)}).`;
+  else hint = `You owe ${formatPaise(setup.myDebtPaise)}. Part payment is fine.`;
 
   return (
     <>
@@ -310,8 +307,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
         {overLimit ? (
           <View style={styles.block}>
             <Text style={{ color: theme.negative }}>
-              UPI allows up to {formatPaise(UPI_P2P_LIMIT_PAISE)} per payment (your bank may allow less). Pay in
-              parts. Each part is recorded separately.
+              UPI limit is {formatPaise(UPI_P2P_LIMIT_PAISE)} per payment. Pay in parts.
             </Text>
             <LinkButton
               label={`Pay ${formatPaise(UPI_P2P_LIMIT_PAISE)} now`}
@@ -330,11 +326,9 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
               disabled={launching || overLimit || amountPaise === null}
             />
             {upiAppFound === false ? (
-              <Text style={{ color: theme.warning }}>No UPI app detected on this phone. Try anyway, or copy the details below.</Text>
+              <Text style={{ color: theme.warning }}>No UPI app found. Try anyway, or copy the details below.</Text>
             ) : null}
-            <Text style={{ color: theme.muted }}>
-              Your UPI app shows the name registered with {payee.name}’s bank. If it doesn’t look right, don’t pay.
-            </Text>
+            <Text style={{ color: theme.muted }}>Check the name in your UPI app before paying.</Text>
 
             <Text style={[styles.label, { color: theme.muted }]}>UPI app not working?</Text>
             <View style={styles.row}>
@@ -344,7 +338,7 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
               ) : null}
             </View>
             {copied ? <Text style={{ color: theme.muted }}>{copied} copied.</Text> : null}
-            <LinkButton label="I’ve paid another way, record it" onPress={paidAnotherWay} />
+            <LinkButton label="Paid another way? Record it" onPress={paidAnotherWay} />
           </>
         ) : (
           <View style={styles.block}>
@@ -364,10 +358,10 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
                 }
               />
             ) : (
-              <Text style={{ color: theme.muted }}>Ask {payee.name} to add it. Only they can, since it’s linked to their account.</Text>
+              <Text style={{ color: theme.muted }}>Ask {payee.name} to add it.</Text>
             )}
             <LinkButton
-              label="Paid in cash or another way? Record it"
+              label="Paid another way? Record it"
               onPress={() =>
                 router.replace({
                   pathname: '/groups/[groupId]/settle',

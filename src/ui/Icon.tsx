@@ -63,6 +63,17 @@ const ICONS = {
   repeat: { ios: 'repeat', android: 0xe040 }, // repeat
   insights: { ios: 'chart.bar', android: 0xe26b }, // bar_chart
   chat: { ios: 'message', android: 0xe0b7 }, // chat
+  // Meanings that used to borrow another icon (chat for notifications, arrow for UPI pay).
+  notifications: { ios: 'bell', android: 0xe7f4 }, // notifications
+  upiPay: { ios: 'indianrupeesign.circle', android: 0xef63 }, // payments
+  requestMoney: { ios: 'arrow.down.circle', android: 0xf1b6 }, // request_quote
+  link: { ios: 'link', android: 0xe157 }, // link
+  personRemove: { ios: 'person.badge.minus', android: 0xef66 }, // person_remove
+  radioOn: { ios: 'largecircle.fill.circle', android: 0xe837 }, // radio_button_checked
+  radioOff: { ios: 'circle', android: 0xe836 }, // radio_button_unchecked
+  checkCircle: { ios: 'checkmark.circle', android: 0xe86c }, // check_circle
+  send: { ios: 'paperplane', android: 0xe163 }, // send
+  moreHoriz: { ios: 'ellipsis', android: 0xe5d3 }, // more_horiz
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

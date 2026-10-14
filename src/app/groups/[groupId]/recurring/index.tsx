@@ -49,8 +49,7 @@ export default function RecurringListScreen() {
           <Card style={styles.empty}>
             <Icon name="repeat" color={theme.muted} size={28} />
             <AppText color={theme.muted} style={styles.center}>
-              Nothing repeats yet. When you add an expense like rent or Wi-Fi, choose how often it
-              repeats under “Repeat”.
+              Nothing repeats yet. Set “Repeat” when adding rent or Wi-Fi.
             </AppText>
           </Card>
         ) : (
@@ -78,7 +77,7 @@ export default function RecurringListScreen() {
                   </AppText>
                   {problem ? (
                     <AppText variant="caption" color={theme.warning}>
-                      Paused: someone on it has left the group. Open it to change the split.
+                      Paused: someone left. Tap to fix the split.
                     </AppText>
                   ) : (
                     <AppText variant="caption" color={theme.muted}>

@@ -31,7 +31,8 @@ import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { CurrencyPicker } from '@/ui/CurrencyPicker';
-import { Icon, type IconName } from '@/ui/Icon';
+import { Icon } from '@/ui/Icon';
+import { ListRow, listCardStyle } from '@/ui/ListRow';
 import { ACCENT_IDS, ACCENTS, type AccentId } from '@/ui/palette';
 import { Segmented } from '@/ui/Segmented';
 import { TabHeader } from '@/ui/TabHeader';
@@ -99,9 +100,6 @@ function ProfileCard() {
               {me.email}
             </AppText>
           ) : null}
-          <AppText variant="caption" color={theme.muted}>
-            Groups are backed up and synced on every phone you sign in on.
-          </AppText>
         </View>
       </View>
       <SyncPanel compact />
@@ -130,10 +128,8 @@ function RegionCard() {
         />
         <AppText variant="caption" color={theme.muted}>
           {region.homeIsAutomatic
-            ? `Set from your phone (${currencyLabel(region.detectedCurrency)}). `
-            : ''}
-          New groups start in it, and amounts in other currencies show roughly what they are in it
-          (≈ today’s rate; you always settle in the group’s currency).
+            ? `From your phone (${currencyLabel(region.detectedCurrency)}). Used for new groups.`
+            : 'Used for new groups and ≈ conversions.'}
         </AppText>
         {!region.homeIsAutomatic ? (
           <Pressable
@@ -148,8 +144,8 @@ function RegionCard() {
           </Pressable>
         ) : null}
         <AppText variant="caption" color={theme.muted}>
-          Rupees are shown as {formatMoney(10_000_000, 'INR')}
-          {region.indianGrouping ? ' (lakh/crore, India)' : ''}, following your phone’s region.
+          Rupees shown as {formatMoney(10_000_000, 'INR')}
+          {region.indianGrouping ? ' (lakh/crore)' : ''}
         </AppText>
       </View>
     </Card>
@@ -216,7 +212,7 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
   const confirmSignOut = () =>
     Alert.alert(
       'Sign out?',
-      'Your groups stay on this phone. Sign in with the same account to use them again.',
+      'Your groups stay on this phone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -233,61 +229,17 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
     );
 
   return (
-    <Card style={styles.linksCard}>
-      <LinkRow icon="shield" label="Privacy policy" onPress={() => void WebBrowser.openBrowserAsync(PRIVACY_URL)} />
-      <LinkRow
+    <Card style={listCardStyle}>
+      <ListRow icon="shield" title="Privacy policy" onPress={() => void WebBrowser.openBrowserAsync(PRIVACY_URL)} />
+      <ListRow
         icon="help"
-        label="Help & support"
+        title="Help & support"
         detail={SUPPORT_EMAIL}
         onPress={() => void Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
         last={!signedIn}
       />
-      {signedIn ? <LinkRow icon="logout" label="Sign out" danger busy={busy} onPress={confirmSignOut} last /> : null}
+      {signedIn ? <ListRow icon="logout" title="Sign out" danger busy={busy} onPress={confirmSignOut} last /> : null}
     </Card>
-  );
-}
-
-function LinkRow({
-  icon,
-  label,
-  detail,
-  onPress,
-  danger = false,
-  busy = false,
-  last = false,
-}: {
-  icon: IconName;
-  label: string;
-  detail?: string;
-  onPress: () => void;
-  danger?: boolean;
-  busy?: boolean;
-  last?: boolean;
-}) {
-  const theme = useTheme();
-  const color = danger ? theme.negative : theme.text;
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={busy}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.linkRow,
-        !last && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
-        { opacity: busy ? 0.5 : pressed ? 0.7 : 1 },
-      ]}
-    >
-      <Icon name={icon} color={color} size={20} />
-      <AppText color={color} style={[styles.grow, danger && styles.dangerText]}>
-        {label}
-      </AppText>
-      {detail ? (
-        <AppText variant="label" color={theme.muted} numberOfLines={1}>
-          {detail}
-        </AppText>
-      ) : null}
-      {!danger ? <Icon name="chevronRight" color={theme.muted} size={18} /> : null}
-    </Pressable>
   );
 }
 
@@ -378,8 +330,7 @@ function SignInCard({ notice }: { notice: string | null }) {
             Sign in to share groups
           </AppText>
           <AppText variant="label" color={theme.muted}>
-            Optional. Everything works on this phone without an account. Signing in lets you share
-            groups with friends and keep a backup.
+            Optional. Sync with friends and keep a backup.
           </AppText>
 
           {isGoogleSignInAvailable ? (
@@ -416,8 +367,7 @@ function SignInCard({ notice }: { notice: string | null }) {
             Enter the code
           </AppText>
           <AppText variant="label" color={theme.muted}>
-            We sent a {OTP_LENGTH}-digit code to {sentTo}. It expires in 10 minutes. Check spam if it
-            doesn’t arrive within a minute.
+            Sent to {sentTo}. Check spam if it’s not there.
           </AppText>
           <TextInput
             value={code}
@@ -491,9 +441,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  linksCard: { paddingVertical: 4, paddingHorizontal: 16 },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52 },
-  dangerText: { fontWeight: '500' },
   version: { textAlign: 'center', marginTop: 4 },
   notice: { borderRadius: 12, padding: 12 },
   divider: { textAlign: 'center' },

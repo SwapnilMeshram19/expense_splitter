@@ -1,18 +1,28 @@
 import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { groups } from '@/db/schema';
 import { useAuth } from '@/features/auth/authStore';
 import { createInvite, revokeAllInvites, type CreatedInvite } from '@/features/invites/inviteApi';
-import { buildShareMessage, describeInviteStatus, formatInviteCode } from '@/features/invites/messages';
+import {
+  buildShareMessage,
+  describeInviteStatus,
+  formatInviteCode,
+  inviteUrl,
+} from '@/features/invites/messages';
+import { copyText } from '@/features/share/copyText';
 import { ShareButtons } from '@/features/share/ShareButtons';
+import { QrCode } from '@/features/upi/QrCode';
 import { syncNow } from '@/sync/syncService';
+import { AppText } from '@/ui/AppText';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
-import { Text } from '@/ui/Text';
 
 const readGroup = (groupId: string) => db.select().from(groups).where(eq(groups.id, groupId)).get() ?? null;
 
@@ -20,7 +30,7 @@ function expiryLabel(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? 'in 7 days'
-    : `on ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+    : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 export default function InviteScreen() {
@@ -35,24 +45,29 @@ export default function InviteScreen() {
   if (!group) {
     return (
       <View style={styles.center}>
-        <Stack.Screen options={{ title: 'Invite people' }} />
-        <Text style={{ color: theme.muted }}>This group no longer exists.</Text>
+        <Stack.Screen options={{ title: 'Invite' }} />
+        <AppText color={theme.muted}>This group no longer exists.</AppText>
       </View>
     );
   }
 
   if (auth.status !== 'signedIn') {
     return (
-      <View style={styles.center}>
-        <Stack.Screen options={{ title: 'Invite people' }} />
-        <Text style={[styles.title, { color: theme.text }]}>Sign in to share this group</Text>
-        <Text style={{ color: theme.muted, textAlign: 'center' }}>
-          Shared groups need an account so everyone sees the same expenses.
-        </Text>
-        <Pressable onPress={() => router.push('/account')} style={[styles.primaryButton, { backgroundColor: theme.primary }]}>
-          <Text style={{ color: theme.onPrimary, fontWeight: '600' }}>Sign in</Text>
-        </Pressable>
-      </View>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Stack.Screen options={{ title: 'Invite' }} />
+        <Card style={styles.hero}>
+          <View style={[styles.heroIcon, { backgroundColor: theme.primarySoft }]}>
+            <Icon name="lock" color={theme.onPrimarySoft} size={28} />
+          </View>
+          <AppText variant="heading" style={styles.centerText}>
+            Sign in to invite
+          </AppText>
+          <AppText color={theme.muted} style={styles.centerText}>
+            Shared groups need an account.
+          </AppText>
+          <Button label="Sign in" icon="login" size="lg" onPress={() => router.push('/account')} style={styles.stretch} />
+        </Card>
+      </ScrollView>
     );
   }
 
@@ -64,7 +79,7 @@ export default function InviteScreen() {
       await syncNow();
       if ((readGroup(groupId)?.version ?? 0) === 0) {
         setBusy(false);
-        setMessage('This group hasn’t uploaded yet. Check your internet connection and try again.');
+        setMessage('Not uploaded yet. Check your internet and try again.');
         return;
       }
     }
@@ -75,81 +90,111 @@ export default function InviteScreen() {
   };
 
   const revoke = () =>
-    Alert.alert(
-      'Stop all invite links?',
-      'Links and codes already sent will stop working. People already in the group stay.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Stop links',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            const result = await revokeAllInvites(groupId);
-            setBusy(false);
-            if (result.ok) {
-              setInvite(null);
-              setMessage(result.value === 0 ? 'There were no active links.' : 'All invite links have been stopped.');
-            } else {
-              setMessage(describeInviteStatus(result.error.status));
-            }
-          },
+    Alert.alert('Stop all invite links?', 'Links already sent stop working. Members stay.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Stop links',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          const result = await revokeAllInvites(groupId);
+          setBusy(false);
+          if (result.ok) {
+            setInvite(null);
+            setMessage(result.value === 0 ? 'No active links.' : 'All links stopped.');
+          } else {
+            setMessage(describeInviteStatus(result.error.status));
+          }
         },
-      ],
-    );
+      },
+    ]);
 
   return (
-    <View style={styles.container}>
-      <Stack.Screen options={{ title: 'Invite people' }} />
-
-      <Text style={[styles.title, { color: theme.text }]}>Invite people to “{group.name}”</Text>
-      <Text style={{ color: theme.muted }}>
-        Anyone with the link can see the group name and the names of people not yet joined, and join the
-        group. Links work for 7 days and up to 20 people.
-      </Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Stack.Screen options={{ title: 'Invite' }} />
 
       {invite ? (
-        <View style={[styles.card, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-          <Text style={[styles.code, { color: theme.text }]}>{formatInviteCode(invite.code)}</Text>
-          <Text style={{ color: theme.muted, textAlign: 'center' }}>Expires {expiryLabel(invite.expiresAt)}</Text>
+        <Card style={styles.hero}>
+          <AppText variant="heading" style={styles.centerText} numberOfLines={2}>
+            Join “{group.name}”
+          </AppText>
+          <QrCode value={inviteUrl(invite.code)} size={176} label="Invite QR code" />
+          <View style={styles.codeBlock}>
+            <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+              Scan, or enter code
+            </AppText>
+            <AppText style={styles.code} selectable>
+              {formatInviteCode(invite.code)}
+            </AppText>
+            <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+              Expires {expiryLabel(invite.expiresAt)} · up to 20 people
+            </AppText>
+          </View>
           <ShareButtons
-            label="Send on WhatsApp"
-            accessibilityLabel="Send the invite link on WhatsApp"
-            variant="primary"
+            label="WhatsApp"
+            accessibilityLabel="Send the invite on WhatsApp"
             getText={() => buildShareMessage(group.name, invite.code)}
-            style={styles.shareRow}
+            style={styles.stretch}
           />
-        </View>
+          <View style={[styles.row, styles.stretch]}>
+            <Button
+              label="Copy link"
+              icon="link"
+              variant="secondary"
+              onPress={() => void copyText(inviteUrl(invite.code), 'Link copied')}
+              style={styles.grow}
+            />
+            <Button
+              label="Copy code"
+              icon="copy"
+              variant="secondary"
+              onPress={() => void copyText(formatInviteCode(invite.code), 'Code copied')}
+              style={styles.grow}
+            />
+          </View>
+        </Card>
       ) : (
-        <Pressable
-          onPress={() => void create()}
-          disabled={busy}
-          style={[styles.primaryButton, { backgroundColor: theme.primary, opacity: busy ? 0.6 : 1 }]}
-        >
-          {busy ? (
-            <ActivityIndicator color={theme.onPrimary} />
-          ) : (
-            <Text style={{ color: theme.onPrimary, fontWeight: '600' }}>Create invite link</Text>
-          )}
-        </Pressable>
+        <Card style={styles.hero}>
+          <View style={[styles.heroIcon, { backgroundColor: theme.primarySoft }]}>
+            <Icon name="personAdd" color={theme.onPrimarySoft} size={28} />
+          </View>
+          <AppText variant="heading" style={styles.centerText} numberOfLines={2}>
+            Invite to “{group.name}”
+          </AppText>
+          <AppText color={theme.muted} style={styles.centerText}>
+            Anyone with the link can join. Valid 7 days.
+          </AppText>
+          <Button
+            label="Create invite link"
+            icon="link"
+            size="lg"
+            busy={busy}
+            onPress={() => void create()}
+            style={styles.stretch}
+          />
+        </Card>
       )}
 
-      {message ? <Text style={{ color: theme.text, textAlign: 'center' }}>{message}</Text> : null}
+      {message ? (
+        <AppText color={theme.text} style={styles.centerText} accessibilityLiveRegion="polite">
+          {message}
+        </AppText>
+      ) : null}
 
-      <Pressable onPress={revoke} disabled={busy} style={styles.linkButton}>
-        <Text style={{ color: theme.negative }}>Stop all invite links</Text>
-      </Pressable>
-    </View>
+      <Button label="Stop all invite links" variant="danger" disabled={busy} onPress={revoke} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  title: { fontSize: 20, fontWeight: '600' },
-  card: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 10, marginTop: 8 },
-  code: { fontSize: 30, fontWeight: '700', letterSpacing: 4, textAlign: 'center' },
-  primaryButton: { borderRadius: 25, minHeight: 50, justifyContent: 'center', paddingHorizontal: 24, alignItems: 'center', marginTop: 8 },
-  linkButton: { paddingVertical: 12, alignItems: 'center' },
-  shareRow: { marginTop: 8 },
+  container: { padding: 20, gap: 14, paddingBottom: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  hero: { alignItems: 'center', gap: 14, paddingVertical: 24 },
+  heroIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
+  centerText: { textAlign: 'center' },
+  codeBlock: { gap: 2, alignItems: 'center' },
+  code: { fontSize: 28, lineHeight: 36, fontWeight: '700', letterSpacing: 3 },
+  stretch: { alignSelf: 'stretch' },
+  row: { flexDirection: 'row', gap: 10 },
+  grow: { flex: 1, minWidth: 0 },
 });

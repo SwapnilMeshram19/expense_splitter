@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
@@ -71,9 +71,7 @@ export default function SettleTab() {
           <Card style={styles.emptyCard}>
             <AppText variant="heading">You’re all settled up</AppText>
             <AppText color={theme.muted}>
-              {overview.groups.length === 0
-                ? 'Create or join a group to start splitting expenses.'
-                : 'Nobody owes anything in your groups right now.'}
+              {overview.groups.length === 0 ? 'Create or join a group to start.' : 'Nobody owes anything.'}
             </AppText>
           </Card>
         ) : null}
@@ -186,7 +184,7 @@ function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string
         <View style={styles.actions}>
           <Button
             label="Pay with UPI"
-            icon="arrowForward"
+            icon="upiPay"
             style={styles.grow}
             accessibilityLabel={`Pay ${t.counterpartyName} ${amount} with UPI`}
             onPress={() =>
@@ -198,21 +196,24 @@ function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string
           />
           <Button
             label="Record cash"
+            icon="check"
             variant="secondary"
             accessibilityLabel={`Record a cash payment to ${t.counterpartyName}`}
             onPress={record}
+            style={styles.grow}
           />
         </View>
       ) : t.canEdit ? (
         <Button
           label="Record payment"
+          icon="check"
           variant="secondary"
           accessibilityLabel={`Record a payment of ${amount} to ${t.counterpartyName}`}
           onPress={record}
         />
       ) : (
         <AppText variant="caption" color={theme.warning}>
-          Read-only: this group is no longer shared with you.
+          Read-only: no longer shared with you.
         </AppText>
       )}
     </Card>
@@ -252,14 +253,17 @@ function ReceiveRow({
           </AppText>
         ) : null}
         {t.canEdit ? (
-          <Pressable
-            hitSlop={12}
-            accessibilityRole="button"
+          <Button
+            size="sm"
+            variant="soft"
+            icon={upi ? 'requestMoney' : 'check'}
+            label={upi ? 'Request' : 'Record'}
             accessibilityLabel={
               upi
                 ? `Request ${amount} from ${t.counterpartyName}`
                 : `Record ${amount} received from ${t.counterpartyName}`
             }
+            style={styles.smallAction}
             onPress={() =>
               upi
                 ? router.push({
@@ -276,11 +280,7 @@ function ReceiveRow({
                     },
                   })
             }
-          >
-            <AppText variant="label" color={theme.onPrimarySoft} style={styles.link}>
-              {upi ? 'Request' : 'Record'}
-            </AppText>
-          </Pressable>
+          />
         ) : null}
       </View>
     </View>
@@ -302,6 +302,6 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8 },
   listCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
   receiveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  receiveRight: { alignItems: 'flex-end', gap: 2 },
-  link: { fontWeight: '600' },
+  receiveRight: { alignItems: 'flex-end', gap: 4 },
+  smallAction: { marginTop: 2 },
 });

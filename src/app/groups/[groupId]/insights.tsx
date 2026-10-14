@@ -110,7 +110,7 @@ export default function InsightsScreen() {
         <Card style={styles.empty}>
           <Icon name="insights" color={theme.muted} size={28} />
           <AppText color={theme.muted} style={styles.centerText}>
-            No expenses yet. Once the group adds some, you’ll see where the money goes here.
+            No expenses yet.
           </AppText>
         </Card>
       </ScrollView>
@@ -167,7 +167,7 @@ export default function InsightsScreen() {
         ) : null}
         {scope === 'group' && summary.count > 0 ? (
           <ShareButtons
-            label="Share summary"
+            label="WhatsApp"
             accessibilityLabel="Share this spending summary on WhatsApp"
             style={styles.shareRow}
             getText={() =>
@@ -224,9 +224,6 @@ export default function InsightsScreen() {
           <AppText variant="heading" accessibilityRole="header">
             By person
           </AppText>
-          <AppText variant="caption" color={theme.muted}>
-            Each person’s share of the bills, and what they paid.
-          </AppText>
           {insights.members.map((m) => (
             <MemberRow
               key={m.memberId}
@@ -244,8 +241,7 @@ export default function InsightsScreen() {
           {period === null ? 'Export all expenses' : `Export ${periodName}`}
         </AppText>
         <AppText variant="caption" color={theme.muted}>
-          Made on this phone and shared from here: nothing is uploaded. The files include names,
-          notes and amounts, so share them only with people in the group.
+          Made on this phone. Includes names and notes.
         </AppText>
         <View style={styles.exportRow}>
           <Button
@@ -260,7 +256,7 @@ export default function InsightsScreen() {
           />
           <Button
             label="PDF report"
-            icon="share"
+            icon="download"
             busy={exporting === 'pdf'}
             disabled={exporting !== null}
             onPress={() => void runExport('pdf')}

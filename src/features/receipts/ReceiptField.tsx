@@ -89,9 +89,9 @@ export function ReceiptField({
   // Status line under the thumbnail.
   const pending = receiptId && !staged ? getReceiptFile(appContext.db, receiptId)?.state === 'upload' : false;
   const status = staged
-    ? `New photo · ${formatBytes(staged.bytes)} · shared with the group after you save`
+    ? `New photo · ${formatBytes(staged.bytes)} · shared on save`
     : pending
-      ? 'Saved on this phone · uploads when you’re online'
+      ? 'Uploads when online'
       : 'Shared with the group';
 
   const thumbUri = staged?.uri ?? (receiptId ? localReceiptUri(receiptId) : null);
@@ -126,7 +126,7 @@ export function ReceiptField({
             </Pressable>
             <Pressable
               onPress={() =>
-                Alert.alert('Remove the receipt photo?', 'It’s removed for everyone in the group when you save.', [
+                Alert.alert('Remove the receipt photo?', 'Removed for everyone when you save.', [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Remove', style: 'destructive', onPress: onRemove },
                 ])

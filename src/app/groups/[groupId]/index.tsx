@@ -25,6 +25,7 @@ import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { balancesMessage, reminderMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
+import { useShareSheet } from '@/features/share/ShareSheet';
 import { shareTextOnWhatsApp } from '@/features/share/shareText';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { todayIsoDate } from '@/lib/dates';
@@ -67,7 +68,7 @@ function rowsFor(segment: Segment, view: GroupView): Row[] {
       {
         kind: 'empty',
         key: 'empty',
-        text: view.canEdit ? 'No expenses yet. Tap “Add expense” to add the first one.' : 'No expenses yet.',
+        text: view.canEdit ? 'No expenses yet. Tap Add expense to start.' : 'No expenses yet.',
       },
     ];
   }
@@ -103,6 +104,7 @@ export default function GroupDetailScreen() {
   const refreshControl = useSyncRefreshControl();
   // "≈ in your currency" under my balance when this group uses another currency.
   const approx = useApprox(!!view && view.myBalance !== 0);
+  const share = useShareSheet();
 
   if (!view) {
     return (
@@ -128,11 +130,38 @@ export default function GroupDetailScreen() {
       params: { groupId, from: fromMemberId, amount: String(amountPaise) },
     });
 
+  const openInvite = () => router.push({ pathname: '/groups/[groupId]/invite', params: { groupId } });
+
+  const balancesText = () =>
+    balancesMessage({
+      groupName: view.group.name,
+      currency,
+      transfers: view.transfers,
+      names: view.names,
+      upiIds: view.upiIds,
+      totalSpent: view.totalSpent,
+      expenseCount: view.expenseCount,
+    });
+
+  const openShare = () =>
+    share.open({
+      title: 'Share balances',
+      getText: balancesText,
+      actions: [
+        ...(canEdit ? [{ icon: 'personAdd' as const, label: 'Invite people', onPress: openInvite }] : []),
+        {
+          icon: 'insights' as const,
+          label: 'Share spending summary',
+          onPress: () => router.push({ pathname: '/groups/[groupId]/insights', params: { groupId } }),
+        },
+      ],
+    });
+
   const confirmDeleteSettlement = (settlement: Settlement) => {
     if (!canEdit || !me) return;
     Alert.alert(
       'Delete this payment?',
-      `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${money(settlement.amountPaise)}. Balances will go back to how they were before it.`,
+      `${nameOf(settlement.fromMemberId)} → ${nameOf(settlement.toMemberId)}, ${money(settlement.amountPaise)}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -153,11 +182,7 @@ export default function GroupDetailScreen() {
     <View style={styles.header}>
       {view.lost ? <LostAccessBanner groupId={groupId} groupName={view.group.name} /> : null}
       {!me && !view.lost ? (
-        <Banner
-          tone="warning"
-          title="You’re not a member of this group"
-          body="You can’t add expenses here. Open group settings to delete it from this phone."
-        />
+        <Banner tone="warning" title="You’re not in this group" body="Read-only on this phone." />
       ) : null}
       {canEdit ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
       <SummaryCard
@@ -167,13 +192,14 @@ export default function GroupDetailScreen() {
         money={money}
         approx={approx(Math.abs(view.myBalance), currency)}
         onSettle={() => setSegment('balances')}
-        onRecord={() => openSettle()}
+        onShare={openShare}
+        onInvite={canEdit ? openInvite : undefined}
       />
       {view.invalidCount > 0 ? (
         <Banner
           tone="warning"
           title={`${view.invalidCount} record${view.invalidCount > 1 ? 's' : ''} couldn’t be read`}
-          body={`${view.invalidCount > 1 ? 'They are' : 'It is'} left out of the balances.`}
+          body="Left out of the balances."
         />
       ) : null}
       <Segmented options={SEGMENTS} value={segment} onChange={setSegment} accessibilityLabel="Group view" />
@@ -312,26 +338,12 @@ export default function GroupDetailScreen() {
         );
       case 'share':
         return (
-          <View style={styles.shareBlock}>
-            <AppText variant="caption" color={theme.muted}>
-              Send who pays whom to the group chat
-              {currency === 'INR' && view.upiIds.size > 0 ? ', with UPI IDs' : ''}.
-            </AppText>
-            <ShareButtons
-              label="Share on WhatsApp"
-              getText={() =>
-                balancesMessage({
-                  groupName: view.group.name,
-                  currency,
-                  transfers: view.transfers,
-                  names: view.names,
-                  upiIds: view.upiIds,
-                  totalSpent: view.totalSpent,
-                  expenseCount: view.expenseCount,
-                })
-              }
-            />
-          </View>
+          <ShareButtons
+            label="WhatsApp"
+            accessibilityLabel="Share balances on WhatsApp"
+            getText={balancesText}
+            style={styles.shareBlock}
+          />
         );
       case 'balance': {
         const tone = item.balance > 0 ? 'positive' : item.balance < 0 ? 'negative' : 'neutral';
@@ -382,13 +394,7 @@ export default function GroupDetailScreen() {
           title: view.group.name,
           headerRight: () => (
             <View style={styles.headerActions}>
-              {canEdit ? (
-                <HeaderIconButton
-                  icon="personAdd"
-                  label="Invite members"
-                  onPress={() => router.push({ pathname: '/groups/[groupId]/invite', params: { groupId } })}
-                />
-              ) : null}
+              <HeaderIconButton icon="share" label="Share" onPress={openShare} />
               <HeaderIconButton
                 icon="insights"
                 label="Spending insights"
@@ -412,6 +418,7 @@ export default function GroupDetailScreen() {
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 104 }}
         renderItem={renderRow}
       />
+      {share.element}
 
       {canEdit ? (
         <Pressable
@@ -441,7 +448,8 @@ function SummaryCard({
   money,
   approx,
   onSettle,
-  onRecord,
+  onShare,
+  onInvite,
 }: {
   view: GroupView;
   theme: Theme;
@@ -450,11 +458,13 @@ function SummaryCard({
   /** My balance roughly in the home currency, or null. */
   approx: string | null;
   onSettle: () => void;
-  onRecord: () => void;
+  onShare: () => void;
+  /** Tapping the faces invites people (members who can edit only). */
+  onInvite?: () => void;
 }) {
   const { myBalance, me, transfers, activeMembers } = view;
   const title =
-    myBalance > 0 ? 'You’re owed in this group' : myBalance < 0 ? 'You owe in this group' : 'You’re settled up here';
+    myBalance > 0 ? 'You’re owed' : myBalance < 0 ? 'You owe' : 'You’re all settled up';
   const mine = transfers.filter((t) => t.fromMemberId === me || t.toMemberId === me).slice(0, 3);
   const stack = activeMembers.slice(0, 3);
   const extra = activeMembers.length - stack.length;
@@ -477,10 +487,13 @@ function SummaryCard({
             </AppText>
           ) : null}
         </View>
-        <View
+        <Pressable
+          onPress={onInvite}
+          disabled={!onInvite}
+          hitSlop={6}
           style={styles.avatarStack}
-          accessible
-          accessibilityLabel={`${activeMembers.length} member${activeMembers.length === 1 ? '' : 's'}`}
+          accessibilityRole={onInvite ? 'button' : undefined}
+          accessibilityLabel={`${activeMembers.length} member${activeMembers.length === 1 ? '' : 's'}${onInvite ? '. Invite people' : ''}`}
         >
           {stack.map((m, index) => (
             <View key={m.id} style={index > 0 ? styles.overlap : undefined}>
@@ -494,7 +507,12 @@ function SummaryCard({
               </AppText>
             </View>
           ) : null}
-        </View>
+          {onInvite ? (
+            <View style={[styles.overlap, styles.more, { backgroundColor: theme.primarySoft, borderColor: theme.surface }]}>
+              <Icon name="add" color={theme.onPrimarySoft} size={18} />
+            </View>
+          ) : null}
+        </Pressable>
       </View>
 
       {view.budget ? (
@@ -527,8 +545,8 @@ function SummaryCard({
 
       {view.canEdit && transfers.length > 0 ? (
         <View style={styles.summaryActions}>
-          <Button label="Settle up" onPress={onSettle} style={styles.grow} />
-          <Button label="Record payment" variant="secondary" onPress={onRecord} style={styles.grow} />
+          <Button label="Settle up" icon="settle" onPress={onSettle} style={styles.grow} />
+          <Button label="Share" icon="share" variant="secondary" onPress={onShare} style={styles.grow} />
         </View>
       ) : null}
     </Card>
@@ -586,7 +604,7 @@ function TransferRow({
           {withUpi && iPay ? (
             <Button
               label="Pay with UPI"
-              icon="arrowForward"
+              icon="upiPay"
               onPress={onPay}
               style={styles.grow}
               accessibilityLabel={`Pay ${nameOf(t.toMemberId)} with UPI`}
@@ -594,6 +612,7 @@ function TransferRow({
           ) : withUpi && iReceive ? (
             <Button
               label="Request"
+              icon="requestMoney"
               variant="soft"
               onPress={onRequest}
               style={styles.grow}
@@ -603,7 +622,7 @@ function TransferRow({
             <Button
               label="Remind"
               icon="chat"
-              variant="soft"
+              variant="whatsapp"
               onPress={onRemind}
               style={styles.grow}
               accessibilityLabel={`Remind ${nameOf(t.fromMemberId)} on WhatsApp`}
@@ -611,9 +630,10 @@ function TransferRow({
           ) : null}
           <Button
             label={withUpi || iReceive ? 'Record' : 'Record payment'}
+            icon="check"
             variant="secondary"
             onPress={onRecord}
-            style={withUpi || iReceive ? undefined : styles.grow}
+            style={styles.grow}
             accessibilityLabel={`Record payment from ${nameOf(t.fromMemberId)} to ${nameOf(t.toMemberId)}`}
           />
         </View>
@@ -657,7 +677,7 @@ const styles = StyleSheet.create({
   transferTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   transferActions: { flexDirection: 'row', gap: 8 },
   recordButton: { marginBottom: 4 },
-  shareBlock: { gap: 8, paddingTop: 12, paddingBottom: 4 },
+  shareBlock: { paddingTop: 12, paddingBottom: 4 },
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   activityRow: { paddingVertical: 12, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
   emptyText: { paddingVertical: 12 },

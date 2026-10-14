@@ -11,7 +11,7 @@ import { loadFormSetup } from '@/features/expenses/loadFormSetup';
 import { describeExpenseError } from '@/features/expenses/messages';
 import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
 import { expenseShareText } from '@/features/share/loaders';
-import { shareTextOnWhatsApp } from '@/features/share/shareText';
+import { useShareSheet } from '@/features/share/ShareSheet';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
 import { useTheme } from '@/ui/theme';
 import { Text } from '@/ui/Text';
@@ -20,6 +20,7 @@ export default function EditExpenseScreen() {
   const { groupId, expenseId } = useLocalSearchParams<{ groupId: string; expenseId: string }>();
   const theme = useTheme();
   const setup = useMemo(() => loadFormSetup(groupId, expenseId), [groupId, expenseId]);
+  const share = useShareSheet();
 
   if (!setup.ok) {
     return (
@@ -54,7 +55,7 @@ export default function EditExpenseScreen() {
   };
 
   const confirmDelete = () => {
-    Alert.alert('Delete expense?', 'It will be removed from balances but kept in the group history.', [
+    Alert.alert('Delete expense?', 'Balances update for everyone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -92,12 +93,12 @@ export default function EditExpenseScreen() {
                 />
               ) : null}
               <HeaderIconButton
-                icon="chat"
+                icon="share"
                 label="Share this expense"
                 onPress={() => {
                   // Shares the saved expense, not unsaved edits in the form.
                   const text = expenseShareText(db, expenseId);
-                  if (text) void shareTextOnWhatsApp(text);
+                  if (text) share.open({ title: 'Share expense', getText: () => text });
                 }}
               />
               <HeaderIconButton icon="delete" label="Delete expense" color={theme.negative} onPress={confirmDelete} />
@@ -116,6 +117,7 @@ export default function EditExpenseScreen() {
         submitLabel="Save changes"
         onSubmit={save}
       />
+      {share.element}
     </>
   );
 }

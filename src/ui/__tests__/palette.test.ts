@@ -37,6 +37,7 @@ describe.each(SCHEMES)('%s theme', (scheme) => {
       ['warning on warningSoft', t.warning, t.warningSoft],
       ['white on both gradient ends', t.onGradient, t.gradient[0]],
       ['white on gradient end', t.onGradient, t.gradient[1]],
+      ['WhatsApp label on its soft pill', t.onWhatsappSoft, t.whatsappSoft],
     ];
 
     it.each(pairs)('%s is at least 4.5:1', (_label, fg, bg) => {

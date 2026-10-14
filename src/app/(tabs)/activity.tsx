@@ -37,14 +37,14 @@ export default function ActivityTab() {
           <Card style={styles.empty}>
             <AppText variant="heading">Nothing here yet</AppText>
             <AppText color={theme.muted}>
-              Expenses, payments and member changes from all your groups show up here.
+              Changes from all your groups show up here.
             </AppText>
           </Card>
         }
         ListFooterComponent={
           items.length >= ACTIVITY_PAGE_SIZE ? (
             <AppText variant="caption" color={theme.muted} style={styles.footer}>
-              Showing the latest {ACTIVITY_PAGE_SIZE} changes. Open a group for its full history.
+              Latest {ACTIVITY_PAGE_SIZE}. Open a group for more.
             </AppText>
           ) : null
         }

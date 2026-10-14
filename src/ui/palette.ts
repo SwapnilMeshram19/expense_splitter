@@ -131,6 +131,12 @@ interface BaseColors {
   warningSoft: string;
   /** Text on the hero gradient (always white: every gradient is dark enough for it). */
   onGradient: string;
+  /**
+   * WhatsApp share buttons: a soft brand-green pill, so the button reads as "WhatsApp" at a
+   * glance in every accent. Status colour, not decoration (never used for amounts or accents).
+   */
+  whatsappSoft: string;
+  onWhatsappSoft: string;
 }
 
 const BASE: Record<ColorScheme, BaseColors> = {
@@ -145,6 +151,8 @@ const BASE: Record<ColorScheme, BaseColors> = {
     warning: '#8A5A00',
     warningSoft: '#FCEFD2',
     onGradient: '#FFFFFF',
+    whatsappSoft: '#DCF5E5',
+    onWhatsappSoft: '#0B6235',
   },
   dark: {
     background: '#0D1117',
@@ -157,6 +165,8 @@ const BASE: Record<ColorScheme, BaseColors> = {
     warning: '#F5C76B',
     warningSoft: '#3A2E12',
     onGradient: '#FFFFFF',
+    whatsappSoft: '#123222',
+    onWhatsappSoft: '#86DFAA',
   },
 };
 

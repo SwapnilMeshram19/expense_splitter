@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
@@ -12,8 +13,12 @@ import { useAuth } from '@/features/auth/authStore';
 import { joinGroup, previewInvite, type InvitePreview } from '@/features/invites/inviteApi';
 import { describeInviteStatus, extractInviteCode, formatInviteCode } from '@/features/invites/messages';
 import { syncNow } from '@/sync/syncService';
-import { useTheme, type Theme } from '@/ui/theme';
-import { Text, TextInput } from '@/ui/Text';
+import { AppText } from '@/ui/AppText';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { Input } from '@/ui/Field';
+import { Icon } from '@/ui/Icon';
+import { useTheme } from '@/ui/theme';
 
 type Phase =
   | { kind: 'enter' }
@@ -33,8 +38,7 @@ async function openJoinedGroup(groupId: string): Promise<boolean> {
   return true;
 }
 
-const JOINED_OFFLINE =
-  'You’ve joined! The group will appear in your list as soon as this phone syncs. Check your internet connection.';
+const JOINED_OFFLINE = 'You’ve joined! The group appears once you’re back online.';
 
 export default function JoinScreen() {
   const theme = useTheme();
@@ -91,38 +95,42 @@ export default function JoinScreen() {
     body = <Busy label="Loading…" />;
   } else if (auth.status === 'signedOut') {
     body = (
-      <View style={styles.block}>
-        <Text style={[styles.title, { color: theme.text }]}>Sign in to join</Text>
+      <Card style={styles.card}>
+        <Hero icon="lock" />
+        <AppText variant="heading" style={styles.centerText}>
+          Sign in to join
+        </AppText>
         {code ? (
-          <Text style={[styles.code, { color: theme.text, borderColor: theme.border }]}>{formatInviteCode(code)}</Text>
+          <AppText style={[styles.code, { borderColor: theme.border }]}>{formatInviteCode(code)}</AppText>
         ) : null}
-        <Text style={{ color: theme.muted, textAlign: 'center' }}>
-          Shared groups need an account so everyone sees the same expenses. Your groups on this phone stay as they are.
-        </Text>
-        <PrimaryButton
+        <AppText color={theme.muted} style={styles.centerText}>
+          Your groups on this phone stay as they are.
+        </AppText>
+        <Button
           label="Sign in"
+          icon="login"
+          size="lg"
           onPress={() => {
             awaitingSignIn.current = true;
             router.push('/account');
           }}
         />
-      </View>
+      </Card>
     );
   } else if (!code) {
     body = <EnterCode onCode={setCode} />;
   } else if (phase.kind === 'loading' || phase.kind === 'enter') {
     body = <Busy label="Checking the invite…" />;
   } else if (phase.kind === 'finishing') {
-    body = <Busy label="Joining and downloading the group…" />;
+    body = <Busy label="Joining…" />;
   } else if (phase.kind === 'error') {
     body = (
-      <View style={styles.block}>
-        <Text style={{ color: theme.negative, textAlign: 'center', fontSize: 16 }}>{phase.message}</Text>
-        <PrimaryButton label="Enter a different code" onPress={tryAnother} />
-        <Pressable onPress={() => router.replace('/')} style={styles.linkButton}>
-          <Text style={{ color: theme.primary }}>Go to my groups</Text>
-        </Pressable>
-      </View>
+      <Card style={styles.card}>
+        <Hero icon="warning" tone="warning" />
+        <AppText style={styles.centerText}>{phase.message}</AppText>
+        <Button label="Enter a different code" size="lg" onPress={tryAnother} />
+        <Button label="Go to my groups" variant="secondary" onPress={() => router.replace('/')} />
+      </Card>
     );
   } else {
     body = (
@@ -150,43 +158,75 @@ export default function JoinScreen() {
   );
 }
 
+function Hero({ icon, tone = 'accent' }: { icon: 'lock' | 'warning' | 'groupAdd'; tone?: 'accent' | 'warning' }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={[
+        styles.hero,
+        { backgroundColor: tone === 'warning' ? theme.warningSoft : theme.primarySoft },
+      ]}
+    >
+      <Icon name={icon} color={tone === 'warning' ? theme.warning : theme.onPrimarySoft} size={28} />
+    </View>
+  );
+}
+
 function EnterCode({ onCode }: { onCode: (code: string) => void }) {
   const theme = useTheme();
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const submit = () => {
-    const code = extractInviteCode(text);
+  const submit = (value = text) => {
+    const code = extractInviteCode(value);
     if (!code) {
-      setError('That doesn’t look like an invite code. It has 8 letters and numbers, like ABCD-EFGH.');
+      setError('Not an invite code. It looks like ABCD-EFGH.');
       return;
     }
     onCode(code);
   };
 
+  // Read only on tap: reading the clipboard unasked shows Android's "pasted" notice.
+  const paste = async () => {
+    const value = await Clipboard.getStringAsync();
+    setText(value.trim());
+    setError(null);
+    if (extractInviteCode(value)) submit(value);
+  };
+
   return (
-    <View style={styles.block}>
-      <Text style={[styles.title, { color: theme.text }]}>Join a group</Text>
-      <Text style={{ color: theme.muted, textAlign: 'center' }}>
-        Paste the invite message or link, or type the 8-character code.
-      </Text>
-      <TextInput
+    <Card style={styles.card}>
+      <Hero icon="groupAdd" />
+      <AppText variant="heading" style={styles.centerText}>
+        Join a group
+      </AppText>
+      <AppText color={theme.muted} style={styles.centerText}>
+        Paste the invite link or enter the code.
+      </AppText>
+      <Input
         value={text}
         onChangeText={(t) => {
           setText(t);
           setError(null);
         }}
         placeholder="ABCD-EFGH"
-        placeholderTextColor={theme.muted}
         autoCapitalize="characters"
         autoCorrect={false}
         returnKeyType="go"
-        onSubmitEditing={submit}
-        style={[inputStyle(theme), styles.codeInput]}
+        onSubmitEditing={() => submit()}
+        accessibilityLabel="Invite code or link"
+        style={styles.codeInput}
       />
-      {error ? <Text style={{ color: theme.negative, textAlign: 'center' }}>{error}</Text> : null}
-      <PrimaryButton label="Continue" onPress={submit} />
-    </View>
+      {error ? (
+        <AppText variant="label" color={theme.negative} style={styles.centerText} accessibilityLiveRegion="polite">
+          {error}
+        </AppText>
+      ) : null}
+      <View style={styles.row}>
+        <Button label="Paste" icon="copy" variant="secondary" onPress={() => void paste()} style={styles.grow} />
+        <Button label="Continue" icon="arrowForward" onPress={() => submit()} style={styles.grow} />
+      </View>
+    </Card>
   );
 }
 
@@ -213,7 +253,7 @@ function ChooseWho({
 
   const join = async () => {
     if (!choice) {
-      setError('Choose who you are in this group.');
+      setError('Choose who you are.');
       return;
     }
     if (choice === 'new' && name.trim() === '') {
@@ -230,39 +270,52 @@ function ChooseWho({
   };
 
   return (
-    <View style={styles.block}>
-      <Text style={[styles.title, { color: theme.text }]}>Join “{preview.groupName}”</Text>
-      <Text style={{ color: theme.muted }}>
-        {preview.memberCount} {preview.memberCount === 1 ? 'person' : 'people'} in this group.
-      </Text>
-      {notice ? <Text style={{ color: theme.warning, textAlign: 'center' }}>{notice}</Text> : null}
+    <Card style={styles.card}>
+      <AppText variant="heading" style={styles.centerText} numberOfLines={2}>
+        Join “{preview.groupName}”
+      </AppText>
+      <AppText variant="label" color={theme.muted} style={styles.centerText}>
+        {preview.memberCount} {preview.memberCount === 1 ? 'person' : 'people'}
+      </AppText>
+      {notice ? (
+        <AppText variant="label" color={theme.warning} style={styles.centerText}>
+          {notice}
+        </AppText>
+      ) : null}
 
-      <Text style={[styles.label, { color: theme.muted }]}>Who are you?</Text>
-      {preview.placeholders.map((p) => (
-        <Option
-          key={p.id}
-          label={`I’m ${p.displayName}`}
-          hint="Keeps the expenses already added for this person"
-          selected={choice === p.id}
-          onPress={() => setChoice(p.id)}
-        />
-      ))}
-      <Option label="I’m new to this group" selected={choice === 'new'} onPress={() => setChoice('new')} />
+      <AppText variant="label" color={theme.muted} style={styles.label}>
+        Who are you?
+      </AppText>
+      <View accessibilityRole="radiogroup" style={styles.options}>
+        {preview.placeholders.map((p) => (
+          <Option
+            key={p.id}
+            label={p.displayName}
+            hint="Keeps their expenses"
+            selected={choice === p.id}
+            onPress={() => setChoice(p.id)}
+          />
+        ))}
+        <Option label="I’m new here" selected={choice === 'new'} onPress={() => setChoice('new')} />
+      </View>
 
       {choice === 'new' ? (
-        <TextInput
+        <Input
           value={name}
           onChangeText={setName}
           placeholder="Your name"
-          placeholderTextColor={theme.muted}
           maxLength={100}
-          style={inputStyle(theme)}
+          accessibilityLabel="Your name"
         />
       ) : null}
 
-      {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
-      <PrimaryButton label="Join group" onPress={() => void join()} busy={busy} />
-    </View>
+      {error ? (
+        <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+          {error}
+        </AppText>
+      ) : null}
+      <Button label="Join group" size="lg" onPress={() => void join()} busy={busy} />
+    </Card>
   );
 }
 
@@ -272,14 +325,27 @@ function Option({ label, hint, selected, onPress }: { label: string; hint?: stri
     <Pressable
       onPress={onPress}
       accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      style={[styles.option, { borderColor: selected ? theme.primary : theme.border, backgroundColor: theme.surface }]}
+      accessibilityState={{ checked: selected }}
+      accessibilityLabel={hint ? `${label}. ${hint}` : label}
+      style={[
+        styles.option,
+        {
+          borderColor: selected ? theme.primary : theme.border,
+          backgroundColor: selected ? theme.primarySoft : theme.surface,
+        },
+      ]}
     >
-      <Text style={{ color: theme.text, fontWeight: selected ? '600' : '400', fontSize: 16 }}>
-        {selected ? '● ' : '○ '}
-        {label}
-      </Text>
-      {hint ? <Text style={{ color: theme.muted, fontSize: 13 }}>{hint}</Text> : null}
+      <Icon name={selected ? 'radioOn' : 'radioOff'} color={selected ? theme.primary : theme.muted} size={22} />
+      <View style={styles.grow}>
+        <AppText style={selected ? styles.bold : undefined} numberOfLines={1}>
+          {label}
+        </AppText>
+        {hint ? (
+          <AppText variant="caption" color={theme.muted}>
+            {hint}
+          </AppText>
+        ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -287,54 +353,35 @@ function Option({ label, hint, selected, onPress }: { label: string; hint?: stri
 function Busy({ label }: { label: string }) {
   const theme = useTheme();
   return (
-    <View style={styles.block}>
+    <View style={styles.busy}>
       <ActivityIndicator color={theme.primary} />
-      <Text style={{ color: theme.muted }}>{label}</Text>
+      <AppText color={theme.muted}>{label}</AppText>
     </View>
   );
 }
 
-function PrimaryButton({ label, onPress, busy = false }: { label: string; onPress: () => void; busy?: boolean }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={busy}
-      accessibilityRole="button"
-      style={[styles.primaryButton, { backgroundColor: theme.primary, opacity: busy ? 0.6 : 1 }]}
-    >
-      {busy ? (
-        <ActivityIndicator color={theme.onPrimary} />
-      ) : (
-        <Text style={{ color: theme.onPrimary, fontSize: 16, fontWeight: '600' }}>{label}</Text>
-      )}
-    </Pressable>
-  );
-}
-
-const inputStyle = (theme: Theme) => [
-  styles.input,
-  { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border },
-];
-
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 48, flexGrow: 1, justifyContent: 'center' },
-  block: { gap: 12, alignItems: 'stretch' },
-  title: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
+  container: { padding: 20, paddingBottom: 48, flexGrow: 1, justifyContent: 'center' },
+  card: { gap: 12, paddingVertical: 24 },
+  busy: { gap: 12, alignItems: 'center' },
+  hero: { alignSelf: 'center', width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
+  centerText: { textAlign: 'center' },
+  label: { fontWeight: '600', marginTop: 4 },
   code: {
-    fontSize: 28,
+    fontSize: 26,
+    lineHeight: 34,
     fontWeight: '700',
-    letterSpacing: 4,
+    letterSpacing: 3,
     borderWidth: 1,
     borderStyle: 'dashed',
     borderRadius: 14,
     paddingVertical: 8,
     textAlign: 'center',
   },
-  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
-  codeInput: { fontSize: 22, letterSpacing: 3, textAlign: 'center' },
-  option: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 2 },
-  primaryButton: { marginTop: 8, borderRadius: 25, minHeight: 50, justifyContent: 'center', alignItems: 'center' },
-  linkButton: { paddingVertical: 8, alignItems: 'center' },
+  codeInput: { fontSize: 20, letterSpacing: 3, textAlign: 'center' },
+  row: { flexDirection: 'row', gap: 10 },
+  grow: { flex: 1, minWidth: 0 },
+  bold: { fontWeight: '600' },
+  options: { gap: 8 },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 14 },
 });

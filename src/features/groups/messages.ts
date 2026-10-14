@@ -33,7 +33,7 @@ export function describeGroupCurrencyError(error: GroupCurrencyError): string {
     case 'UNKNOWN_CURRENCY':
       return 'Pick a supported currency.';
     case 'CURRENCY_LOCKED':
-      return 'The currency can’t change once the group has expenses or payments. Add bills in other currencies with their own rate instead.';
+      return 'Currency is locked once the group has expenses. Add foreign bills with their own rate.';
   }
 }
 
@@ -57,7 +57,7 @@ export function describeGroupDeleteError(error: GroupDeleteError): string {
     case 'NOT_A_MEMBER':
       return 'You can only delete groups you’re a member of.';
     case 'UNSETTLED_BALANCES':
-      return `${error.count} people still have balances. Record the payments first so everyone is settled up.`;
+      return `${error.count} people still have balances. Settle up first.`;
   }
 }
 

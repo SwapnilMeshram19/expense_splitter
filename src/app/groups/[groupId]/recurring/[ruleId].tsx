@@ -55,7 +55,7 @@ export default function EditRuleScreen() {
   const confirmStop = () =>
     Alert.alert(
       'Stop repeating?',
-      'No new ones will be added. Expenses already added stay, and you can still edit or delete them.',
+      'No new ones will be added. Past ones stay.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

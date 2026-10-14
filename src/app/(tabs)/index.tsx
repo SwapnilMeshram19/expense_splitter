@@ -80,17 +80,19 @@ function ListHeader({
         </AppText>
         <Button
           label="Join"
+          icon="link"
+          size="sm"
           variant="secondary"
           onPress={() => router.push('/join')}
-          style={styles.smallButton}
+          accessibilityLabel="Join a group"
         />
         <Button
           label="New"
           icon="add"
+          size="sm"
           variant="soft"
           onPress={() => router.push('/groups/new')}
           accessibilityLabel="New group"
-          style={styles.smallButton}
         />
       </View>
     </View>
@@ -301,9 +303,7 @@ function EmptyState() {
         <AppText variant="heading" accessibilityRole="header">
           No groups yet
         </AppText>
-        <AppText color={theme.muted}>
-          Create a group for a trip, your flat, or family expenses, or join one with an invite code.
-        </AppText>
+        <AppText color={theme.muted}>Split trips, rent and bills with friends.</AppText>
         <View style={styles.emptyActions}>
           <Button
             label="New group"
@@ -313,8 +313,10 @@ function EmptyState() {
           />
           <Button
             label="Join"
+            icon="link"
             variant="secondary"
             onPress={() => router.push('/join')}
+            accessibilityLabel="Join a group"
             style={styles.grow}
           />
         </View>
@@ -335,7 +337,6 @@ const styles = StyleSheet.create({
   tile: { flex: 1, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12 },
   tileAmount: { fontSize: 16 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  smallButton: { minHeight: 40, paddingHorizontal: 14 },
   grow: { flex: 1, minWidth: 0 },
   groupCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18 },
   chip: {

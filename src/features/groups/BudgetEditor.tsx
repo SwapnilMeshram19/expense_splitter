@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { appContext } from '@/db/appContext';
 import { groupBudget, setGroupBudget } from '@/db/repositories/groups';
@@ -86,8 +86,8 @@ export function BudgetEditor({ group, me }: { group: Group; me: string }) {
       />
       <AppText variant="caption" color={theme.muted}>
         {period === 'total'
-          ? 'All expenses in the group count towards it. Payments between people don’t.'
-          : 'Expenses dated in the current month count; it starts again on the 1st.'}
+          ? 'All group expenses count.'
+          : 'Resets on the 1st of every month.'}
       </AppText>
       {message ? (
         <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
@@ -104,11 +104,7 @@ export function BudgetEditor({ group, me }: { group: Group; me: string }) {
           />
         ) : null}
         {saved ? (
-          <Pressable onPress={remove} accessibilityRole="button" hitSlop={8} style={styles.remove}>
-            <AppText variant="label" color={theme.negative} style={styles.bold}>
-              Remove budget
-            </AppText>
-          </Pressable>
+          <Button label="Remove" icon="delete" variant="danger" onPress={remove} style={styles.grow} />
         ) : null}
       </View>
     </View>
@@ -117,8 +113,6 @@ export function BudgetEditor({ group, me }: { group: Group; me: string }) {
 
 const styles = StyleSheet.create({
   wrap: { gap: 10 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  grow: { flex: 1 },
-  remove: { minHeight: 44, justifyContent: 'center' },
-  bold: { fontWeight: '600' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  grow: { flex: 1, minWidth: 0 },
 });

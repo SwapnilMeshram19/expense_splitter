@@ -80,9 +80,7 @@ export default function NewGroupScreen() {
           pinned={[getRegionPreference().homeCurrency]}
         />
         <AppText variant="caption" color={theme.muted}>
-          {currency === 'INR'
-            ? 'Balances and UPI settle-up are in rupees. Bills in other currencies are converted when you add them.'
-            : 'Everyone settles up in this currency. Bills in other currencies are converted when you add them. UPI works only for rupee groups.'}
+          {currency === 'INR' ? 'UPI settle-up included.' : 'UPI works only in rupee groups.'}
         </AppText>
 
         <FieldLabel>Your name</FieldLabel>
@@ -117,7 +115,7 @@ export default function NewGroupScreen() {
         ))}
         <Button label="Add person" icon="personAdd" variant="soft" onPress={addPerson} style={styles.addPerson} />
         <AppText variant="caption" color={theme.muted}>
-          People don’t need the app. You can invite them later.
+          They don’t need the app. Invite them later.
         </AppText>
 
         {error ? (
@@ -126,7 +124,7 @@ export default function NewGroupScreen() {
           </AppText>
         ) : null}
 
-        <Button label="Create group" size="lg" onPress={submit} style={styles.submit} />
+        <Button label="Create group" icon="check" size="lg" onPress={submit} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
