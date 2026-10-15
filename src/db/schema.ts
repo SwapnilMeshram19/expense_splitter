@@ -98,6 +98,11 @@ export const members = sqliteTable(
     userId: text('user_id'),
     /** Visible only within this group. */
     upiVpa: text('upi_vpa'),
+    /**
+     * Other ways to pay this member (PayPal, IBAN, Pix…): JSON array, see domain/payMethods.ts.
+     * Same visibility and ownership rules as upi_vpa. Always read through parsePayMethods().
+     */
+    payMethods: text('pay_methods'),
     ...syncColumns(),
   },
   (t) => [

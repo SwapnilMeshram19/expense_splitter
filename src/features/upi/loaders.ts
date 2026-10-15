@@ -9,14 +9,13 @@ import { canEditMemberUpi } from '@/db/repositories/memberUpi';
 import { members } from '@/db/schema';
 import { getDeviceUserId } from '@/db/session';
 import { computeBalances } from '@/domain/balances';
+import type { CurrencyCode } from '@/domain/currency';
+import { parsePayMethods, type PayMethod } from '@/domain/payMethods';
 import { isValidVpa } from '@/domain/upi';
 
 type Fail = { ok: false; message: string };
 const fail = (message: string): Fail => ({ ok: false, message });
 
-/** UPI moves rupees only. The screens never offer it elsewhere; this guards deep links. */
-export const UPI_INR_ONLY_MESSAGE =
-  'UPI works only for groups in Indian rupees. Pay another way, then record the payment.';
 
 function loadMember(groupId: string, memberId: string | undefined) {
   if (!memberId) return null;
@@ -41,17 +40,20 @@ export interface PayPayee {
   /** Only a VPA that passes validation; synced values are untrusted. */
   vpa: string | null;
   storedVpaInvalid: boolean;
+  /** Other ways to pay them, valid ones only. */
+  methods: PayMethod[];
   canEditVpa: boolean;
+  /** Not on the app: their details were typed in by someone in the group. */
+  isPlaceholder: boolean;
 }
 
 export type PaySetup =
-  | { ok: true; me: string; groupName: string; payee: PayPayee; myDebtPaise: number }
+  | { ok: true; me: string; groupName: string; currency: CurrencyCode; payee: PayPayee; myDebtPaise: number }
   | Fail;
 
 export function loadPaySetup(groupId: string, toMemberId: string | undefined): PaySetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
-  if (group.currency !== 'INR') return fail(UPI_INR_ONLY_MESSAGE);
   if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
@@ -65,12 +67,15 @@ export function loadPaySetup(groupId: string, toMemberId: string | undefined): P
     ok: true,
     me,
     groupName: group.name,
+    currency: group.currency,
     payee: {
       id: row.id,
       name: row.displayName,
       vpa: isValidVpa(row.upiVpa) ? row.upiVpa : null,
       storedVpaInvalid: row.upiVpa !== null && !isValidVpa(row.upiVpa),
+      methods: parsePayMethods(row.payMethods),
       canEditVpa: canEditMemberUpi(row, me),
+      isPlaceholder: row.userId === null,
     },
     myDebtPaise: Math.max(0, -myBalance),
   };
@@ -84,7 +89,9 @@ export type RequestSetup =
       me: string;
       myName: string;
       myVpa: string | null;
+      myMethods: PayMethod[];
       groupName: string;
+      currency: CurrencyCode;
       payer: { id: string; name: string };
       payerDebtPaise: number;
     }
@@ -93,7 +100,6 @@ export type RequestSetup =
 export function loadRequestSetup(groupId: string, fromMemberId: string | undefined): RequestSetup {
   const group = getGroup(db, groupId);
   if (!group) return fail('This group no longer exists.');
-  if (group.currency !== 'INR') return fail(UPI_INR_ONLY_MESSAGE);
   if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
   const me = findSelfMemberId(db, groupId, getDeviceUserId());
   if (!me) return fail('You’re not a member of this group.');
@@ -110,7 +116,9 @@ export function loadRequestSetup(groupId: string, fromMemberId: string | undefin
     me,
     myName: meRow.displayName,
     myVpa: isValidVpa(meRow.upiVpa) ? meRow.upiVpa : null,
+    myMethods: parsePayMethods(meRow.payMethods),
     groupName: group.name,
+    currency: group.currency,
     payer: { id: payerRow.id, name: payerRow.displayName },
     payerDebtPaise: Math.max(0, -payerBalance),
   };
@@ -123,7 +131,14 @@ export type MemberUpiSetup =
       ok: true;
       me: string;
       groupName: string;
-      member: { id: string; name: string; vpa: string | null; isMe: boolean; isPlaceholder: boolean };
+      member: {
+        id: string;
+        name: string;
+        vpa: string | null;
+        methods: PayMethod[];
+        isMe: boolean;
+        isPlaceholder: boolean;
+      };
       canEdit: boolean;
     }
   | Fail;
@@ -145,6 +160,7 @@ export function loadMemberUpiSetup(groupId: string, memberId: string | undefined
       id: row.id,
       name: row.displayName,
       vpa: row.upiVpa,
+      methods: parsePayMethods(row.payMethods),
       isMe: row.id === me,
       isPlaceholder: row.userId === null,
     },

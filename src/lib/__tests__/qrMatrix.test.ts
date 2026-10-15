@@ -1,6 +1,6 @@
 import { buildUpiPayUri } from '@/domain/upi';
 
-import { qrMatrix, rowRuns } from '../qrMatrix';
+import { qrMatrix, rowRuns, utf8Bytes } from '../qrMatrix';
 
 describe('qrMatrix', () => {
   const uri = buildUpiPayUri({ payeeVpa: 'rahul.k@okaxis', payeeName: 'Rahul K', amountPaise: 30050, note: 'Goa trip' });
@@ -40,5 +40,19 @@ describe('rowRuns', () => {
     ]);
     expect(rowRuns([false, false])).toEqual([]);
     expect(rowRuns([])).toEqual([]);
+  });
+});
+describe('utf8Bytes', () => {
+  it('matches Node’s UTF-8 encoder (names in EPC QR codes)', () => {
+    for (const text of ['upi://pay?pa=a@b', 'Jürgen Müller', '₹ 1,000', 'José 🙂']) {
+      expect(utf8Bytes(text)).toEqual([...Buffer.from(text, 'utf8')]);
+    }
+  });
+});
+
+describe('UTF-8 in QR codes', () => {
+  it('needs more room for accented names, as UTF-8 does (2 bytes each)', () => {
+    // 60 ASCII letters fit a smaller code than 60 "é", which are 120 bytes in UTF-8 (60 in Latin-1).
+    expect(qrMatrix('é'.repeat(60)).length).toBeGreaterThan(qrMatrix('e'.repeat(60)).length);
   });
 });

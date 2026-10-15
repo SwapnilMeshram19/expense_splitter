@@ -6,6 +6,7 @@ import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-
 import { appContext } from '@/db/appContext';
 import { createGroup } from '@/db/repositories/groups';
 import { MAX_NAME_LENGTH } from '@/db/repositories/names';
+import { applyMyPayDetailsToGroup } from '@/db/repositories/memberPayDetails';
 import { getSetting, SELF_NAME_KEY, setSetting } from '@/db/repositories/profile';
 import { getDeviceUserId } from '@/db/session';
 import { type CurrencyCode } from '@/domain/currency';
@@ -30,7 +31,8 @@ export default function NewGroupScreen() {
   const [selfName, setSelfName] = useState(() => getSetting(appContext, SELF_NAME_KEY) ?? '');
   const [people, setPeople] = useState<PersonField[]>([{ key: 0, name: '' }]);
   // Home currency (from the phone or Account): a US visitor's trip to India starts in USD.
-  const [currency, setCurrency] = useState<CurrencyCode>(() => getRegionPreference().homeCurrency);
+  const [homeCurrency] = useState(() => getRegionPreference().homeCurrency);
+  const [currency, setCurrency] = useState<CurrencyCode>(homeCurrency);
   const [error, setError] = useState<string | null>(null);
 
   const updatePerson = (key: number, name: string) =>
@@ -51,6 +53,8 @@ export default function NewGroupScreen() {
       return;
     }
     setSetting(appContext, SELF_NAME_KEY, selfName.trim());
+    // Your saved payment details (Account) go into the new group, so friends can pay you back.
+    applyMyPayDetailsToGroup(appContext, getDeviceUserId(), result.value.groupId);
     router.replace({ pathname: '/groups/[groupId]', params: { groupId: result.value.groupId } });
   };
 
@@ -80,8 +84,22 @@ export default function NewGroupScreen() {
           pinned={[getRegionPreference().homeCurrency]}
         />
         <AppText variant="caption" color={theme.muted}>
-          {currency === 'INR' ? 'UPI settle-up included.' : 'UPI works only in rupee groups.'}
+          {currency === 'INR'
+            ? 'UPI settle-up included.'
+            : homeCurrency === 'INR'
+              ? 'Trip abroad with Indian friends? Keep ₹ and add foreign bills as you go.'
+              : 'Bills in other currencies are converted when you add them.'}
         </AppText>
+        {currency !== 'INR' && homeCurrency === 'INR' ? (
+          <Button
+            label="Use ₹ INR instead"
+            icon="rupee"
+            size="sm"
+            variant="soft"
+            onPress={() => setCurrency('INR')}
+            style={styles.inlineAction}
+          />
+        ) : null}
 
         <FieldLabel>Your name</FieldLabel>
         <Input
@@ -137,5 +155,6 @@ const styles = StyleSheet.create({
   personInput: { flex: 1 },
   removeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   addPerson: { alignSelf: 'flex-start', marginTop: 4 },
+  inlineAction: { alignSelf: 'flex-start' },
   submit: { marginTop: 20 },
 });

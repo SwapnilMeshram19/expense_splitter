@@ -23,10 +23,9 @@ import {
 } from '@/features/groups/loadGroupView';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
-import { balancesMessage, reminderMessage } from '@/features/share/messages';
+import { balancesMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
 import { useShareSheet } from '@/features/share/ShareSheet';
-import { shareTextOnWhatsApp } from '@/features/share/shareText';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { todayIsoDate } from '@/lib/dates';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
@@ -312,24 +311,13 @@ export default function GroupDetailScreen() {
             canEdit={canEdit}
             nameOf={nameOf}
             money={money}
-            upi={currency === 'INR'}
+            payLabel={currency === 'INR' && view.upiIds.has(item.debt.toMemberId) ? 'Pay with UPI' : 'Pay'}
             theme={theme}
             onRecord={() =>
               openSettle({ from: item.debt.fromMemberId, to: item.debt.toMemberId, amount: String(item.debt.amountPaise) })
             }
             onPay={() => openPay(item.debt.toMemberId, item.debt.amountPaise)}
             onRequest={() => openRequest(item.debt.fromMemberId, item.debt.amountPaise)}
-            onRemind={() =>
-              void shareTextOnWhatsApp(
-                reminderMessage({
-                  groupName: view.group.name,
-                  currency,
-                  debtorName: view.names.get(item.debt.fromMemberId) ?? 'there',
-                  amountPaise: item.debt.amountPaise,
-                  upiId: me ? (view.upiIds.get(me) ?? null) : null,
-                }),
-              )
-            }
           />
         );
       case 'record':
@@ -559,32 +547,29 @@ function TransferRow({
   canEdit,
   nameOf,
   money,
-  upi,
+  payLabel,
   theme,
   onRecord,
   onPay,
   onRequest,
-  onRemind,
 }: {
   debt: Debt;
   me: string | null;
   canEdit: boolean;
   nameOf: (id: string) => string;
   money: (minor: number) => string;
-  /** INR group: offer UPI pay/request. Other currencies are recorded after paying some other way. */
-  upi: boolean;
+  /** "Pay with UPI" when that's what happens, else "Pay" (PayPal, IBAN, ₹ by UPI abroad…). */
+  payLabel: string;
   theme: Theme;
   onRecord: () => void;
   onPay: () => void;
+  /** Get paid: QR codes, payment details and a WhatsApp reminder. */
   onRequest: () => void;
-  /** Non-UPI groups: nudge the payer on WhatsApp (UPI groups do it from the Request screen). */
-  onRemind: () => void;
 }) {
   const iPay = t.fromMemberId === me;
   const iReceive = t.toMemberId === me;
   const sentence = `${nameOf(t.fromMemberId)} ${iPay ? 'pay' : 'pays'} ${iReceive ? 'you' : nameOf(t.toMemberId)}`;
   const amountColor = iPay ? theme.negative : iReceive ? theme.positive : theme.text;
-  const withUpi = upi && (iPay || iReceive);
 
   return (
     <Card style={styles.transferCard}>
@@ -601,15 +586,15 @@ function TransferRow({
       </View>
       {canEdit ? (
         <View style={styles.transferActions}>
-          {withUpi && iPay ? (
+          {iPay ? (
             <Button
-              label="Pay with UPI"
+              label={payLabel}
               icon="upiPay"
               onPress={onPay}
               style={styles.grow}
-              accessibilityLabel={`Pay ${nameOf(t.toMemberId)} with UPI`}
+              accessibilityLabel={`Pay ${nameOf(t.toMemberId)}`}
             />
-          ) : withUpi && iReceive ? (
+          ) : iReceive ? (
             <Button
               label="Request"
               icon="requestMoney"
@@ -618,18 +603,9 @@ function TransferRow({
               style={styles.grow}
               accessibilityLabel={`Get paid by ${nameOf(t.fromMemberId)}`}
             />
-          ) : iReceive ? (
-            <Button
-              label="Remind"
-              icon="chat"
-              variant="whatsapp"
-              onPress={onRemind}
-              style={styles.grow}
-              accessibilityLabel={`Remind ${nameOf(t.fromMemberId)} on WhatsApp`}
-            />
           ) : null}
           <Button
-            label={withUpi || iReceive ? 'Record' : 'Record payment'}
+            label={iPay || iReceive ? 'Record' : 'Record payment'}
             icon="check"
             variant="secondary"
             onPress={onRecord}

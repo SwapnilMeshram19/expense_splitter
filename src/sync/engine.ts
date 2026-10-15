@@ -20,6 +20,7 @@ import {
 import { SYNC_LOST_GROUPS_KEY } from '@/db/repositories/access';
 import { isPristineOccurrence } from '@/db/repositories/recurring';
 import { isBudgetPeriod } from '@/domain/budget';
+import { parsePayMethods, serializePayMethods } from '@/domain/payMethods';
 import { err, ok, type Result } from '@/lib/result';
 
 import {
@@ -322,6 +323,8 @@ function writeMember(tx: Tx, m: Incoming<WireMember>, mode: WriteMode): void {
     displayName: m.display_name,
     userId: m.user_id,
     upiVpa: m.upi_vpa,
+    // A server without the column doesn't send the key: keep what this phone has.
+    ...('pay_methods' in m ? { payMethods: serializePayMethods(parsePayMethods(m.pay_methods)) } : {}),
     createdAt: m.created_at,
     updatedAt: m.updated_at,
     deletedAt: m.deleted_at,

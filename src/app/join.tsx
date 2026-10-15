@@ -7,7 +7,9 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
+import { applyMyPayDetailsToGroup } from '@/db/repositories/memberPayDetails';
 import { getSetting, SELF_NAME_KEY } from '@/db/repositories/profile';
+import { getDeviceUserId } from '@/db/session';
 import { groups } from '@/db/schema';
 import { useAuth } from '@/features/auth/authStore';
 import { joinGroup, previewInvite, type InvitePreview } from '@/features/invites/inviteApi';
@@ -34,6 +36,9 @@ const groupIsLocal = (groupId: string) =>
 async function openJoinedGroup(groupId: string): Promise<boolean> {
   await syncNow();
   if (!groupIsLocal(groupId)) return false;
+  // Your saved payment details (Account) go into the group you just joined; the next sync sends them.
+  applyMyPayDetailsToGroup(appContext, getDeviceUserId(), groupId);
+  void syncNow();
   router.replace({ pathname: '/groups/[groupId]', params: { groupId } });
   return true;
 }

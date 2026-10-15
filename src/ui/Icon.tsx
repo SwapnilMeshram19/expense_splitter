@@ -74,6 +74,11 @@ const ICONS = {
   checkCircle: { ios: 'checkmark.circle', android: 0xe86c }, // check_circle
   send: { ios: 'paperplane', android: 0xe163 }, // send
   moreHoriz: { ios: 'ellipsis', android: 0xe5d3 }, // more_horiz
+  bank: { ios: 'building.columns', android: 0xe84f }, // account_balance
+  wallet: { ios: 'wallet.pass', android: 0xe850 }, // account_balance_wallet
+  openExternal: { ios: 'arrow.up.right.square', android: 0xe895 }, // open_in_new
+  settledAll: { ios: 'checkmark.seal', android: 0xe2e6 }, // task_alt
+  chevronUp: { ios: 'chevron.up', android: 0xe5ce }, // expand_less
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

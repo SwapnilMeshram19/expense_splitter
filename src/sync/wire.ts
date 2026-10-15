@@ -11,6 +11,7 @@ import type {
   RecurringRule,
   Settlement,
 } from '@/db/schema';
+import { parsePayMethods } from '@/domain/payMethods';
 
 export type WireTable =
   | 'groups'
@@ -51,6 +52,8 @@ export interface WireMember extends Lifecycle {
   display_name: string;
   user_id: string | null;
   upi_vpa: string | null;
+  /** Payment details (JSON array). Absent from servers before this migration. */
+  pay_methods?: unknown;
 }
 
 export interface WireExpense extends Lifecycle {
@@ -214,6 +217,8 @@ export const memberToWire = (m: Member): WireMember => ({
   display_name: m.displayName,
   user_id: m.userId ?? null,
   upi_vpa: m.upiVpa ?? null,
+  // The server refuses an empty array: none = null.
+  pay_methods: parsePayMethods(m.payMethods).length > 0 ? parsePayMethods(m.payMethods) : null,
   created_at: m.createdAt,
   updated_at: m.updatedAt,
   deleted_at: m.deletedAt ?? null,

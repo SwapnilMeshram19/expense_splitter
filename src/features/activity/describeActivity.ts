@@ -218,6 +218,14 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         };
       }
 
+      // Other payment methods: only their kinds are logged (repositories/memberPayDetails.ts).
+      if (entry.action === 'update' && (hasKey(before, 'payMethods') || hasKey(after, 'payMethods'))) {
+        const target = entry.entityId;
+        const whose =
+          target === ctx.me ? 'your' : target === entry.actorMemberId ? 'their' : `${ctx.nameOf(target)}’s`;
+        return { title: `${actor} updated ${whose} payment details`, detail: null };
+      }
+
       // UPI ID changes. Values are already masked when logged (see repositories/memberUpi.ts).
       if (entry.action === 'update' && (hasKey(before, 'upiVpa') || hasKey(after, 'upiVpa'))) {
         const target = entry.entityId;

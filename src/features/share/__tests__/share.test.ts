@@ -272,3 +272,33 @@ describe('with the database', () => {
     expect(expenseShareText(t.ctx.db, 'missing')).toBeNull();
   });
 });
+
+describe('reminderMessage with other ways to pay', () => {
+  it('lists UPI in rupees for a foreign group, then the other ways', () => {
+    const text = reminderMessage({
+      groupName: 'Bangkok',
+      currency: 'THB',
+      debtorName: 'Rahul',
+      amountPaise: 150000,
+      upiId: 'asha@okaxis',
+      inrPaise: 364500,
+      otherWays: ['PromptPay: 0812345678'],
+    });
+    expect(text).toContain('settle *฿1,500*');
+    expect(text).toContain('pay me ₹3,645 on UPI: asha@okaxis');
+    expect(text).toContain('Or:\n• PromptPay: 0812345678');
+  });
+
+  it('leaves UPI out of a foreign group without a rate', () => {
+    const text = reminderMessage({
+      groupName: 'Paris',
+      currency: 'EUR',
+      debtorName: 'Rahul',
+      amountPaise: 1250,
+      upiId: 'asha@okaxis',
+      otherWays: ['PayPal: https://paypal.me/asha/12.50EUR'],
+    });
+    expect(text).not.toContain('UPI');
+    expect(text).toContain('You can pay me here:\n• PayPal');
+  });
+});

@@ -11,8 +11,14 @@ export interface PendingUpiPayment {
   groupId: string;
   fromMemberId: string;
   toMemberId: string;
+  /** Minor units of the group currency. */
   amountPaise: number;
   startedAt: number;
+  /** How it was paid: 'UPI' (default for entries saved by older builds), 'PayPal', 'Pix'… */
+  via?: string;
+  /** A UPI payment in rupees for a group in another currency: what was sent, and at which rate. */
+  inrPaise?: number;
+  rate?: string;
 }
 
 function isPending(v: unknown): v is PendingUpiPayment {
@@ -24,7 +30,10 @@ function isPending(v: unknown): v is PendingUpiPayment {
     typeof p.toMemberId === 'string' &&
     Number.isSafeInteger(p.amountPaise) &&
     (p.amountPaise as number) > 0 &&
-    typeof p.startedAt === 'number'
+    typeof p.startedAt === 'number' &&
+    (p.via === undefined || typeof p.via === 'string') &&
+    (p.inrPaise === undefined || Number.isSafeInteger(p.inrPaise)) &&
+    (p.rate === undefined || typeof p.rate === 'string')
   );
 }
 

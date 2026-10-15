@@ -20,8 +20,8 @@ import { Chip } from '@/ui/Chip';
 import { AmountInput, FieldLabel, Input } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
 import { MemberPicker } from '@/ui/MemberPicker';
+import { Card } from '@/ui/Card';
 import { useTheme } from '@/ui/theme';
-import { Text } from '@/ui/Text';
 
 type ReadySetup = Extract<SettleSetup, { ok: true }>;
 
@@ -48,7 +48,7 @@ export default function SettleScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Record payment' }} />
-        <Text style={{ color: theme.muted }}>{message}</Text>
+        <AppText color={theme.muted}>{message}</AppText>
       </View>
     );
   }
@@ -75,9 +75,10 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
   const [fromId, setFromId] = useState(initial.fromId);
   const [toId, setToId] = useState(initial.toId);
   const [amountText, setAmountText] = useState(initial.amountText);
-  // UPI only moves rupees: other groups default to cash and don't offer it.
+  // Rupee groups usually settle by UPI; others default to cash (UPI stays available: Indians
+  // abroad still pay each other in rupees).
   const [method, setMethod] = useState<SettlementMethod>(setup.currency === 'INR' ? 'upi' : 'cash');
-  const methods = SETTLEMENT_METHODS.filter((m) => m !== 'upi' || setup.currency === 'INR');
+  const methods = SETTLEMENT_METHODS;
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -144,18 +145,24 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <FieldLabel>Who paid</FieldLabel>
-        {memberPicker('Who paid', fromId, setFromId)}
-
-        <Pressable onPress={swap} style={styles.swap} accessibilityRole="button" accessibilityLabel="Swap payer and receiver" hitSlop={8}>
-          <Icon name="settle" color={theme.onPrimarySoft} size={18} />
-          <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
-            Swap
-          </AppText>
-        </Pressable>
-
-        <FieldLabel>Who received</FieldLabel>
-        {memberPicker('Who received', toId, setToId)}
+        <Card style={styles.card}>
+          <FieldLabel>Who paid</FieldLabel>
+          {memberPicker('Who paid', fromId, setFromId)}
+          <View style={styles.swapRow}>
+            <View style={[styles.rule, { backgroundColor: theme.border }]} />
+            <Pressable
+              onPress={swap}
+              style={({ pressed }) => [styles.swap, { backgroundColor: theme.primarySoft, opacity: pressed ? 0.7 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Swap payer and receiver"
+            >
+              <Icon name="settle" color={theme.onPrimarySoft} size={20} />
+            </Pressable>
+            <View style={[styles.rule, { backgroundColor: theme.border }]} />
+          </View>
+          <FieldLabel>Who received</FieldLabel>
+          {memberPicker('Who received', toId, setToId)}
+        </Card>
 
         <FieldLabel>Amount</FieldLabel>
         <AmountInput
@@ -195,7 +202,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
           </AppText>
         ) : null}
 
-        <Button label="Record payment" size="lg" onPress={save} style={styles.submit} />
+        <Button label="Record payment" icon="check" size="lg" onPress={save} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
@@ -206,7 +213,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   container: { paddingHorizontal: 20, paddingTop: 8, gap: 10, paddingBottom: 48 },
   chips: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  swap: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', minHeight: 40 },
-  bold: { fontWeight: '600' },
+  card: { gap: 6 },
+  swapRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 },
+  rule: { flex: 1, height: StyleSheet.hairlineWidth },
+  swap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   submit: { marginTop: 16 },
 });

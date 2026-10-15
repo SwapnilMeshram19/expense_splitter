@@ -1,0 +1,1 @@
+ALTER TABLE `members` ADD `pay_methods` text;

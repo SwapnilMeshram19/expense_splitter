@@ -1,4 +1,5 @@
 import { DEFAULT_CURRENCY, formatMoney, isSupportedCurrency, type CurrencyCode } from '@/domain/currency';
+import { methodTitle, parsePayMethods } from '@/domain/payMethods';
 import { maskVpa } from '@/domain/upi';
 
 import type { WireTable } from './wire';
@@ -70,6 +71,8 @@ export function summarizeRow(
       out.push(`Name: ${str(row.display_name)}`);
       const vpa = str(row.upi_vpa);
       out.push(`UPI ID: ${vpa ? maskVpa(vpa) : 'none'}`);
+      const methods = parsePayMethods(row.pay_methods);
+      if (methods.length > 0) out.push(`Other ways to pay: ${methods.map(methodTitle).join(', ')}`);
       break;
     }
     case 'expenses': {
@@ -117,7 +120,7 @@ export function summarizeRow(
  */
 export function rejectionReason(code: string | undefined, detail?: string): string {
   // Raised by private.guard_member_vpa(): the placeholder was claimed while this phone edited it.
-  if (detail === '23V01') return 'This person has joined the group, so only they can change their UPI ID.';
+  if (detail === '23V01') return 'This person has joined the group, so only they can change their payment details.';
   switch (code) {
     case 'FORBIDDEN':
     case 'NOT_A_MEMBER':

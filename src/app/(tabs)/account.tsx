@@ -1,10 +1,13 @@
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
+import { getMyPayDetails } from '@/db/repositories/memberPayDetails';
+import { methodTitle } from '@/domain/payMethods';
 import {
   sendEmailCode,
   signInWithGoogle,
@@ -71,6 +74,7 @@ export default function AccountTab() {
         ) : (
           <SignInCard notice={auth.notice} />
         )}
+        <PaymentDetailsCard />
         <NotificationsCard signedIn={auth.status === 'signedIn'} />
         <RegionCard />
         <AppearanceCard />
@@ -103,6 +107,29 @@ function ProfileCard() {
         </View>
       </View>
       <SyncPanel compact />
+    </Card>
+  );
+}
+
+/** Your payment details: one place for every group. */
+function PaymentDetailsCard() {
+  const [summary, setSummary] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const mine = getMyPayDetails(appContext);
+      const parts = [...(mine?.vpa ? ['UPI'] : []), ...(mine?.methods ?? []).map(methodTitle)];
+      setSummary(parts.length > 0 ? parts.join(' · ') : null);
+    }, []),
+  );
+  return (
+    <Card style={listCardStyle}>
+      <ListRow
+        icon="wallet"
+        title="Payment details"
+        detail={summary ?? 'Add'}
+        onPress={() => router.push('/payment-details')}
+        last
+      />
     </Card>
   );
 }

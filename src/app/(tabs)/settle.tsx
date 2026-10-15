@@ -146,8 +146,6 @@ function Section({
   );
 }
 
-/** UPI moves rupees only: other currencies are settled however people pay, then recorded. */
-const canUseUpi = (t: MyTransfer) => t.currency === 'INR';
 
 function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string | null }) {
   const theme = useTheme();
@@ -180,13 +178,13 @@ function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string
           ) : null}
         </View>
       </View>
-      {t.canEdit && canUseUpi(t) ? (
+      {t.canEdit ? (
         <View style={styles.actions}>
           <Button
-            label="Pay with UPI"
+            label="Pay"
             icon="upiPay"
             style={styles.grow}
-            accessibilityLabel={`Pay ${t.counterpartyName} ${amount} with UPI`}
+            accessibilityLabel={`Pay ${t.counterpartyName} ${amount}`}
             onPress={() =>
               router.push({
                 pathname: '/groups/[groupId]/pay',
@@ -195,22 +193,14 @@ function PayCard({ transfer: t, approx }: { transfer: MyTransfer; approx: string
             }
           />
           <Button
-            label="Record cash"
+            label="Record"
             icon="check"
             variant="secondary"
-            accessibilityLabel={`Record a cash payment to ${t.counterpartyName}`}
+            accessibilityLabel={`Record a payment to ${t.counterpartyName}`}
             onPress={record}
             style={styles.grow}
           />
         </View>
-      ) : t.canEdit ? (
-        <Button
-          label="Record payment"
-          icon="check"
-          variant="secondary"
-          accessibilityLabel={`Record a payment of ${amount} to ${t.counterpartyName}`}
-          onPress={record}
-        />
       ) : (
         <AppText variant="caption" color={theme.warning}>
           Read-only: no longer shared with you.
@@ -231,7 +221,6 @@ function ReceiveRow({
 }) {
   const theme = useTheme();
   const amount = formatMoney(t.amountPaise, t.currency);
-  const upi = canUseUpi(t);
   return (
     <View style={[styles.receiveRow, !last && { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
       <Avatar seed={t.counterpartyId} name={t.counterpartyName} />
@@ -256,29 +245,15 @@ function ReceiveRow({
           <Button
             size="sm"
             variant="soft"
-            icon={upi ? 'requestMoney' : 'check'}
-            label={upi ? 'Request' : 'Record'}
-            accessibilityLabel={
-              upi
-                ? `Request ${amount} from ${t.counterpartyName}`
-                : `Record ${amount} received from ${t.counterpartyName}`
-            }
+            icon="requestMoney"
+            label="Request"
+            accessibilityLabel={`Request ${amount} from ${t.counterpartyName}`}
             style={styles.smallAction}
             onPress={() =>
-              upi
-                ? router.push({
-                    pathname: '/groups/[groupId]/request',
-                    params: { groupId: t.groupId, from: t.counterpartyId, amount: String(t.amountPaise) },
-                  })
-                : router.push({
-                    pathname: '/groups/[groupId]/settle',
-                    params: {
-                      groupId: t.groupId,
-                      from: t.counterpartyId,
-                      to: t.meId,
-                      amount: String(t.amountPaise),
-                    },
-                  })
+              router.push({
+                pathname: '/groups/[groupId]/request',
+                params: { groupId: t.groupId, from: t.counterpartyId, amount: String(t.amountPaise) },
+              })
             }
           />
         ) : null}

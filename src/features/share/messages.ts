@@ -135,8 +135,12 @@ export interface ReminderInput {
   debtorName: string;
   /** null: no amount (a general nudge). */
   amountPaise: number | null;
-  /** My UPI ID (INR groups), or null. */
+  /** My UPI ID, or null. */
   upiId: string | null;
+  /** Non-INR group: the amount in rupees for UPI (today's rate), or null to leave UPI out. */
+  inrPaise?: number | null;
+  /** Other ways to pay, one line each ("PayPal: https://paypal.me/asha/12.50EUR"). */
+  otherWays?: readonly string[];
 }
 
 /** A friendly payment reminder to one person. */
@@ -146,13 +150,21 @@ export function reminderMessage({
   debtorName,
   amountPaise,
   upiId,
+  inrPaise,
+  otherWays = [],
 }: ReminderInput): string {
   const amount =
     amountPaise !== null && amountPaise > 0 ? ` *${formatMoney(amountPaise, currency)}*` : '';
   const lines = [
     `Hi ${oneLine(debtorName)}, a gentle reminder to settle${amount} for “${oneLine(groupName)}”.`,
   ];
+  const before = lines.length;
   if (upiId && currency === 'INR') lines.push(`You can pay me on UPI: ${upiId}`);
+  else if (upiId && inrPaise) lines.push(`You can pay me ${formatMoney(inrPaise, 'INR')} on UPI: ${upiId}`);
+  if (otherWays.length > 0) {
+    lines.push(lines.length > before ? 'Or:' : 'You can pay me here:');
+    lines.push(...otherWays.slice(0, 6).map((w) => `• ${oneLine(w)}`));
+  }
   lines.push('Thanks! 🙏', '', SHARE_FOOTER);
   return lines.join('\n');
 }

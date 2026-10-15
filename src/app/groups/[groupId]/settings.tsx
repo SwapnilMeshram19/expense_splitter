@@ -34,6 +34,8 @@ import {
   describeMemberError,
 } from '@/features/groups/messages';
 import { getRegionPreference } from '@/features/region/regionPreference';
+import { methodTitle, parsePayMethods } from '@/domain/payMethods';
+import { isValidVpa } from '@/domain/upi';
 import { BudgetEditor } from '@/features/groups/BudgetEditor';
 import { isGroupLost } from '@/db/repositories/access';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
@@ -53,6 +55,13 @@ interface MemberRow {
   id: string;
   displayName: string;
   balance: number;
+  /** "UPI · PayPal", or null when nothing is added. */
+  payWith: string | null;
+}
+
+function payWithSummary(m: { upiVpa: string | null; payMethods: string | null }): string | null {
+  const parts = [...(isValidVpa(m.upiVpa) ? ['UPI'] : []), ...parsePayMethods(m.payMethods).map(methodTitle)];
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function loadSettingsView(groupId: string) {
@@ -63,7 +72,12 @@ function loadSettingsView(groupId: string) {
   const { balances } = computeBalances(ledger.expenses, ledger.settlements);
   const members: MemberRow[] = activeMembersQuery(db, groupId)
     .all()
-    .map((m) => ({ id: m.id, displayName: m.displayName, balance: balances.get(m.id) ?? 0 }));
+    .map((m) => ({
+      id: m.id,
+      displayName: m.displayName,
+      balance: balances.get(m.id) ?? 0,
+      payWith: payWithSummary(m),
+    }));
   return {
     group,
     me,
@@ -355,16 +369,28 @@ function SettingsForm({
             }
             return (
               <View key={member.id} style={[styles.memberRow, divider]}>
-                <Avatar seed={member.id} name={member.displayName} size={36} />
-                <View style={styles.grow}>
-                  <AppText style={styles.medium} numberOfLines={1}>
-                    {member.displayName}
-                    {isMe ? ' (you)' : ''}
-                  </AppText>
-                  <AppText variant="caption" color={theme.muted}>
-                    {balanceLabel(member.balance, currency)}
-                  </AppText>
-                </View>
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/groups/[groupId]/members/[memberId]/payment',
+                      params: { groupId: group.id, memberId: member.id },
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`${member.displayName}, payment details`}
+                  style={({ pressed }) => [styles.memberMain, { opacity: pressed ? 0.7 : 1 }]}
+                >
+                  <Avatar seed={member.id} name={member.displayName} size={36} />
+                  <View style={styles.grow}>
+                    <AppText style={styles.medium} numberOfLines={1}>
+                      {member.displayName}
+                      {isMe ? ' (you)' : ''}
+                    </AppText>
+                    <AppText variant="caption" color={theme.muted} numberOfLines={1}>
+                      {balanceLabel(member.balance, currency)} · {member.payWith ?? 'add payment details'}
+                    </AppText>
+                  </View>
+                </Pressable>
                 <IconButton
                   icon="edit"
                   label={`Rename ${member.displayName}`}
@@ -447,7 +473,8 @@ const styles = StyleSheet.create({
   centerText: { textAlign: 'center' },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingVertical: 4 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 56, paddingVertical: 4 },
+  memberMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 },
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   iconSpacer: { width: 44 },
 });

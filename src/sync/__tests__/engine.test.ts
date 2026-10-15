@@ -356,3 +356,68 @@ describe('runSync', () => {
     expect(collectPushBatch(t.ctx)).toBeNull();
   });
 });
+describe('payment details sync', () => {
+  const memberRow = (id: string) => t.ctx.db.select().from(members).where(eq(members.id, id)).get()!;
+
+  it('pushes them as a JSON array and stores valid pulled ones only', () => {
+    const g = setup();
+    pushAndAck();
+    t.ctx.db
+      .update(members)
+      .set({ payMethods: JSON.stringify([{ kind: 'link', url: 'https://paypal.me/asha' }]), dirty: true })
+      .where(eq(members.id, g.me))
+      .run();
+    const collected = collectPushBatch(t.ctx)!;
+    expect(collected.batch.members[0]!.pay_methods).toEqual([{ kind: 'link', url: 'https://paypal.me/asha' }]);
+    applyPushResult(t.ctx, collected, ackAll(collected.batch));
+
+    const server = memberRow(g.mom);
+    applyPull(
+      t.ctx,
+      pull({
+        members: [
+          {
+            id: g.mom,
+            group_id: g.groupId,
+            display_name: 'Mom',
+            user_id: null,
+            upi_vpa: null,
+            pay_methods: [{ kind: 'link', url: 'javascript:alert(1)' }, { kind: 'promptpay', id: '0812345678' }],
+            created_at: server.createdAt,
+            updated_at: server.updatedAt + 1,
+            deleted_at: null,
+            version: server.version + 1,
+          },
+        ],
+      }),
+    );
+    expect(JSON.parse(memberRow(g.mom).payMethods!)).toEqual([{ kind: 'promptpay', id: '0812345678' }]);
+  });
+
+  it('keeps local details when the server does not know the column yet', () => {
+    const g = setup();
+    pushAndAck();
+    const stored = JSON.stringify([{ kind: 'link', url: 'https://paypal.me/mom' }]);
+    t.ctx.db.update(members).set({ payMethods: stored }).where(eq(members.id, g.mom)).run();
+    const server = memberRow(g.mom);
+    applyPull(
+      t.ctx,
+      pull({
+        members: [
+          {
+            id: g.mom,
+            group_id: g.groupId,
+            display_name: 'Mummy',
+            user_id: null,
+            upi_vpa: null,
+            created_at: server.createdAt,
+            updated_at: server.updatedAt + 1,
+            deleted_at: null,
+            version: server.version + 1,
+          },
+        ],
+      }),
+    );
+    expect(memberRow(g.mom)).toMatchObject({ displayName: 'Mummy', payMethods: stored });
+  });
+});

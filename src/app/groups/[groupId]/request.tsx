@@ -6,26 +6,58 @@ import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { recordSettlement } from '@/db/repositories/settlements';
-import { formatPaise, paiseToInputString, parseRupeesToPaise, sanitizeAmountInput } from '@/domain/money';
+import {
+  formatMoney,
+  minorDigits,
+  minorToInputString,
+  parseAmount,
+  sanitizeMoneyInput,
+} from '@/domain/currency';
+import {
+  buildEpcPayload,
+  buildPayNowPayload,
+  buildPixPayload,
+  buildPromptPayPayload,
+  methodShareLine,
+  methodTitle,
+  payLinkFor,
+  worksForCurrency,
+  type PayMethod,
+} from '@/domain/payMethods';
 import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE } from '@/domain/upi';
+import { useInrConversion } from '@/features/payments/inrConversion';
 import { describeSettlementError } from '@/features/settlements/messages';
 import { reminderMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
-import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
+import { LinkButton } from '@/features/upi/buttons';
 import { isRecentDuplicate } from '@/features/upi/duplicates';
 import { loadRequestSetup, type RequestSetup } from '@/features/upi/loaders';
 import { QrCode } from '@/features/upi/QrCode';
+import { AppText } from '@/ui/AppText';
+import { Avatar } from '@/ui/Avatar';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { AmountInput } from '@/ui/Field';
+import { Segmented } from '@/ui/Segmented';
 import { useTheme } from '@/ui/theme';
-import { Text, TextInput } from '@/ui/Text';
 
 type Ready = Extract<RequestSetup, { ok: true }>;
+
+interface QrOption {
+  value: string;
+  label: string;
+  payload: string;
+  /** "any UPI app" / "their banking app" */
+  scanWith: string;
+}
 
 export default function RequestScreen() {
   const { groupId, from, amount } = useLocalSearchParams<{ groupId: string; from?: string; amount?: string }>();
   const theme = useTheme();
   const [setup, setSetup] = useState<RequestSetup>(() => loadRequestSetup(groupId, from));
 
-  // Reload on focus: you may have just added your UPI ID.
+  // Reload on focus: you may have just added your payment details.
   useFocusEffect(
     useCallback(() => {
       setSetup(loadRequestSetup(groupId, from));
@@ -36,38 +68,99 @@ export default function RequestScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Get paid' }} />
-        <Text style={{ color: theme.muted }}>{setup.message}</Text>
+        <AppText color={theme.muted}>{setup.message}</AppText>
       </View>
     );
   }
-  return <RequestFlow setup={setup} groupId={groupId} suggestedPaise={Number(amount)} />;
+  return <RequestFlow setup={setup} groupId={groupId} suggestedMinor={Number(amount)} />;
 }
 
-function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: string; suggestedPaise: number }) {
+/** QR codes this group's currency can use, from my details. Static payloads, amount filled in. */
+function qrOptions(
+  setup: Ready,
+  amountMinor: number | null,
+  upiPaise: number | null,
+  methods: readonly PayMethod[],
+): QrOption[] {
+  if (amountMinor === null) return [];
+  const out: QrOption[] = [];
+  const note = `Settle up ${setup.groupName}`;
+  if (setup.myVpa && upiPaise !== null && upiPaise <= UPI_P2P_LIMIT_PAISE) {
+    out.push({
+      value: 'upi',
+      label: 'UPI',
+      payload: buildUpiPayUri({ payeeVpa: setup.myVpa, payeeName: setup.myName, amountPaise: upiPaise, note }),
+      scanWith: 'any UPI app',
+    });
+  }
+  for (const m of methods) {
+    try {
+      if (m.kind === 'iban' && setup.currency === 'EUR') {
+        out.push({
+          value: `iban-${m.iban}`,
+          label: 'SEPA',
+          payload: buildEpcPayload({ name: m.name, iban: m.iban, bic: m.bic, amountCents: amountMinor, message: note }),
+          scanWith: 'their banking app',
+        });
+      } else if (m.kind === 'pix') {
+        out.push({
+          value: `pix-${m.key}`,
+          label: 'Pix',
+          payload: buildPixPayload({ key: m.key, name: m.name, city: m.city, amountCentavos: amountMinor }),
+          scanWith: 'their bank app',
+        });
+      } else if (m.kind === 'paynow') {
+        out.push({
+          value: `paynow-${m.proxy}`,
+          label: 'PayNow',
+          payload: buildPayNowPayload({ proxy: m.proxy, name: m.name || setup.myName, amountCents: amountMinor }),
+          scanWith: 'their banking app',
+        });
+      } else if (m.kind === 'promptpay') {
+        out.push({
+          value: `promptpay-${m.id}`,
+          label: 'PromptPay',
+          payload: buildPromptPayPayload({ id: m.id, amountSatang: amountMinor }),
+          scanWith: 'their banking app',
+        });
+      }
+    } catch {
+      // An amount a format can't carry (e.g. over EPC's limit): just leave that QR out.
+    }
+  }
+  return out;
+}
+
+function RequestFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: string; suggestedMinor: number }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const { me, payer, myVpa } = setup;
+  const { me, payer, myVpa, currency } = setup;
+  const money = (minor: number) => formatMoney(minor, currency);
 
   const [amountText, setAmountText] = useState(() =>
-    Number.isSafeInteger(suggestedPaise) && suggestedPaise > 0 ? paiseToInputString(suggestedPaise) : '',
+    Number.isSafeInteger(suggestedMinor) && suggestedMinor > 0 ? minorToInputString(suggestedMinor, currency) : '',
   );
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const recorded = useRef(false);
 
-  const parsed = parseRupeesToPaise(amountText);
-  const amountPaise = parsed.ok && parsed.paise > 0 ? parsed.paise : null;
-  const overLimit = amountPaise !== null && amountPaise > UPI_P2P_LIMIT_PAISE;
+  const parsed = parseAmount(amountText, currency);
+  const amountMinor = parsed.ok ? parsed.minor : null;
+  const conversion = useInrConversion(currency, amountMinor, myVpa !== null);
+  const upiPaise = currency === 'INR' ? amountMinor : (conversion?.inrPaise ?? null);
+  const methods = setup.myMethods.filter((m) => worksForCurrency(m, currency));
 
-  const uri = useMemo(
-    () =>
-      myVpa && amountPaise !== null && !overLimit
-        ? buildUpiPayUri({ payeeVpa: myVpa, payeeName: setup.myName, amountPaise, note: `Settle up ${setup.groupName}` })
-        : null,
-    [myVpa, amountPaise, overLimit, setup.myName, setup.groupName],
+  const options = useMemo(
+    () => qrOptions(setup, amountMinor, upiPaise, methods),
+    // methods is derived from setup + currency; listing them keeps the memo honest without churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [setup, amountMinor, upiPaise],
   );
+  const shown = options.find((o) => o.value === picked) ?? options[0] ?? null;
+  const hasDetails = myVpa !== null || methods.length > 0;
 
   const markReceived = () => {
-    if (amountPaise === null) {
+    if (amountMinor === null) {
       setError('Enter the amount you received.');
       return;
     }
@@ -77,25 +170,25 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
         groupId,
         fromMemberId: payer.id,
         toMemberId: me,
-        amountPaise,
-        method: 'upi',
-        note: 'Received via UPI',
+        amountPaise: amountMinor,
+        method: shown?.value === 'upi' ? 'upi' : 'other',
+        note: shown ? `Received via ${shown.label}` : 'Received',
         actorMemberId: me,
       });
       if (!result.ok) {
-        setError(describeSettlementError(result.error, (id) => (id === payer.id ? payer.name : 'This person')));
+        setError(describeSettlementError(result.error, (id) => (id === payer.id ? payer.name : 'This person'), currency));
         return;
       }
       recorded.current = true;
       router.back();
     };
 
-    const duplicate = isRecentDuplicate(db, groupId, payer.id, me, amountPaise);
+    const duplicate = isRecentDuplicate(db, groupId, payer.id, me, amountMinor);
     Alert.alert(
       duplicate ? 'Already recorded?' : 'Mark as received?',
       duplicate
-        ? `${formatPaise(amountPaise)} from ${payer.name} was recorded in the last 2 days. Record again?`
-        : `Only once ${formatPaise(amountPaise)} shows in your UPI app or bank SMS.`,
+        ? `${money(amountMinor)} from ${payer.name} was recorded in the last 2 days. Record again?`
+        : `Only once ${money(amountMinor)} shows in your account.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: duplicate ? 'Record anyway' : 'Mark received', onPress: save },
@@ -106,85 +199,117 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
   const reminder = () =>
     reminderMessage({
       groupName: setup.groupName,
-      currency: 'INR',
+      currency,
       debtorName: payer.name,
-      amountPaise: overLimit ? null : amountPaise,
+      amountPaise: amountMinor,
       upiId: myVpa,
+      inrPaise: currency === 'INR' ? null : upiPaise,
+      otherWays: methods.map((m) =>
+        m.kind === 'link' && amountMinor !== null
+          ? `${methodTitle(m)}: ${payLinkFor(m.url, amountMinor, currency, minorDigits(currency)).url}`
+          : methodShareLine(m),
+      ),
     });
 
+  const debt = setup.payerDebtPaise;
   const hint =
-    setup.payerDebtPaise > 0
-      ? `${payer.name} owes ${formatPaise(setup.payerDebtPaise)} in total. A part payment is fine.`
-      : `${payer.name} doesn’t owe anything right now.`;
+    debt > 0 ? `${payer.name} owes ${money(debt)}. Part payment is fine.` : `${payer.name} doesn’t owe anything right now.`;
 
   return (
     <>
       <Stack.Screen options={{ title: 'Get paid' }} />
       <KeyboardAwareScrollView bottomOffset={62} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.title, { color: theme.text }]}>Get paid by {payer.name}</Text>
-
-        <Text style={[styles.label, { color: theme.muted }]}>Amount</Text>
-        <View style={[styles.amountRow, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-          <Text style={[styles.rupee, { color: theme.muted }]}>₹</Text>
-          <TextInput
+        <Card style={styles.card}>
+          <View style={styles.person}>
+            <Avatar seed={payer.id} name={payer.name} size={44} />
+            <View style={styles.grow}>
+              <AppText variant="label" color={theme.muted}>
+                Get paid by
+              </AppText>
+              <AppText variant="heading" numberOfLines={1}>
+                {payer.name}
+              </AppText>
+            </View>
+          </View>
+          <AmountInput
             value={amountText}
+            currency={currency}
             onChangeText={(text) => {
-              setAmountText(sanitizeAmountInput(text, amountText));
+              setAmountText(sanitizeMoneyInput(text, amountText, currency));
               setError(null);
             }}
-            placeholder="0"
-            placeholderTextColor={theme.muted}
-            keyboardType="decimal-pad"
-            style={[styles.amountInput, { color: theme.text }]}
           />
-        </View>
-        <Text style={{ color: theme.muted }}>{hint}</Text>
+          <AppText variant="caption" color={theme.muted}>
+            {hint}
+          </AppText>
+        </Card>
 
-        {!myVpa ? (
-          <View style={styles.block}>
-            <Text style={{ color: theme.text }}>Add your UPI ID in this group to show a payment QR code.</Text>
-            <LinkButton
-              label="Add your UPI ID"
-              onPress={() =>
-                router.push({ pathname: '/groups/[groupId]/members/[memberId]/upi', params: { groupId, memberId: me } })
-              }
-            />
-          </View>
-        ) : overLimit ? (
-          <View style={styles.block}>
-            <Text style={{ color: theme.negative }}>
-              UPI allows up to {formatPaise(UPI_P2P_LIMIT_PAISE)} per payment. Ask for it in parts.
-            </Text>
-            <LinkButton
-              label={`Ask for ${formatPaise(UPI_P2P_LIMIT_PAISE)} now`}
-              onPress={() => setAmountText(paiseToInputString(UPI_P2P_LIMIT_PAISE))}
-            />
-          </View>
-        ) : uri ? (
-          <View style={styles.qrBlock}>
-            <QrCode value={uri} size={Math.min(width - 64, 300)} label={`UPI QR code to pay ${formatPaise(amountPaise!)} to ${myVpa}`} />
-            <Text style={[styles.center, { color: theme.text }]}>
-              Ask {payer.name} to scan this with any UPI app. The amount is filled in.
-            </Text>
-            <Text style={{ color: theme.muted }}>{myVpa}</Text>
-            <Text style={{ color: theme.muted }}>Not scanning? Raise screen brightness.</Text>
-          </View>
-        ) : (
-          <Text style={{ color: theme.muted }}>Enter an amount to show the QR code.</Text>
-        )}
+        {!hasDetails ? (
+          <Banner tone="info" icon="wallet" title="Add how you get paid" body="Then you can show a QR code here.">
+            <Button label="Add payment details" icon="add" variant="secondary" onPress={() => router.push('/payment-details')} />
+          </Banner>
+        ) : shown ? (
+          <Card style={[styles.card, styles.qrCard]}>
+            {options.length > 1 ? (
+              <View style={styles.stretch}>
+                <Segmented
+                  options={options.map((o) => ({ value: o.value, label: o.label }))}
+                  value={shown.value}
+                  onChange={setPicked}
+                  accessibilityLabel="QR code type"
+                />
+              </View>
+            ) : null}
+            <QrCode value={shown.payload} size={Math.min(width - 104, 280)} label={`${shown.label} QR code`} />
+            <AppText style={styles.centerText}>
+              {payer.name} scans with {shown.scanWith}.
+            </AppText>
+            {shown.value === 'upi' && currency !== 'INR' && upiPaise !== null && conversion ? (
+              <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+                {formatMoney(upiPaise, 'INR')} · {conversion.label}
+              </AppText>
+            ) : null}
+            <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+              Not scanning? Raise screen brightness.
+            </AppText>
+          </Card>
+        ) : amountMinor === null ? (
+          <AppText color={theme.muted} style={styles.centerText}>
+            Enter an amount to show a QR code.
+          </AppText>
+        ) : null}
 
-        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
+        {hasDetails ? (
+          <Card style={styles.card}>
+            <AppText variant="heading">Not together?</AppText>
+            <AppText variant="caption" color={theme.muted}>
+              Send a reminder with your payment details.
+            </AppText>
+            <ShareButtons label="Remind" accessibilityLabel={`Remind ${payer.name} on WhatsApp`} getText={reminder} />
+          </Card>
+        ) : null}
 
-        <PrimaryButton
-          label={amountPaise !== null ? `Mark ${formatPaise(amountPaise)} as received` : 'Mark as received'}
+        {error ? (
+          <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+            {error}
+          </AppText>
+        ) : null}
+
+        <Button
+          label={amountMinor !== null ? `Mark ${money(amountMinor)} received` : 'Mark as received'}
+          icon="check"
+          size="lg"
           onPress={markReceived}
-          disabled={amountPaise === null}
+          disabled={amountMinor === null}
         />
-        <Text style={[styles.label, { color: theme.muted }]}>Not together?</Text>
-        <ShareButtons
-          label="Remind"
-          accessibilityLabel={`Remind ${payer.name} on WhatsApp`}
-          getText={reminder}
+        <LinkButton
+          label="Received cash? Record it"
+          onPress={() =>
+            router.replace({
+              pathname: '/groups/[groupId]/settle',
+              params: { groupId, from: payer.id, to: me, ...(amountMinor ? { amount: String(amountMinor) } : {}) },
+            })
+          }
         />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
@@ -193,13 +318,12 @@ function RequestFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' },
-  container: { padding: 16, gap: 10, paddingBottom: 48 },
-  title: { fontSize: 20, fontWeight: '600' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
-  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
-  rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 34, fontWeight: '700', paddingVertical: 10 },
-  block: { gap: 6, marginTop: 8 },
-  qrBlock: { alignItems: 'center', gap: 8, marginTop: 12 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  container: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 48, gap: 14 },
+  card: { gap: 10 },
+  qrCard: { alignItems: 'center' },
+  person: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  grow: { flex: 1, minWidth: 0 },
+  centerText: { textAlign: 'center' },
+  stretch: { alignSelf: 'stretch' },
 });

@@ -1,16 +1,34 @@
-import * as Clipboard from 'expo-clipboard';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Linking, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
-import { recordSettlement } from '@/db/repositories/settlements';
-import { formatPaise, paiseToInputString, parseRupeesToPaise, sanitizeAmountInput } from '@/domain/money';
-import { buildUpiPayUri, paiseToUpiAmount, UPI_P2P_LIMIT_PAISE, UTR_PATTERN } from '@/domain/upi';
+import { MAX_NOTE_LENGTH, recordSettlement } from '@/db/repositories/settlements';
+import type { SettlementMethod } from '@/db/schema';
+import {
+  formatMoney,
+  minorDigits,
+  minorToInputString,
+  parseAmount,
+  sanitizeMoneyInput,
+} from '@/domain/currency';
+import {
+  buildPixPayload,
+  formatIban,
+  methodTitle,
+  minorToDecimal,
+  payLinkFor,
+  worksForCurrency,
+  type PayMethod,
+} from '@/domain/payMethods';
+import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE, UTR_PATTERN } from '@/domain/upi';
+import { useInrConversion } from '@/features/payments/inrConversion';
+import { iconForKind } from '@/features/payments/messages';
 import { describeSettlementError } from '@/features/settlements/messages';
-import { LinkButton, PrimaryButton } from '@/features/upi/buttons';
+import { copyText } from '@/features/share/copyText';
+import { LinkButton } from '@/features/upi/buttons';
 import { isRecentDuplicate } from '@/features/upi/duplicates';
 import { hasUpiApp, openUpiApp } from '@/features/upi/launch';
 import { loadPaySetup, type PaySetup } from '@/features/upi/loaders';
@@ -20,11 +38,26 @@ import {
   savePendingUpiPayment,
   type PendingUpiPayment,
 } from '@/features/upi/pendingUpiPayment';
+import { AppText } from '@/ui/AppText';
+import { Avatar } from '@/ui/Avatar';
+import { Banner } from '@/ui/Banner';
+import { Button } from '@/ui/Button';
+import { Card } from '@/ui/Card';
+import { CopyField } from '@/ui/CopyField';
+import { AmountInput, FieldLabel, Input } from '@/ui/Field';
+import { Icon, type IconName } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
-import { Text, TextInput } from '@/ui/Text';
 
 type Ready = Extract<PaySetup, { ok: true }>;
 type Phase = 'form' | 'waiting' | 'confirm';
+
+/** What the payer chose, remembered until they confirm. */
+interface Attempt {
+  via: string;
+  upi: boolean;
+  inrPaise?: number;
+  rate?: string;
+}
 
 // Module-level (not in a component), so reading the clock here is fine for the compiler's purity rule.
 function newPending(fields: Omit<PendingUpiPayment, 'startedAt'>): PendingUpiPayment {
@@ -36,7 +69,7 @@ export default function PayScreen() {
   const theme = useTheme();
   const [setup, setSetup] = useState<PaySetup>(() => loadPaySetup(groupId, to));
 
-  // Reload on focus: the payee's UPI ID may have just been added on the edit screen.
+  // Reload on focus: the payee's details may have just been added.
   useFocusEffect(
     useCallback(() => {
       setSetup(loadPaySetup(groupId, to));
@@ -46,33 +79,37 @@ export default function PayScreen() {
   if (!setup.ok) {
     return (
       <View style={styles.center}>
-        <Stack.Screen options={{ title: 'Pay with UPI' }} />
-        <Text style={{ color: theme.muted }}>{setup.message}</Text>
+        <Stack.Screen options={{ title: 'Pay' }} />
+        <AppText color={theme.muted}>{setup.message}</AppText>
       </View>
     );
   }
-  return <PayFlow setup={setup} groupId={groupId} suggestedPaise={Number(amount)} />;
+  return <PayFlow setup={setup} groupId={groupId} suggestedMinor={Number(amount)} />;
 }
 
-function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: string; suggestedPaise: number }) {
+function PayFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: string; suggestedMinor: number }) {
   const theme = useTheme();
-  const { me, payee } = setup;
+  const { me, payee, currency } = setup;
+  const money = (minor: number) => formatMoney(minor, currency);
 
   // A payment started earlier to the same person (app may have been killed meanwhile) → ask first.
   const [initial] = useState(() => {
     const p = getPendingUpiPayment(appContext);
     const resumed = p && p.groupId === groupId && p.fromMemberId === me && p.toMemberId === payee.id ? p : null;
-    const paise = resumed ? resumed.amountPaise : suggestedPaise;
+    const minor = resumed ? resumed.amountPaise : suggestedMinor;
     return {
       phase: (resumed ? 'confirm' : 'form') as Phase,
-      amountText: Number.isSafeInteger(paise) && paise > 0 ? paiseToInputString(paise) : '',
+      amountText: Number.isSafeInteger(minor) && minor > 0 ? minorToInputString(minor, currency) : '',
+      attempt: resumed
+        ? ({ via: resumed.via ?? 'UPI', upi: (resumed.via ?? 'UPI') === 'UPI', inrPaise: resumed.inrPaise, rate: resumed.rate } as Attempt)
+        : null,
     };
   });
   const [phase, setPhase] = useState<Phase>(initial.phase);
+  const [attempt, setAttempt] = useState<Attempt | null>(initial.attempt);
   const [amountText, setAmountText] = useState(initial.amountText);
   const [utr, setUtr] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [upiAppFound, setUpiAppFound] = useState<boolean | null>(null);
 
@@ -80,7 +117,15 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
   const leftApp = useRef(false);
   const recorded = useRef(false);
 
+  const parsed = parseAmount(amountText, currency);
+  const amountMinor = parsed.ok ? parsed.minor : null;
+  const conversion = useInrConversion(currency, amountMinor, payee.vpa !== null);
+  const upiPaise = currency === 'INR' ? amountMinor : (conversion?.inrPaise ?? null);
+  const overUpiLimit = upiPaise !== null && upiPaise > UPI_P2P_LIMIT_PAISE;
+  const methods = payee.methods.filter((m) => worksForCurrency(m, currency));
+
   useEffect(() => {
+    if (!payee.vpa) return;
     let alive = true;
     void hasUpiApp().then((found) => {
       if (alive) setUpiAppFound(found);
@@ -88,10 +133,9 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     return () => {
       alive = false;
     };
-  }, []);
+  }, [payee.vpa]);
 
-  // Subscribed for the whole screen (not per phase): the app can go to background before
-  // openURL resolves, and that event must not be missed.
+  // Subscribed for the whole screen: the app can go to background before openURL resolves.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (!awaitingReturn.current) return;
@@ -105,83 +149,112 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     return () => sub.remove();
   }, []);
 
-  const parsed = parseRupeesToPaise(amountText);
-  const amountPaise = parsed.ok && parsed.paise > 0 ? parsed.paise : null;
-  const overLimit = amountPaise !== null && amountPaise > UPI_P2P_LIMIT_PAISE;
-
-  const onAmountChange = (text: string) => {
-    setAmountText(sanitizeAmountInput(text, amountText));
-    setError(null);
-  };
-
-  const remember = (paise: number) =>
+  const begin = (next: Attempt, minor: number) => {
+    setAttempt(next);
     savePendingUpiPayment(
       appContext,
-      newPending({ groupId, fromMemberId: me, toMemberId: payee.id, amountPaise: paise }),
+      newPending({ groupId, fromMemberId: me, toMemberId: payee.id, amountPaise: minor, ...next }),
     );
+  };
 
-  const startPayment = async () => {
-    if (amountPaise === null) {
-      setError('Enter a valid amount.');
-      return;
-    }
-    if (overLimit || !payee.vpa) return;
-    let uri: string;
-    try {
-      uri = buildUpiPayUri({
-        payeeVpa: payee.vpa,
-        payeeName: payee.name,
-        amountPaise,
-        note: `Settle up ${setup.groupName}`,
-      });
-    } catch {
-      setError(`The UPI ID saved for ${payee.name} isn’t valid.`);
-      return;
-    }
+  const needAmount = (): number | null => {
+    if (amountMinor === null) setError('Enter a valid amount.');
+    return amountMinor;
+  };
 
-    remember(amountPaise);
+  /** Leave for another app; when the user comes back, ask whether it went through. */
+  const leaveFor = async (open: () => Promise<boolean>, next: Attempt, minor: number) => {
+    begin(next, minor);
     awaitingReturn.current = true;
     leftApp.current = false;
     setLaunching(true);
-    const result = await openUpiApp(uri);
+    const opened = await open();
     setLaunching(false);
-
-    if (result === 'opened') {
+    if (opened) {
       setPhase((p) => (p === 'confirm' ? p : 'waiting'));
       return;
     }
     awaitingReturn.current = false;
     clearPendingUpiPayment(appContext);
-    setError('No UPI app opened. Copy the UPI ID below and pay from your app.');
+    setError(next.upi ? 'No UPI app opened. Copy the UPI ID and pay from your app.' : 'Couldn’t open the link.');
   };
 
-  const paidAnotherWay = () => {
-    if (amountPaise !== null) remember(amountPaise);
+  const payWithUpi = () => {
+    const minor = needAmount();
+    if (minor === null || !payee.vpa || upiPaise === null || overUpiLimit) return;
+    let uri: string;
+    try {
+      uri = buildUpiPayUri({ payeeVpa: payee.vpa, payeeName: payee.name, amountPaise: upiPaise, note: `Settle up ${setup.groupName}` });
+    } catch {
+      setError(`The UPI ID saved for ${payee.name} isn’t valid.`);
+      return;
+    }
+    const next: Attempt =
+      currency === 'INR' ? { via: 'UPI', upi: true } : { via: 'UPI', upi: true, inrPaise: upiPaise, rate: conversion?.rate };
+    void leaveFor(async () => (await openUpiApp(uri)) === 'opened', next, minor);
+  };
+
+  const openLink = (m: Extract<PayMethod, { kind: 'link' }>) => {
+    const minor = needAmount();
+    if (minor === null) return;
+    const link = payLinkFor(m.url, minor, currency, minorDigits(currency));
+    void leaveFor(
+      async () => {
+        // Where the link can't carry the amount, it's on the clipboard to paste.
+        if (!link.amountIncluded) await copyText(minorToInputString(minor, currency), 'Amount copied');
+        try {
+          await Linking.openURL(link.url);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { via: methodTitle(m), upi: false },
+      minor,
+    );
+  };
+
+  const copyPix = (m: Extract<PayMethod, { kind: 'pix' }>) => {
+    const minor = needAmount();
+    if (minor === null) return;
+    void copyText(buildPixPayload({ key: m.key, name: m.name, city: m.city, amountCentavos: minor }), 'Pix code copied');
+    begin({ via: 'Pix', upi: false }, minor);
+    awaitingReturn.current = true;
+    leftApp.current = false;
+    setPhase('waiting');
+  };
+
+  /** Bank transfers etc.: the payer copies details and comes back to confirm. */
+  const sentManually = (via: string) => {
+    const minor = needAmount();
+    if (minor === null) return;
+    begin({ via, upi: false }, minor);
     awaitingReturn.current = false;
     setError(null);
     setPhase('confirm');
   };
 
-  const backFromUpiApp = () => {
-    awaitingReturn.current = false;
-    setPhase('confirm');
-  };
-
-  const copy = async (text: string, label: string) => {
-    await Clipboard.setStringAsync(text);
-    setCopied(label);
-  };
+  const recordCashInstead = () =>
+    router.replace({
+      pathname: '/groups/[groupId]/settle',
+      params: { groupId, from: me, to: payee.id, ...(amountMinor ? { amount: String(amountMinor) } : {}) },
+    });
 
   const recordPayment = () => {
-    if (amountPaise === null) {
-      setError('Enter the amount you paid.');
-      return;
-    }
+    const minor = needAmount();
+    if (minor === null || !attempt) return;
     const ref = utr.replace(/\s+/g, '');
-    if (ref !== '' && !UTR_PATTERN.test(ref)) {
+    if (attempt.upi && ref !== '' && !UTR_PATTERN.test(ref)) {
       setError('UPI reference is 12 digits. Or leave it blank.');
       return;
     }
+    const parts = [
+      attempt.inrPaise ? `${formatMoney(attempt.inrPaise, 'INR')} via UPI` : `Paid via ${attempt.via}`,
+      attempt.inrPaise && attempt.rate ? `1 ${currency} = ₹${attempt.rate}` : null,
+      ref ? `ref ${ref}` : null,
+    ];
+    const note = parts.filter(Boolean).join(' · ').slice(0, MAX_NOTE_LENGTH);
+    const method: SettlementMethod = attempt.upi ? 'upi' : 'other';
 
     const save = () => {
       if (recorded.current) return;
@@ -189,13 +262,13 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
         groupId,
         fromMemberId: me,
         toMemberId: payee.id,
-        amountPaise,
-        method: 'upi',
-        note: ref ? `UPI ref ${ref}` : 'Paid via UPI',
+        amountPaise: minor,
+        method,
+        note,
         actorMemberId: me,
       });
       if (!result.ok) {
-        setError(describeSettlementError(result.error, (id) => (id === payee.id ? payee.name : 'This person')));
+        setError(describeSettlementError(result.error, (id) => (id === payee.id ? payee.name : 'This person'), currency));
         return;
       }
       recorded.current = true;
@@ -204,15 +277,11 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     };
 
     // The payee may already have recorded it on their phone.
-    if (isRecentDuplicate(db, groupId, me, payee.id, amountPaise)) {
-      Alert.alert(
-        'Already recorded?',
-        `${formatPaise(amountPaise)} to ${payee.name} was recorded in the last 2 days. Record again?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Record anyway', onPress: save },
-        ],
-      );
+    if (isRecentDuplicate(db, groupId, me, payee.id, minor)) {
+      Alert.alert('Already recorded?', `${money(minor)} to ${payee.name} was recorded in the last 2 days. Record again?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Record anyway', onPress: save },
+      ]);
       return;
     }
     save();
@@ -223,169 +292,329 @@ function PayFlow({ setup, groupId, suggestedPaise }: { setup: Ready; groupId: st
     awaitingReturn.current = false;
     setError(null);
     setUtr('');
+    setAttempt(null);
     setPhase('form');
   };
 
-  const amountField = (label: string) => (
-    <>
-      <Text style={[styles.label, { color: theme.muted }]}>{label}</Text>
-      <View style={[styles.amountRow, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-        <Text style={[styles.rupee, { color: theme.muted }]}>₹</Text>
-        <TextInput
-          value={amountText}
-          onChangeText={onAmountChange}
-          placeholder="0"
-          placeholderTextColor={theme.muted}
-          keyboardType="decimal-pad"
-          style={[styles.amountInput, { color: theme.text }]}
-        />
-      </View>
-    </>
-  );
+  const errorText = error ? (
+    <AppText variant="label" color={theme.negative} accessibilityLiveRegion="polite">
+      {error}
+    </AppText>
+  ) : null;
 
+  // ── Waiting for the other app ──
   if (phase === 'waiting') {
     return (
-      <View style={styles.container}>
-        <Stack.Screen options={{ title: 'Pay with UPI' }} />
-        <Text style={[styles.title, { color: theme.text }]}>Finish the payment in your UPI app</Text>
-        <Text style={{ color: theme.muted }}>Come back here when you’re done.</Text>
-        <PrimaryButton label="I’m back" onPress={backFromUpiApp} />
+      <View style={styles.waiting}>
+        <Stack.Screen options={{ title: `Pay ${payee.name}` }} />
+        <ActivityIndicator color={theme.primary} size="large" />
+        <AppText variant="heading" style={styles.centerText}>
+          {attempt?.via === 'Pix' ? 'Paste the Pix code in your bank app' : `Finish in ${attempt?.via ?? 'the other app'}`}
+        </AppText>
+        <AppText color={theme.muted} style={styles.centerText}>
+          Come back here when you’re done.
+        </AppText>
+        <Button label="I’m back" size="lg" onPress={() => setPhase('confirm')} style={styles.stretch} />
       </View>
     );
   }
 
+  // ── Did it go through? ──
   if (phase === 'confirm') {
     return (
       <>
         <Stack.Screen options={{ title: 'Confirm payment' }} />
         <KeyboardAwareScrollView bottomOffset={62} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <Text style={[styles.title, { color: theme.text }]}>Did the payment to {payee.name} go through?</Text>
-          <Text style={{ color: theme.muted }}>Check your UPI app or bank SMS. Pending? Choose “Not sure yet”.</Text>
-          {amountField('Amount paid')}
-          <Text style={[styles.label, { color: theme.muted }]}>UPI reference no. (optional)</Text>
-          <TextInput
-            value={utr}
-            onChangeText={(v) => {
-              setUtr(v);
-              setError(null);
-            }}
-            placeholder="12 digits"
-            placeholderTextColor={theme.muted}
-            keyboardType="number-pad"
-            maxLength={16}
-            style={[styles.input, { color: theme.text, backgroundColor: theme.surface, borderColor: theme.border }]}
-          />
-          {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
-          <PrimaryButton
-            label={amountPaise ? `Yes, record ${formatPaise(amountPaise)} paid` : 'Yes, record payment'}
+          <Card style={styles.card}>
+            <AppText variant="heading">Did your payment to {payee.name} go through?</AppText>
+            <AppText variant="label" color={theme.muted}>
+              {attempt?.upi ? 'Check your UPI app or bank SMS.' : `Check ${attempt?.via ?? 'your app'}.`}
+            </AppText>
+            {attempt?.inrPaise ? (
+              <AppText variant="label" color={theme.muted}>
+                You sent {formatMoney(attempt.inrPaise, 'INR')} by UPI.
+              </AppText>
+            ) : null}
+            <FieldLabel>Amount paid</FieldLabel>
+            <AmountInput
+              value={amountText}
+              currency={currency}
+              onChangeText={(text) => {
+                setAmountText(sanitizeMoneyInput(text, amountText, currency));
+                setError(null);
+              }}
+            />
+            {attempt?.upi ? (
+              <>
+                <FieldLabel>UPI reference (optional)</FieldLabel>
+                <Input
+                  value={utr}
+                  onChangeText={(v) => {
+                    setUtr(v);
+                    setError(null);
+                  }}
+                  placeholder="12 digits"
+                  keyboardType="number-pad"
+                  maxLength={16}
+                  accessibilityLabel="UPI reference"
+                />
+              </>
+            ) : null}
+          </Card>
+          {errorText}
+          <Button
+            label={amountMinor ? `Yes, record ${money(amountMinor)}` : 'Yes, record it'}
+            icon="check"
+            size="lg"
             onPress={recordPayment}
           />
-          <LinkButton label="No, it failed or I cancelled" onPress={markFailed} color={theme.negative} />
-          <LinkButton label="Not sure yet" onPress={() => router.back()} color={theme.muted} />
+          <View style={styles.row}>
+            <Button label="It failed" icon="close" variant="danger" onPress={markFailed} style={styles.grow} />
+            <Button label="Not sure yet" variant="secondary" onPress={() => router.back()} style={styles.grow} />
+          </View>
         </KeyboardAwareScrollView>
         <KeyboardToolbar />
       </>
     );
   }
 
-  let hint: string;
-  if (setup.myDebtPaise === 0) hint = 'You don’t owe anything right now.';
-  else if (amountPaise !== null && amountPaise > setup.myDebtPaise)
-    hint = `More than you owe (${formatPaise(setup.myDebtPaise)}).`;
-  else hint = `You owe ${formatPaise(setup.myDebtPaise)}. Part payment is fine.`;
+  // ── Choose how to pay ──
+  const debt = setup.myDebtPaise;
+  const hint =
+    debt === 0
+      ? 'You don’t owe anything right now.'
+      : amountMinor !== null && amountMinor > debt
+        ? `More than you owe (${money(debt)}).`
+        : `You owe ${money(debt)}. Part payment is fine.`;
+  const nothing = !payee.vpa && methods.length === 0;
+  // The first way to pay gets the filled button; the rest are outlined, so one action leads.
+  const variantFor = (index: number) => ((payee.vpa ? index === -1 : index === 0) ? 'primary' : 'secondary');
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Pay with UPI' }} />
+      <Stack.Screen options={{ title: 'Pay' }} />
       <KeyboardAwareScrollView bottomOffset={62} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.title, { color: theme.text }]}>Pay {payee.name}</Text>
-        {payee.vpa ? <Text style={{ color: theme.muted }}>UPI ID: {payee.vpa}</Text> : null}
-
-        {amountField('Amount')}
-        <Text style={{ color: theme.muted }}>{hint}</Text>
-
-        {overLimit ? (
-          <View style={styles.block}>
-            <Text style={{ color: theme.negative }}>
-              UPI limit is {formatPaise(UPI_P2P_LIMIT_PAISE)} per payment. Pay in parts.
-            </Text>
-            <LinkButton
-              label={`Pay ${formatPaise(UPI_P2P_LIMIT_PAISE)} now`}
-              onPress={() => setAmountText(paiseToInputString(UPI_P2P_LIMIT_PAISE))}
-            />
+        <Card style={styles.card}>
+          <View style={styles.person}>
+            <Avatar seed={payee.id} name={payee.name} size={44} />
+            <View style={styles.grow}>
+              <AppText variant="label" color={theme.muted}>
+                Pay
+              </AppText>
+              <AppText variant="heading" numberOfLines={1}>
+                {payee.name}
+              </AppText>
+            </View>
           </View>
+          <AmountInput
+            value={amountText}
+            currency={currency}
+            onChangeText={(text) => {
+              setAmountText(sanitizeMoneyInput(text, amountText, currency));
+              setError(null);
+            }}
+          />
+          <AppText variant="caption" color={theme.muted}>
+            {hint}
+          </AppText>
+        </Card>
+
+        {errorText}
+
+        {payee.isPlaceholder && !nothing ? (
+          <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+            {payee.name} isn’t on the app. Check these details with them.
+          </AppText>
         ) : null}
 
-        {error ? <Text style={{ color: theme.negative }}>{error}</Text> : null}
-
+        {/* UPI: rupees, also for groups in other currencies (converted at today's rate). */}
         {payee.vpa ? (
-          <>
-            <PrimaryButton
-              label={launching ? 'Opening…' : amountPaise ? `Pay ${formatPaise(amountPaise)} with UPI app` : 'Pay with UPI app'}
-              onPress={() => void startPayment()}
-              disabled={launching || overLimit || amountPaise === null}
-            />
-            {upiAppFound === false ? (
-              <Text style={{ color: theme.warning }}>No UPI app found. Try anyway, or copy the details below.</Text>
+          <MethodCard icon="upiPay" title="UPI" detail={payee.vpa}>
+            {currency !== 'INR' && amountMinor !== null ? (
+              <AppText variant="caption" color={theme.muted}>
+                {conversion ? `${conversion.label} · today’s rate` : 'Getting today’s rate…'}
+              </AppText>
             ) : null}
-            <Text style={{ color: theme.muted }}>Check the name in your UPI app before paying.</Text>
-
-            <Text style={[styles.label, { color: theme.muted }]}>UPI app not working?</Text>
+            {overUpiLimit ? (
+              <AppText variant="caption" color={theme.negative}>
+                UPI limit is {formatMoney(UPI_P2P_LIMIT_PAISE, 'INR')} per payment. Pay in parts.
+              </AppText>
+            ) : null}
+            {upiAppFound === false ? (
+              <AppText variant="caption" color={theme.warning}>
+                No UPI app found. Try anyway, or copy the UPI ID.
+              </AppText>
+            ) : null}
             <View style={styles.row}>
-              <LinkButton label="Copy UPI ID" onPress={() => void copy(payee.vpa!, 'UPI ID')} />
-              {amountPaise && !overLimit ? (
-                <LinkButton label="Copy amount" onPress={() => void copy(paiseToUpiAmount(amountPaise), 'Amount')} />
-              ) : null}
+              <Button
+                label={upiPaise ? `Pay ${formatMoney(upiPaise, 'INR')}` : 'Pay with UPI'}
+                icon="upiPay"
+                variant={variantFor(-1)}
+                busy={launching}
+                disabled={upiPaise === null || overUpiLimit}
+                onPress={payWithUpi}
+                style={styles.grow}
+              />
+              <Button
+                label="Copy ID"
+                icon="copy"
+                variant="secondary"
+                onPress={() => void copyText(payee.vpa!, 'UPI ID copied')}
+              />
             </View>
-            {copied ? <Text style={{ color: theme.muted }}>{copied} copied.</Text> : null}
-            <LinkButton label="Paid another way? Record it" onPress={paidAnotherWay} />
-          </>
-        ) : (
-          <View style={styles.block}>
-            <Text style={{ color: theme.text }}>
-              {payee.storedVpaInvalid
-                ? `The UPI ID saved for ${payee.name} isn’t valid.`
-                : `${payee.name} hasn’t added a UPI ID in this group.`}
-            </Text>
+          </MethodCard>
+        ) : null}
+
+        {methods.map((m, i) => (
+          <MethodCard key={i} icon={iconForKind(m.kind)} title={methodTitle(m)} detail={null}>
+            <MethodBody method={m} amountMinor={amountMinor} currency={currency} payeeName={payee.name} />
+            {m.kind === 'link' ? (
+              <>
+                <Button
+                  label={`Open ${methodTitle(m)}`}
+                  icon="openExternal"
+                  variant={variantFor(i)}
+                  onPress={() => openLink(m)}
+                />
+                <AppText variant="caption" color={theme.muted} style={styles.centerText}>
+                  {amountMinor !== null && payLinkFor(m.url, amountMinor, currency, minorDigits(currency)).amountIncluded
+                    ? 'Amount filled in.'
+                    : 'Amount is copied: paste it there.'}
+                </AppText>
+              </>
+            ) : m.kind === 'pix' ? (
+              <Button label="Copy Pix code" icon="copy" variant={variantFor(i)} onPress={() => copyPix(m)} />
+            ) : (
+              <Button label="I’ve sent it" icon="check" variant={variantFor(i)} onPress={() => sentManually(methodTitle(m))} />
+            )}
+          </MethodCard>
+        ))}
+
+        {nothing ? (
+          <Banner tone="info" icon="wallet" title={`${payee.name} hasn’t added payment details`}>
             {payee.canEditVpa ? (
-              <LinkButton
-                label={`Add ${payee.name}’s UPI ID`}
+              <Button
+                label="Add their details"
+                icon="add"
+                variant="secondary"
                 onPress={() =>
                   router.push({
-                    pathname: '/groups/[groupId]/members/[memberId]/upi',
+                    pathname: '/groups/[groupId]/members/[memberId]/payment',
                     params: { groupId, memberId: payee.id },
                   })
                 }
               />
-            ) : (
-              <Text style={{ color: theme.muted }}>Ask {payee.name} to add it.</Text>
-            )}
-            <LinkButton
-              label="Paid another way? Record it"
-              onPress={() =>
-                router.replace({
-                  pathname: '/groups/[groupId]/settle',
-                  params: { groupId, from: me, to: payee.id, ...(amountPaise ? { amount: String(amountPaise) } : {}) },
-                })
-              }
-            />
-          </View>
-        )}
+            ) : null}
+          </Banner>
+        ) : null}
+
+        <LinkButton label="Paid in cash or another way? Record it" onPress={recordCashInstead} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>
   );
 }
 
+function MethodCard({
+  icon,
+  title,
+  detail,
+  children,
+}: {
+  icon: IconName;
+  title: string;
+  detail: string | null;
+  children: React.ReactNode;
+}) {
+  const theme = useTheme();
+  return (
+    <Card style={styles.card}>
+      <View style={styles.person}>
+        <View style={[styles.methodIcon, { backgroundColor: theme.primarySoft }]}>
+          <Icon name={icon} color={theme.onPrimarySoft} size={20} />
+        </View>
+        <View style={styles.grow}>
+          <AppText variant="heading">{title}</AppText>
+          {detail ? (
+            <AppText variant="label" color={theme.muted} numberOfLines={1} selectable>
+              {detail}
+            </AppText>
+          ) : null}
+        </View>
+      </View>
+      {children}
+    </Card>
+  );
+}
+
+/** The details a payer needs to copy for each kind of method. */
+function MethodBody({
+  method: m,
+  amountMinor,
+  currency,
+  payeeName,
+}: {
+  method: PayMethod;
+  amountMinor: number | null;
+  currency: string;
+  payeeName: string;
+}) {
+  const amount =
+    amountMinor !== null ? (
+      <CopyField
+        label="Amount"
+        value={formatMoney(amountMinor, currency)}
+        copyValue={minorToDecimal(amountMinor, minorDigits(currency))}
+      />
+    ) : null;
+  switch (m.kind) {
+    case 'link':
+      return <CopyField label="Link" value={m.url.replace(/^https:\/\//, '')} copyValue={m.url} />;
+    case 'iban':
+      return (
+        <>
+          <CopyField label="Name" value={m.name} />
+          <CopyField label="IBAN" value={formatIban(m.iban)} copyValue={m.iban} />
+          {m.bic ? <CopyField label="BIC" value={m.bic} /> : null}
+          {amount}
+        </>
+      );
+    case 'bank':
+      return (
+        <>
+          <CopyField label="Bank details" value={m.text} />
+          {amount}
+        </>
+      );
+    case 'pix':
+      return <CopyField label="Pix key" value={m.key} />;
+    case 'paynow':
+      return (
+        <>
+          <CopyField label={m.proxy.startsWith('+') ? 'PayNow mobile' : 'PayNow UEN'} value={m.proxy} />
+          {m.name ? <CopyField label="Name" value={m.name} /> : null}
+          {amount}
+        </>
+      );
+    case 'promptpay':
+      return (
+        <>
+          <CopyField label={`PromptPay (${payeeName})`} value={m.id} />
+          {amount}
+        </>
+      );
+  }
+}
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  container: { padding: 16, gap: 10, paddingBottom: 48 },
-  title: { fontSize: 20, fontWeight: '600' },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 8 },
-  amountRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
-  rupee: { fontSize: 28, marginRight: 6 },
-  amountInput: { flex: 1, fontSize: 34, fontWeight: '700', paddingVertical: 10 },
-  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, minHeight: 48, paddingVertical: 10, fontSize: 16 },
-  row: { flexDirection: 'row', gap: 20 },
-  block: { gap: 6, marginTop: 8 },
+  container: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 48, gap: 14 },
+  waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 14 },
+  card: { gap: 10 },
+  person: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  methodIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  grow: { flex: 1, minWidth: 0 },
+  row: { flexDirection: 'row', gap: 10 },
+  centerText: { textAlign: 'center' },
+  stretch: { alignSelf: 'stretch' },
 });
