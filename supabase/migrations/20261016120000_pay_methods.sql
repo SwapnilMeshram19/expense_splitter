@@ -37,8 +37,11 @@ as $$
   );
 $$;
 
-revoke execute on function private.valid_pay_methods(jsonb) from public, anon, authenticated;
-grant execute on function private.valid_pay_methods(jsonb) to service_role;
+-- Executable by every role on purpose (functions in this schema are locked down by default): a
+-- CHECK constraint runs it as whoever writes the row (service_role in apply_push, the definer in
+-- join_group, the owner for FK actions on account deletion). It's a pure validator: calling it
+-- reveals nothing.
+grant execute on function private.valid_pay_methods(jsonb) to public;
 
 alter table public.members add column pay_methods jsonb;
 alter table public.members add constraint members_pay_methods_check check (private.valid_pay_methods(pay_methods));

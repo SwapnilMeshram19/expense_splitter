@@ -13,7 +13,7 @@ import { createRule, discardNewRule } from '@/db/repositories/recurring';
 import { deviceTimeZone } from '@/features/recurring/deviceTimeZone';
 import { describeRuleError } from '@/features/recurring/messages';
 import { useTheme } from '@/ui/theme';
-import { Text } from '@/ui/Text';
+import { AppText } from '@/ui/AppText';
 
 export default function NewExpenseScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -24,7 +24,7 @@ export default function NewExpenseScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Add expense' }} />
-        <Text style={{ color: theme.muted }}>{setup.message}</Text>
+        <AppText color={theme.muted}>{setup.message}</AppText>
       </View>
     );
   }

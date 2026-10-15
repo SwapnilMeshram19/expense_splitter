@@ -270,6 +270,17 @@ function SettingsForm({
         <Card style={listCardStyle}>
           <ListRow icon="personAdd" title="Invite people" onPress={() => open('/groups/[groupId]/invite')} />
           <ListRow
+            icon="wallet"
+            title="Your payment details"
+            detail={members.find((m) => m.id === me)?.payWith ?? 'Add'}
+            onPress={() =>
+              router.push({
+                pathname: '/groups/[groupId]/members/[memberId]/payment',
+                params: { groupId: group.id, memberId: me },
+              })
+            }
+          />
+          <ListRow
             icon="repeat"
             title="Repeating expenses"
             detail="Rent, Wi-Fi…"

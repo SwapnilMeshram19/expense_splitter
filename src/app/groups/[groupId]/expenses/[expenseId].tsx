@@ -14,7 +14,7 @@ import { expenseShareText } from '@/features/share/loaders';
 import { useShareSheet } from '@/features/share/ShareSheet';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
 import { useTheme } from '@/ui/theme';
-import { Text } from '@/ui/Text';
+import { AppText } from '@/ui/AppText';
 
 export default function EditExpenseScreen() {
   const { groupId, expenseId } = useLocalSearchParams<{ groupId: string; expenseId: string }>();
@@ -26,7 +26,7 @@ export default function EditExpenseScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Edit expense' }} />
-        <Text style={{ color: theme.muted }}>{setup.message}</Text>
+        <AppText color={theme.muted}>{setup.message}</AppText>
       </View>
     );
   }

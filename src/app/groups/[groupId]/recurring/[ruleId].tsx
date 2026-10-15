@@ -10,7 +10,7 @@ import { deviceTimeZone } from '@/features/recurring/deviceTimeZone';
 import { loadRuleSetup } from '@/features/recurring/loadRuleSetup';
 import { describeRuleError } from '@/features/recurring/messages';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
-import { Text } from '@/ui/Text';
+import { AppText } from '@/ui/AppText';
 import { useTheme } from '@/ui/theme';
 
 /** Edit a repeating expense. Changes apply to future occurrences; past ones stay as they are. */
@@ -23,7 +23,7 @@ export default function EditRuleScreen() {
     return (
       <View style={styles.center}>
         <Stack.Screen options={{ title: 'Repeating expense' }} />
-        <Text style={{ color: theme.muted }}>{setup.message}</Text>
+        <AppText color={theme.muted}>{setup.message}</AppText>
       </View>
     );
   }
