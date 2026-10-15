@@ -26,6 +26,7 @@ import {
 import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE, UTR_PATTERN } from '@/domain/upi';
 import { useInrConversion } from '@/features/payments/inrConversion';
 import { iconForKind } from '@/features/payments/messages';
+import { celebrateIfSettled } from '@/features/settlements/celebrate';
 import { describeSettlementError } from '@/features/settlements/messages';
 import { copyText } from '@/features/share/copyText';
 import { LinkButton } from '@/features/upi/buttons';
@@ -274,6 +275,7 @@ function PayFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: st
       recorded.current = true;
       clearPendingUpiPayment(appContext);
       router.back();
+      celebrateIfSettled(groupId);
     };
 
     // The payee may already have recorded it on their phone.

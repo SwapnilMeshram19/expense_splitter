@@ -13,6 +13,7 @@ import {
   sanitizeMoneyInput,
 } from '@/domain/currency';
 import { loadSettleSetup, type SettleSetup } from '@/features/settlements/loadSettleSetup';
+import { celebrateIfSettled } from '@/features/settlements/celebrate';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
@@ -123,6 +124,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
       return;
     }
     router.back();
+    celebrateIfSettled(params.groupId);
   };
 
   const memberPicker = (label: string, selectedId: string, onSelect: (id: string) => void) => (

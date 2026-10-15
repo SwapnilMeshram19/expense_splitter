@@ -26,6 +26,7 @@ import {
 } from '@/domain/payMethods';
 import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE } from '@/domain/upi';
 import { useInrConversion } from '@/features/payments/inrConversion';
+import { celebrateIfSettled } from '@/features/settlements/celebrate';
 import { describeSettlementError } from '@/features/settlements/messages';
 import { reminderMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
@@ -181,6 +182,7 @@ function RequestFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId
       }
       recorded.current = true;
       router.back();
+      celebrateIfSettled(groupId);
     };
 
     const duplicate = isRecentDuplicate(db, groupId, payer.id, me, amountMinor);

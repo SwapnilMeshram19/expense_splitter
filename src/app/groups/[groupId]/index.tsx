@@ -20,6 +20,7 @@ import {
   type ActivityRow,
   type GroupView,
   type HistoryRow,
+  type SettledPart,
 } from '@/features/groups/loadGroupView';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
@@ -58,11 +59,19 @@ type Row =
   | { kind: 'share'; key: string }
   | { kind: 'balance'; key: string; memberId: string; balance: number }
   | { kind: 'activity'; key: string; item: ActivityRow }
+  | { kind: 'settledMarker'; key: string }
+  /** A row from before the last settle-up, shown faded when the settled part is expanded. */
+  | { kind: 'past'; key: string; row: HistoryRow }
   | { kind: 'empty'; key: string; text: string };
 
-function rowsFor(segment: Segment, view: GroupView): Row[] {
+function rowsFor(segment: Segment, view: GroupView, showSettled: boolean): Row[] {
   if (segment === 'expenses') {
-    if (view.history.length > 0) return view.history;
+    const rows: Row[] = [...view.history];
+    if (view.settled) {
+      rows.push({ kind: 'settledMarker', key: 'settled-marker' });
+      if (showSettled) rows.push(...view.settled.history.map((row) => ({ kind: 'past' as const, key: `p-${row.key}`, row })));
+    }
+    if (rows.length > 0) return rows;
     return [
       {
         kind: 'empty',
@@ -98,6 +107,7 @@ export default function GroupDetailScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [segment, setSegment] = useState<Segment>('expenses');
+  const [showSettled, setShowSettled] = useState(false);
   const compute = useCallback(() => loadGroupView(db, groupId, getDeviceUserId(), todayIsoDate()), [groupId]);
   const view = useLiveData(GROUP_VIEW_TABLES, compute);
   const refreshControl = useSyncRefreshControl();
@@ -205,8 +215,20 @@ export default function GroupDetailScreen() {
     </View>
   );
 
-  const renderRow = ({ item }: { item: Row }) => {
+  const renderRow = ({ item }: { item: Row }): React.ReactElement | null => {
     switch (item.kind) {
+      case 'settledMarker':
+        return view.settled ? (
+          <SettledMarker
+            settled={view.settled}
+            money={money}
+            open={showSettled}
+            onToggle={() => setShowSettled((v) => !v)}
+            theme={theme}
+          />
+        ) : null;
+      case 'past':
+        return <View style={styles.past}>{renderRow({ item: item.row })}</View>;
       case 'date':
         return (
           <AppText variant="caption" color={theme.muted} style={styles.dateHeader} accessibilityRole="header">
@@ -281,7 +303,7 @@ export default function GroupDetailScreen() {
             accessibilityHint={canEdit ? 'Opens the option to delete this payment' : undefined}
             style={({ pressed }) => [styles.settlementRow, { backgroundColor: theme.primarySoft, opacity: pressed ? 0.7 : 1 }]}
           >
-            <Icon name="settle" color={theme.onPrimarySoft} size={20} />
+            <Icon name="checkCircle" color={theme.onPrimarySoft} size={20} />
             <View style={styles.grow}>
               <AppText variant="label" color={theme.onPrimarySoft} numberOfLines={1}>
                 {text}
@@ -342,11 +364,18 @@ export default function GroupDetailScreen() {
             <AppText style={styles.grow} numberOfLines={1}>
               {isMe ? `${view.names.get(item.memberId) ?? 'You'} (you)` : nameOf(item.memberId)}
             </AppText>
-            <AppText variant="label" color={toneColor(theme, tone)} style={styles.bold}>
-              {item.balance === 0
-                ? 'settled'
-                : `${item.balance > 0 ? 'gets back' : 'owes'} ${money(Math.abs(item.balance))}`}
-            </AppText>
+            {item.balance === 0 ? (
+              <View style={styles.settledTag}>
+                <Icon name="checkCircle" color={theme.positive} size={16} />
+                <AppText variant="label" color={theme.muted}>
+                  Settled
+                </AppText>
+              </View>
+            ) : (
+              <AppText variant="label" color={toneColor(theme, tone)} style={styles.bold}>
+                {`${item.balance > 0 ? 'gets back' : 'owes'} ${money(Math.abs(item.balance))}`}
+              </AppText>
+            )}
           </View>
         );
       }
@@ -399,7 +428,8 @@ export default function GroupDetailScreen() {
       />
       <FlashList
         refreshControl={refreshControl}
-        data={rowsFor(segment, view)}
+        data={rowsFor(segment, view, showSettled)}
+        extraData={showSettled}
         keyExtractor={(row) => row.key}
         getItemType={(row) => row.kind}
         ListHeaderComponent={header}
@@ -451,8 +481,17 @@ function SummaryCard({
   onInvite?: () => void;
 }) {
   const { myBalance, me, transfers, activeMembers } = view;
+  const everyoneSquare = transfers.length === 0 && view.expenseCount > 0;
   const title =
-    myBalance > 0 ? 'You’re owed' : myBalance < 0 ? 'You owe' : 'You’re all settled up';
+    myBalance > 0
+      ? 'You’re owed'
+      : myBalance < 0
+        ? 'You owe'
+        : everyoneSquare
+          ? 'Everyone’s settled up'
+          : view.expenseCount === 0
+            ? 'No expenses yet'
+            : 'You’re settled up';
   const mine = transfers.filter((t) => t.fromMemberId === me || t.toMemberId === me).slice(0, 3);
   const stack = activeMembers.slice(0, 3);
   const extra = activeMembers.length - stack.length;
@@ -461,9 +500,23 @@ function SummaryCard({
     <Card style={styles.summary}>
       <View style={styles.summaryTop}>
         <View style={styles.grow} accessible>
-          <AppText variant="label" color={theme.muted}>
-            {title}
-          </AppText>
+          {myBalance === 0 && view.expenseCount > 0 ? (
+            <View style={styles.settledTitle}>
+              <Icon name="settledAll" color={theme.positive} size={22} />
+              <AppText variant="heading" color={theme.positive}>
+                {title}
+              </AppText>
+            </View>
+          ) : (
+            <AppText variant="label" color={theme.muted}>
+              {title}
+            </AppText>
+          )}
+          {myBalance === 0 && view.settled && everyoneSquare ? (
+            <AppText variant="caption" color={theme.muted}>
+              Since {view.settled.through}
+            </AppText>
+          ) : null}
           {myBalance !== 0 ? (
             <AppText variant="title" color={myBalance > 0 ? theme.positive : theme.negative}>
               {money(Math.abs(myBalance))}
@@ -536,8 +589,53 @@ function SummaryCard({
           <Button label="Settle up" icon="settle" onPress={onSettle} style={styles.grow} />
           <Button label="Share" icon="share" variant="secondary" onPress={onShare} style={styles.grow} />
         </View>
+      ) : everyoneSquare ? (
+        <Button label="Share with the group" icon="share" variant="secondary" onPress={onShare} />
       ) : null}
     </Card>
+  );
+}
+
+/** "Settled up · 3 Oct · 12 expenses · ₹45,000", tap to show or hide them. */
+function SettledMarker({
+  settled,
+  money,
+  open,
+  onToggle,
+  theme,
+}: {
+  settled: SettledPart;
+  money: (minor: number) => string;
+  open: boolean;
+  onToggle: () => void;
+  theme: Theme;
+}) {
+  const count = `${settled.expenseCount} expense${settled.expenseCount === 1 ? '' : 's'}`;
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={`Settled up ${settled.through}, ${count}, ${money(settled.total)}. ${open ? 'Hide' : 'Show'}`}
+      style={({ pressed }) => [
+        styles.settledMarker,
+        { backgroundColor: theme.primarySoft, opacity: pressed ? 0.8 : 1 },
+      ]}
+    >
+      <Icon name="settledAll" color={theme.onPrimarySoft} size={22} />
+      <View style={styles.grow}>
+        <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+          Settled up · {settled.through}
+        </AppText>
+        <AppText variant="caption" color={theme.onPrimarySoft}>
+          {count} · {money(settled.total)}
+        </AppText>
+      </View>
+      <AppText variant="label" color={theme.onPrimarySoft} style={styles.bold}>
+        {open ? 'Hide' : 'Show'}
+      </AppText>
+      <Icon name={open ? 'chevronUp' : 'chevronDown'} color={theme.onPrimarySoft} size={20} />
+    </Pressable>
   );
 }
 
@@ -657,6 +755,19 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   activityRow: { paddingVertical: 12, gap: 2, borderBottomWidth: StyleSheet.hairlineWidth },
   emptyText: { paddingVertical: 12 },
+  past: { opacity: 0.55 },
+  settledMarker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  settledTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settledTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   fab: { position: 'absolute', right: 20, borderRadius: 28, overflow: 'hidden', elevation: 4 },
   fabInner: {
     minHeight: 56,

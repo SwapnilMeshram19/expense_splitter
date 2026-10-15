@@ -9,6 +9,7 @@ import { groupSettlementsQuery } from '@/db/repositories/settlements';
 import type { Expense, Group, Settlement } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt, type PayerLine } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
+import { lastSettledIndex } from '@/domain/settledPoint';
 import { simplifyDebts } from '@/domain/simplify';
 import { isValidVpa } from '@/domain/upi';
 import { describeActivity, formatTimestamp } from '@/features/activity/describeActivity';
@@ -35,6 +36,17 @@ export interface ActivityRow {
   time: string;
 }
 
+/** History up to the last time everyone was square: shown folded away under "Settled up". */
+export interface SettledPart {
+  /** Date the group was last fully settled ("3 Oct 2026"). */
+  through: string;
+  expenseCount: number;
+  /** Sum of the settled expenses, group currency minor units. */
+  total: number;
+  /** Newest first, with date headers. */
+  history: HistoryRow[];
+}
+
 export interface GroupView {
   group: Group;
   me: string | null;
@@ -46,8 +58,10 @@ export interface GroupView {
   activeMembers: { id: string; name: string }[];
   invalidCount: number;
   transfers: Debt[];
-  /** Newest first, with a date header row before each calendar day. */
+  /** Still open (since the last settle-up): newest first, with a date header before each day. */
   history: HistoryRow[];
+  /** Everything up to the last moment all balances were zero, or null if that never happened. */
+  settled: SettledPart | null;
   expenseCount: number;
   /** Active members plus anyone who left with a non-zero balance. */
   memberBalances: { id: string; balance: number }[];
@@ -137,6 +151,45 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     a.date !== b.date ? (a.date < b.date ? 1 : -1) : b.createdAt - a.createdAt,
   );
 
+  // Where everyone was last square, walking oldest first through the same order.
+  const invalid = new Set(invalidIds);
+  const settlementById = new Map(ledger.settlements.map((s) => [s.id, s]));
+  const oldestFirst = [...sorted].reverse();
+  const settledIndex = lastSettledIndex(
+    oldestFirst.map((row) => {
+      if (row.kind === 'expense') {
+        const lines = linesById.get(row.expense.id);
+        if (!lines || invalid.has(row.expense.id)) return { deltas: [] };
+        return {
+          deltas: [
+            ...lines.payers.map((p) => ({ memberId: p.memberId, amount: p.amountPaise })),
+            ...lines.shares.map((s) => ({ memberId: s.memberId, amount: -s.amountPaise })),
+          ],
+        };
+      }
+      const s = settlementById.get(row.settlement.id);
+      if (!s || invalid.has(s.id)) return { deltas: [] };
+      return {
+        deltas: [
+          { memberId: s.fromMemberId, amount: s.amountPaise },
+          { memberId: s.toMemberId, amount: -s.amountPaise },
+        ],
+      };
+    }),
+  );
+  const openRows = sorted.slice(0, sorted.length - 1 - settledIndex);
+  const settledRows = settledIndex >= 0 ? sorted.slice(sorted.length - 1 - settledIndex) : [];
+  const settledExpenses = settledRows.flatMap((row) => (row.kind === 'expense' ? [row.expense] : []));
+  const settled: SettledPart | null =
+    settledIndex >= 0
+      ? {
+          through: dateLabel(oldestFirst[settledIndex]!.date, todayIso),
+          expenseCount: settledExpenses.length,
+          total: settledExpenses.reduce((sum, e) => sum + e.amountPaise, 0),
+          history: withDateHeaders(settledRows, todayIso),
+        }
+      : null;
+
   const nameOf = (id: string) => names.get(id) ?? 'Someone';
   const activity = groupActivityQuery(db, groupId)
     .all()
@@ -155,7 +208,8 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     activeMembers: allMembers.filter((m) => m.deletedAt === null).map((m) => ({ id: m.id, name: m.displayName })),
     invalidCount: invalidIds.length,
     transfers,
-    history: withDateHeaders(sorted, todayIso),
+    history: withDateHeaders(openRows, todayIso),
+    settled,
     expenseCount: expenseRows.length,
     memberBalances: allMembers
       .filter((m) => m.deletedAt === null || (balances.get(m.id) ?? 0) !== 0)

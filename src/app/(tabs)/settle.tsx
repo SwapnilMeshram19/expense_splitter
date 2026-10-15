@@ -18,6 +18,7 @@ import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
+import { Icon } from '@/ui/Icon';
 import { TabHeader } from '@/ui/TabHeader';
 import { useTheme } from '@/ui/theme';
 
@@ -69,9 +70,14 @@ export default function SettleTab() {
 
         {overview.transfers.length === 0 ? (
           <Card style={styles.emptyCard}>
-            <AppText variant="heading">You’re all settled up</AppText>
-            <AppText color={theme.muted}>
-              {overview.groups.length === 0 ? 'Create or join a group to start.' : 'Nobody owes anything.'}
+            <View style={[styles.emptyIcon, { backgroundColor: theme.primarySoft }]}>
+              <Icon name="settledAll" color={theme.onPrimarySoft} size={32} />
+            </View>
+            <AppText variant="heading" style={styles.centerText}>
+              You’re all settled up
+            </AppText>
+            <AppText color={theme.muted} style={styles.centerText}>
+              {overview.groups.length === 0 ? 'Create or join a group to start.' : 'Nobody owes you, and you owe nobody.'}
             </AppText>
           </Card>
         ) : null}
@@ -265,7 +271,9 @@ function ReceiveRow({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 20, paddingBottom: 32, gap: 20 },
-  emptyCard: { gap: 8 },
+  emptyCard: { gap: 8, alignItems: 'center', paddingVertical: 28 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  centerText: { textAlign: 'center' },
   section: { gap: 10 },
   sectionHeader: { flexDirection: 'row', alignItems: 'baseline' },
   totals: { alignItems: 'flex-end' },

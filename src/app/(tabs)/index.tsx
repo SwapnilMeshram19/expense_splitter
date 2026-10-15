@@ -21,10 +21,13 @@ import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { GradientSurface } from '@/ui/GradientSurface';
 import { GroupTile } from '@/ui/GroupTile';
+import { Icon } from '@/ui/Icon';
 import { Greeting, TabHeader } from '@/ui/TabHeader';
 import { useTheme, type Theme } from '@/ui/theme';
 
 const loadHome = () => loadOverview(db, getDeviceUserId());
+
+type HomeRow = GroupSummary | { heading: 'Settled up' };
 
 /** "≈ ₹3,900" for an amount in another currency, or null. */
 type Approx = (minor: number, from: CurrencyCode) => string | null;
@@ -39,14 +42,25 @@ export default function HomeScreen() {
     overview.groups.some((g) => g.myBalance !== 0 && g.group.currency !== homeCurrency),
   );
 
+  // Groups where you owe or are owed first; settled ones below their own heading, so what needs
+  // doing is always at the top. (Read-only groups stay where they are: they need attention too.)
+  const open = overview.groups.filter((g) => g.myBalance !== 0 || g.lost);
+  const done = overview.groups.filter((g) => g.myBalance === 0 && !g.lost);
+  const rows: HomeRow[] = [
+    ...open,
+    ...(done.length > 0 && open.length > 0 ? [{ heading: 'Settled up' as const }] : []),
+    ...done,
+  ];
+
   return (
     <View style={styles.container}>
       <TabHeader />
       <FlashList
         refreshControl={refreshControl}
-        data={overview.groups}
+        data={rows}
         extraData={approx}
-        keyExtractor={(row) => row.group.id}
+        keyExtractor={(row) => ('heading' in row ? 'heading-settled' : row.group.id)}
+        getItemType={(row) => ('heading' in row ? 'heading' : 'group')}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           overview.groups.length > 0 ? (
@@ -55,7 +69,15 @@ export default function HomeScreen() {
         }
         ListEmptyComponent={<EmptyState />}
         ItemSeparatorComponent={Separator}
-        renderItem={({ item }) => <GroupRow summary={item} theme={theme} approx={approx} />}
+        renderItem={({ item }) =>
+          'heading' in item ? (
+            <AppText variant="label" color={theme.muted} style={styles.subheading} accessibilityRole="header">
+              {item.heading}
+            </AppText>
+          ) : (
+            <GroupRow summary={item} theme={theme} approx={approx} />
+          )
+        }
       />
     </View>
   );
@@ -285,9 +307,12 @@ function GroupRow({
             ) : null}
           </View>
         ) : (
-          <AppText variant="label" color={theme.muted}>
-            settled
-          </AppText>
+          <View style={[styles.settledBadge, { backgroundColor: theme.primarySoft }]}>
+            <Icon name="checkCircle" color={theme.onPrimarySoft} size={14} />
+            <AppText variant="caption" color={theme.onPrimarySoft} style={styles.chipText}>
+              Settled
+            </AppText>
+          </View>
         )}
       </Card>
     </Pressable>
@@ -350,6 +375,15 @@ const styles = StyleSheet.create({
   balance: { alignItems: 'flex-end' },
   budget: { marginTop: 6 },
   separator: { height: 10 },
+  subheading: { fontWeight: '600', paddingTop: 10 },
+  settledBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   emptyBlock: { gap: 16, paddingTop: 4 },
   empty: { gap: 10 },
   emptyActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
