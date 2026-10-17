@@ -29,6 +29,8 @@ import { NotificationsCard } from '@/features/notifications/NotificationsCard';
 import { chooseHomeCurrency } from '@/features/region/deviceLocales';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { SyncPanel } from '@/sync/SyncPanel';
+import { ScreenGlow } from '@/ui/ScreenGlow';
+import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -56,13 +58,15 @@ const THEME_OPTIONS: readonly { value: ThemeMode; label: string }[] = [
 export default function AccountTab() {
   const auth = useAuth();
   const theme = useTheme();
+  const tabBarSpace = useTabBarSpace();
 
   return (
     <View style={styles.container}>
+      <ScreenGlow />
       <TabHeader title="Account" hideAvatar />
       <KeyboardAwareScrollView
         bottomOffset={24}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}
         keyboardShouldPersistTaps="handled"
       >
         {auth.status === 'loading' ? (

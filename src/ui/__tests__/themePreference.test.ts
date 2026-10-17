@@ -1,9 +1,10 @@
 import { createTestContext, type TestContext } from '@/db/__tests__/testDb';
-import { getSetting } from '@/db/repositories/profile';
+import { getSetting, setSetting } from '@/db/repositories/profile';
 
 import { resolveScheme } from '../theme';
 import {
   ACCENT_KEY,
+  DESIGN_VERSION_KEY,
   getThemePreference,
   loadThemePreference,
   parseThemePreference,
@@ -24,10 +25,24 @@ beforeEach(() => {
 afterEach(() => t.close());
 
 describe('parseThemePreference', () => {
-  it('falls back to System + Ocean for missing or unknown values', () => {
+  it('falls back to Dark + Aurora for missing or unknown values', () => {
     expect(parseThemePreference(null, null)).toEqual({ mode: 'dark', accent: 'aurora' });
     expect(parseThemePreference('sepia', 'green')).toEqual({ mode: 'dark', accent: 'aurora' });
     expect(parseThemePreference('dark', 'plum')).toEqual({ mode: 'dark', accent: 'plum' });
+  });
+});
+
+describe('design upgrade', () => {
+  it('moves a theme saved under the old design to Dark + Aurora once, then keeps new choices', () => {
+    setSetting(t.ctx, THEME_MODE_KEY, 'light');
+    setSetting(t.ctx, ACCENT_KEY, 'ocean');
+    expect(loadThemePreference(t.ctx)).toEqual({ mode: 'dark', accent: 'aurora', loaded: true });
+    expect(getSetting(t.ctx, DESIGN_VERSION_KEY)).toBe('2');
+
+    setThemeMode(t.ctx, 'light');
+    setAccent(t.ctx, 'teal');
+    resetThemePreferenceForTests();
+    expect(loadThemePreference(t.ctx)).toEqual({ mode: 'light', accent: 'teal', loaded: true });
   });
 });
 

@@ -14,6 +14,8 @@ import { getPendingUpiPayment } from '@/features/upi/pendingUpiPayment';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
+import { ScreenGlow } from '@/ui/ScreenGlow';
+import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -31,6 +33,7 @@ interface PendingContext {
 
 export default function SettleTab() {
   const theme = useTheme();
+  const tabBarSpace = useTabBarSpace();
   const overview = useLiveData(OVERVIEW_TABLES, load);
   const refreshControl = useSyncRefreshControl();
   const [pending, setPending] = useState<PendingContext | null>(null);
@@ -59,8 +62,9 @@ export default function SettleTab() {
 
   return (
     <View style={styles.container}>
+      <ScreenGlow />
       <TabHeader title="Settle up" />
-      <ScrollView contentContainerStyle={styles.content} refreshControl={refreshControl}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]} refreshControl={refreshControl}>
         {pending && pendingGroup?.canEdit ? (
           <PendingUpiBanner
             groupId={pending.groupId}

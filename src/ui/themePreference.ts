@@ -24,6 +24,9 @@ export interface ThemePreference {
 
 export const THEME_MODE_KEY = 'ui_theme_mode';
 export const ACCENT_KEY = 'ui_accent';
+/** Bumped when a redesign should be shown once even to people who picked a theme before. */
+export const DESIGN_VERSION_KEY = 'ui_design_version';
+export const DESIGN_VERSION = 2;
 /**
  * Dark by default: the app is designed dark-first (premium, calm, easier on AMOLED batteries).
  * Only applies until the user picks System or Light in Account > Appearance.
@@ -61,9 +64,23 @@ function emit(next: ThemePreferenceState): void {
 
 /** Read the saved preference. Call once the migrations have created the settings table. */
 export function loadThemePreference(ctx: RepoContext): ThemePreferenceState {
+  upgradeDesign(ctx);
   const saved = parseThemePreference(getSetting(ctx, THEME_MODE_KEY), getSetting(ctx, ACCENT_KEY));
   emit({ ...saved, loaded: true });
   return current;
+}
+
+/**
+ * Version 2 ("Premium & calm") is designed dark-first around the Aurora accent. A phone that saved
+ * a theme under version 1 (only test phones: the app isn't public yet) is moved to it once; any
+ * choice made afterwards in Account > Appearance is kept for good.
+ */
+function upgradeDesign(ctx: RepoContext): void {
+  const version = Number(getSetting(ctx, DESIGN_VERSION_KEY) ?? '1');
+  if (version >= DESIGN_VERSION) return;
+  setSetting(ctx, THEME_MODE_KEY, DEFAULT_THEME_PREFERENCE.mode);
+  setSetting(ctx, ACCENT_KEY, DEFAULT_THEME_PREFERENCE.accent);
+  setSetting(ctx, DESIGN_VERSION_KEY, String(DESIGN_VERSION));
 }
 
 export function setThemeMode(ctx: RepoContext, mode: ThemeMode): void {

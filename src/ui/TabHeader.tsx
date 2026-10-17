@@ -22,7 +22,6 @@ interface TabHeaderProps {
 
 /** In-screen header for the tab screens (the navigator's own header is hidden there). */
 export function TabHeader({ title, hideAvatar = false, right }: TabHeaderProps) {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const me = useMyProfile();
   const avatar = hideAvatar ? null : (
@@ -38,7 +37,8 @@ export function TabHeader({ title, hideAvatar = false, right }: TabHeaderProps) 
 
   return (
     <View
-      style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: theme.background }]}
+      // Transparent: the screen's glow shows through behind the title.
+      style={[styles.header, { paddingTop: insets.top + 12 }]}
     >
       {title ? (
         <AppText variant="title" accessibilityRole="header" style={styles.grow} numberOfLines={1}>

@@ -25,6 +25,8 @@ import { GradientSurface } from '@/ui/GradientSurface';
 import { GroupTile } from '@/ui/GroupTile';
 import { Icon } from '@/ui/Icon';
 import { PressableScale } from '@/ui/PressableScale';
+import { ScreenGlow } from '@/ui/ScreenGlow';
+import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { Greeting, TabHeader } from '@/ui/TabHeader';
 import { useTheme, type Theme } from '@/ui/theme';
 
@@ -39,6 +41,7 @@ export default function HomeScreen() {
   const theme = useTheme();
   const overview = useLiveData(OVERVIEW_TABLES, loadHome);
   const refreshControl = useSyncRefreshControl();
+  const tabBarSpace = useTabBarSpace();
   const { homeCurrency } = useRegionPreference();
   // Rates are only fetched when some balance is in a currency other than the home one.
   const approx = useApprox(
@@ -57,6 +60,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <ScreenGlow />
       <TabHeader />
       <FlashList
         refreshControl={refreshControl}
@@ -64,7 +68,7 @@ export default function HomeScreen() {
         extraData={approx}
         keyExtractor={(row) => ('heading' in row ? 'heading-settled' : row.group.id)}
         getItemType={(row) => ('heading' in row ? 'heading' : 'group')}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={{ ...styles.list, paddingBottom: tabBarSpace }}
         ListHeaderComponent={
           overview.groups.length > 0 ? (
             <ListHeader overview={overview} theme={theme} approx={approx} />

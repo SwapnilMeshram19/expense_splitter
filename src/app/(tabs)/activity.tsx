@@ -12,6 +12,8 @@ import {
   type RecentActivityItem,
 } from '@/features/activity/loadRecentActivity';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
+import { ScreenGlow } from '@/ui/ScreenGlow';
+import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { AppText } from '@/ui/AppText';
 import { Card } from '@/ui/Card';
 import { GroupTile } from '@/ui/GroupTile';
@@ -22,17 +24,19 @@ const load = () => loadRecentActivity(db, getDeviceUserId());
 
 export default function ActivityTab() {
   const theme = useTheme();
+  const tabBarSpace = useTabBarSpace();
   const items = useLiveData(RECENT_ACTIVITY_TABLES, load);
   const refreshControl = useSyncRefreshControl();
 
   return (
     <View style={styles.container}>
+      <ScreenGlow />
       <TabHeader title="Activity" />
       <FlashList
         refreshControl={refreshControl}
         data={items}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={{ ...styles.list, paddingBottom: tabBarSpace }}
         ListEmptyComponent={
           <Card style={styles.empty}>
             <AppText variant="heading">Nothing here yet</AppText>

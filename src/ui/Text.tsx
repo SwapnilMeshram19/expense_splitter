@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import {
   Text as RNText,
   TextInput as RNTextInput,
@@ -18,7 +19,11 @@ export function Text({ style, ...rest }: TextProps) {
   return <RNText {...rest} style={[FONT_RESET, { fontFamily: theme.fontFamily, color: theme.text }, style]} />;
 }
 
-export function TextInput({ style, placeholderTextColor, ...rest }: TextInputProps) {
+export function TextInput({
+  style,
+  placeholderTextColor,
+  ...rest
+}: TextInputProps & { ref?: Ref<RNTextInput> }) {
   const theme = useTheme();
   return (
     <RNTextInput

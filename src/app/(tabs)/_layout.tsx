@@ -1,15 +1,13 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '@/db/client';
 import { getDeviceUserId } from '@/db/session';
 import { openAddExpense } from '@/features/overview/openAddExpense';
 import { GradientSurface } from '@/ui/GradientSurface';
 import { Icon, type IconName } from '@/ui/Icon';
+import { TAB_BAR_HEIGHT, useTabBarBottom } from '@/ui/tabBarSpace';
 import { useTheme } from '@/ui/theme';
-
-const BAR_HEIGHT = 64;
 
 function TabIcon({ name, color, focused }: { name: IconName; color: ColorValue; focused: boolean }) {
   const theme = useTheme();
@@ -31,7 +29,7 @@ function AddButton() {
         accessibilityLabel="Add expense"
         style={({ pressed }) => [
           styles.addRing,
-          { borderColor: theme.background, transform: [{ scale: pressed ? 0.94 : 1 }] },
+          { transform: [{ scale: pressed ? 0.94 : 1 }] },
         ]}
       >
         <GradientSurface style={[styles.addButton, { borderColor: theme.heroBorder }]}>
@@ -52,7 +50,7 @@ const accountIcon = (p: TabIconProps) => <TabIcon name="account" {...p} />;
 
 export default function TabsLayout() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottom = useTabBarBottom();
 
   return (
     <Tabs
@@ -61,16 +59,32 @@ export default function TabsLayout() {
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: theme.onPrimarySoft,
         tabBarInactiveTintColor: theme.muted,
+        // Floating pill: content scrolls underneath (tab screens pad by useTabBarSpace()).
+        // Near-opaque surface instead of blur: blur views drop frames on low-end Android.
         tabBarStyle: {
-          // Same colour as the page: the bar recedes, content leads. A hairline marks the edge.
-          backgroundColor: theme.background,
-          borderTopColor: theme.border,
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom,
+          height: TAB_BAR_HEIGHT,
+          borderRadius: TAB_BAR_HEIGHT / 2,
+          backgroundColor: `${theme.surface}F2`,
+          borderWidth: StyleSheet.hairlineWidth,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: BAR_HEIGHT + insets.bottom,
-          paddingTop: 6,
-          paddingBottom: insets.bottom + 6,
-          elevation: 0,
+          borderColor: theme.border,
+          borderTopColor: theme.highlight,
+          paddingTop: 8,
+          paddingBottom: 8,
+          paddingHorizontal: 6,
+          // One shadowed view is cheap; it lifts the bar off the content.
+          elevation: 10,
+          shadowColor: '#000000',
+          shadowOpacity: 0.25,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 6 },
         },
+        tabBarItemStyle: { height: TAB_BAR_HEIGHT - 16 },
+        tabBarShowLabel: false,
         tabBarLabelStyle: { fontFamily: theme.fontFamily, fontSize: 11, fontWeight: '600' },
         sceneStyle: { backgroundColor: theme.background },
       }}
@@ -85,15 +99,15 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  iconPill: { width: 52, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  addSlot: { flex: 1, alignItems: 'center' },
-  // Ring in the page colour around the gradient disc, so the button "cuts" into the tab bar.
-  addRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 4, marginTop: -24, overflow: 'hidden' },
+  iconPill: { width: 56, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  addSlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // Gradient disc sitting inside the pill.
+  addRing: { width: 52, height: 52, borderRadius: 26, borderWidth: 0, marginTop: -2, overflow: 'hidden' },
   addButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 27,
+    borderRadius: 26,
     borderWidth: StyleSheet.hairlineWidth,
   },
 });
