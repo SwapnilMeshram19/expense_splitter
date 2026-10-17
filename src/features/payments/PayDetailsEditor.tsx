@@ -3,7 +3,11 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
 import {
+  BANK_CODE_LABEL,
+  BANK_CODE_TYPES,
+  defaultBankCodeType,
   MAX_PAY_METHODS,
+  normalizeAccountNumber,
   methodSummary,
   methodTitle,
   validatePayMethod,
@@ -17,6 +21,7 @@ import { Card } from '@/ui/Card';
 import { FieldLabel, Input } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
 import { ListRow, listCardStyle } from '@/ui/ListRow';
+import { useRegionPreference } from '@/features/region/regionPreference';
 import { useTheme } from '@/ui/theme';
 
 import { describePayMethodError, iconForKind, METHOD_CHOICES } from './messages';
@@ -34,6 +39,10 @@ interface Draft {
   /** Index being edited, or null for a new one. */
   index: number | null;
   method: PayMethod;
+  /** Bank accounts: the account number typed a second time (a typo sends money elsewhere). */
+  confirmAccount: string;
+  /** Saved account number of the method being edited; unchanged numbers needn't be retyped. */
+  originalAccount: string | null;
   error: string | null;
 }
 
@@ -64,6 +73,7 @@ export function PayDetailsEditor({
   extra?: ReactNode;
 }) {
   const theme = useTheme();
+  const { homeCurrency } = useRegionPreference();
   const [vpa, setVpa] = useState(initialVpa ?? '');
   const [methods, setMethods] = useState<PayMethod[]>([...initialMethods]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -72,12 +82,22 @@ export function PayDetailsEditor({
 
   const startNew = (kind: PayMethodKind) => {
     setChoosing(false);
-    setDraft({ index: null, method: { ...EMPTY[kind] }, error: null });
+    const method: PayMethod =
+      kind === 'bank' ? { kind: 'bank', text: '', codeType: defaultBankCodeType(homeCurrency) } : { ...EMPTY[kind] };
+    setDraft({ index: null, method, confirmAccount: '', originalAccount: null, error: null });
   };
 
   const commitDraft = () => {
     if (!draft) return;
-    const checked = validatePayMethod(draft.method);
+    const m = draft.method;
+    if (m.kind === 'bank' && m.account) {
+      const typed = normalizeAccountNumber(m.account);
+      if (!accountUnchanged(draft) && normalizeAccountNumber(draft.confirmAccount) !== typed) {
+        setDraft({ ...draft, error: 'The two account numbers don’t match.' });
+        return;
+      }
+    }
+    const checked = validatePayMethod(m);
     if (!checked.ok) {
       setDraft({ ...draft, error: describePayMethodError(checked.error) });
       return;
@@ -147,7 +167,15 @@ export function PayDetailsEditor({
                 icon={iconForKind(m.kind)}
                 title={methodTitle(m)}
                 detail={methodSummary(m)}
-                onPress={() => setDraft({ index, method: { ...m }, error: null })}
+                onPress={() =>
+                  setDraft({
+                    index,
+                    method: { ...m },
+                    confirmAccount: '',
+                    originalAccount: m.kind === 'bank' ? (m.account ?? null) : null,
+                    error: null,
+                  })
+                }
                 last={index === methods.length - 1 && !draft}
                 right={
                   <Pressable
@@ -167,6 +195,7 @@ export function PayDetailsEditor({
             <MethodForm
               draft={draft}
               onChange={(method) => setDraft({ ...draft, method, error: null })}
+              onConfirmAccount={(confirmAccount) => setDraft({ ...draft, confirmAccount, error: null })}
               onDone={commitDraft}
               onCancel={() => setDraft(null)}
             />
@@ -216,11 +245,13 @@ export function PayDetailsEditor({
 function MethodForm({
   draft,
   onChange,
+  onConfirmAccount,
   onDone,
   onCancel,
 }: {
   draft: Draft;
   onChange: (method: PayMethod) => void;
+  onConfirmAccount: (text: string) => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -265,15 +296,72 @@ function MethodForm({
           {field('BIC (optional)', m.bic ?? '', (bic) => onChange({ ...m, bic }), { autoCapitalize: 'characters' })}
         </>
       ) : null}
-      {m.kind === 'bank'
-        ? field('Bank details', m.text, (text) => onChange({ ...m, text }), {
-            placeholder: 'Name, bank, account number, routing…',
+      {m.kind === 'bank' ? (
+        <>
+          {field('Account holder name', m.name ?? '', (name) => onChange({ ...m, name }), {
+            autoCapitalize: 'words',
+            autoComplete: 'name',
+            autoFocus: true,
+            placeholder: 'As per bank records',
+          })}
+          {field('Account number', m.account ?? '', (account) => onChange({ ...m, account }), {
+            keyboardType: m.codeType === 'ifsc' ? 'number-pad' : 'default',
+            autoCapitalize: 'characters',
+            autoComplete: 'off',
+          })}
+          {(m.account ?? '') !== '' && !accountUnchanged(draft)
+            ? field('Re-enter account number', draft.confirmAccount, onConfirmAccount, {
+                keyboardType: m.codeType === 'ifsc' ? 'number-pad' : 'default',
+                autoCapitalize: 'characters',
+                autoComplete: 'off',
+                contextMenuHidden: true,
+              })
+            : null}
+          <View style={styles.field}>
+            <FieldLabel>Bank code</FieldLabel>
+            <View style={styles.pills}>
+              {BANK_CODE_TYPES.map((type) => {
+                const selected = (m.codeType ?? 'other') === type;
+                return (
+                  <Pressable
+                    key={type}
+                    onPress={() => onChange({ ...m, codeType: type })}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    style={[
+                      styles.pill,
+                      {
+                        borderColor: selected ? theme.primary : theme.border,
+                        backgroundColor: selected ? theme.primarySoft : theme.surface,
+                      },
+                    ]}
+                  >
+                    <AppText variant="label" color={selected ? theme.onPrimarySoft : theme.text}>
+                      {BANK_CODE_LABEL[type]}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+          {field(
+            m.codeType === 'ifsc' ? 'IFSC' : `${BANK_CODE_LABEL[m.codeType ?? 'other']} (optional)`,
+            m.code ?? '',
+            (code) => onChange({ ...m, code }),
+            { autoCapitalize: 'characters', placeholder: CODE_PLACEHOLDER[m.codeType ?? 'other'], maxLength: 40 },
+          )}
+          {field('Bank name (optional)', m.bankName ?? '', (bankName) => onChange({ ...m, bankName }), {
+            autoCapitalize: 'words',
+            placeholder: 'e.g. HDFC Bank, Andheri branch',
+          })}
+          {field('Other details (optional)', m.text, (text) => onChange({ ...m, text }), {
+            placeholder: 'Account type, branch address, anything else',
             multiline: true,
             style: styles.multiline,
             textAlignVertical: 'top',
-            autoFocus: true,
-          })
-        : null}
+          })}
+        </>
+      ) : null}
       {m.kind === 'pix' ? (
         <>
           {field('Pix key', m.key, (key) => onChange({ ...m, key }), {
@@ -316,6 +404,24 @@ function MethodForm({
   );
 }
 
+const CODE_PLACEHOLDER: Record<(typeof BANK_CODE_TYPES)[number], string> = {
+  ifsc: 'HDFC0001234',
+  routing: '9 digits',
+  sort: '12-34-56',
+  bsb: '123-456',
+  swift: 'HDFCINBBXXX',
+  other: '',
+};
+
+/** Editing a saved bank account without touching its number: no need to type it twice. */
+function accountUnchanged(draft: Draft): boolean {
+  return (
+    draft.originalAccount !== null &&
+    draft.method.kind === 'bank' &&
+    normalizeAccountNumber(draft.method.account ?? '') === draft.originalAccount
+  );
+}
+
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 48, gap: 14 },
   intro: { textAlign: 'center' },
@@ -329,7 +435,9 @@ const styles = StyleSheet.create({
   addButton: { marginTop: 8 },
   form: { gap: 4, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, marginTop: 4 },
   field: { gap: 0 },
-  multiline: { minHeight: 96, paddingTop: 12 },
+  multiline: { minHeight: 80, paddingTop: 12 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  pill: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 10, minHeight: 32, justifyContent: 'center' },
   row: { flexDirection: 'row', gap: 10, marginTop: 10 },
   centerText: { textAlign: 'center' },
 });

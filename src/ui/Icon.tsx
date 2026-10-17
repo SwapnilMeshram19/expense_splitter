@@ -79,6 +79,8 @@ const ICONS = {
   openExternal: { ios: 'arrow.up.right.square', android: 0xe895 }, // open_in_new
   settledAll: { ios: 'checkmark.seal', android: 0xe2e6 }, // task_alt
   chevronUp: { ios: 'chevron.up', android: 0xe5ce }, // expand_less
+  search: { ios: 'magnifyingglass', android: 0xe8b6 }, // search
+  sparkle: { ios: 'sparkles', android: 0xe65f }, // auto_awesome
   // Expense categories
   catGeneral: { ios: 'doc.text', android: 0xef6e }, // receipt_long
   catFood: { ios: 'fork.knife', android: 0xe56c }, // restaurant

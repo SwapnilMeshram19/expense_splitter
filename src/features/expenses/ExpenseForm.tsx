@@ -1,10 +1,8 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useMemo, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
-import { EXPENSE_CATEGORIES } from '@/db/schema';
-import { categoryLabelKey, MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
 import {
   currencyInfo,
   currencyPrefix,
@@ -25,15 +23,18 @@ import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
-import { CATEGORY_STYLE } from '@/ui/CategoryTile';
+import { CategoryTile } from '@/ui/CategoryTile';
 import { CurrencyPicker } from '@/ui/CurrencyPicker';
-import { Input } from '@/ui/Field';
-import { Icon, type IconName } from '@/ui/Icon';
+import { HeroAmountInput } from '@/ui/HeroAmountInput';
+import { Icon } from '@/ui/Icon';
 import { MemberPicker } from '@/ui/MemberPicker';
 import { Segmented } from '@/ui/Segmented';
 import { TextInput } from '@/ui/Text';
 import { useTheme, type Theme } from '@/ui/theme';
 
+import { categoryDisplayName } from './categoryNames';
+import { CategoryPickerSheet } from './CategoryPickerSheet';
+import { guessCategory } from './guessCategory';
 import {
   analyzeForm,
   effectiveRateText,
@@ -109,6 +110,11 @@ export function ExpenseForm({
   const [error, setError] = useState<string | null>(null);
   const [showIosDate, setShowIosDate] = useState(false);
   const [showIosEnd, setShowIosEnd] = useState(false);
+  const [pickingCategory, setPickingCategory] = useState(false);
+  // New expenses follow the description ("Swiggy" → Food) until the user picks a category.
+  const [categoryTouched, setCategoryTouched] = useState(
+    expenseId !== null || isRuleMode(repeatMode, initialState),
+  );
   const isRule = repeatMode === 'rule';
 
   const isForeign = state.currency !== groupCurrency;
@@ -249,22 +255,16 @@ export function ExpenseForm({
               />
             )}
           </View>
-          <View style={styles.amountRow}>
-            <AppText style={styles.rupee} color={theme.muted}>
-              {currencyPrefix(entryCurrency)}
-            </AppText>
-            <TextInput
-              value={state.amountText}
-              onChangeText={(text) =>
-                update({ amountText: sanitizeMoneyInput(text, state.amountText, entryCurrency) })
-              }
-              placeholder="0"
-              keyboardType={currencyInfo(entryCurrency).digits === 0 ? 'number-pad' : 'decimal-pad'}
-              accessibilityLabel={`Amount in ${currencyInfo(entryCurrency).name}`}
-              autoFocus={state.description === '' && state.amountText === ''}
-              style={styles.amountInput}
-            />
-          </View>
+          <HeroAmountInput
+            prefix={currencyPrefix(entryCurrency)}
+            value={state.amountText}
+            onChangeText={(text) =>
+              update({ amountText: sanitizeMoneyInput(text, state.amountText, entryCurrency) })
+            }
+            keyboardType={currencyInfo(entryCurrency).digits === 0 ? 'number-pad' : 'decimal-pad'}
+            accessibilityLabel={`Amount in ${currencyInfo(entryCurrency).name}`}
+            autoFocus={state.description === '' && state.amountText === ''}
+          />
         </View>
 
         {isForeign ? (
@@ -292,7 +292,10 @@ export function ExpenseForm({
             </AppText>
             <TextInput
               value={state.description}
-              onChangeText={(description) => update({ description })}
+              onChangeText={(description) => {
+                const guess = categoryTouched ? null : guessCategory(description);
+                update(guess ? { description, category: guess } : { description });
+              }}
               placeholder="What was it for?"
               maxLength={MAX_DESCRIPTION_LENGTH}
               accessibilityLabel="Description"
@@ -313,6 +316,23 @@ export function ExpenseForm({
               <AppText style={styles.medium}>{formatIsoDate(state.expenseDate)}</AppText>
             </View>
             <Icon name={scheduleLocked ? 'lock' : 'calendar'} color={theme.muted} size={20} />
+          </Pressable>
+          <Pressable
+            onPress={() => setPickingCategory(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Category, ${categoryDisplayName(state.category, state.categoryLabel.trim())}. Change`}
+            style={[styles.field, styles.dateField, styles.fieldDividerTop, { borderTopColor: theme.border }]}
+          >
+            <CategoryTile category={state.category} size={32} />
+            <View style={styles.grow}>
+              <AppText variant="caption" color={theme.muted}>
+                Category{!categoryTouched && state.category !== 'general' ? ' · suggested' : ''}
+              </AppText>
+              <AppText style={styles.medium} numberOfLines={1}>
+                {categoryDisplayName(state.category, state.categoryLabel.trim())}
+              </AppText>
+            </View>
+            <Icon name="chevronRight" color={theme.muted} size={20} />
           </Pressable>
         </Card>
         {Platform.OS === 'ios' && showIosDate ? (
@@ -383,69 +403,6 @@ export function ExpenseForm({
                 ) : null}
               </>
             ) : null}
-          </View>
-        ) : null}
-
-        {/* ---- Category ---- */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          {EXPENSE_CATEGORIES.map((category) => {
-            const isCustom = category === 'other';
-            const typed = state.categoryLabel.trim();
-            return (
-              <Chip
-                key={category}
-                label={
-                  isCustom
-                    ? state.category === 'other' && typed
-                      ? typed
-                      : 'Custom'
-                    : CATEGORY_STYLE[category].label
-                }
-                icon={isCustom ? 'edit' : CATEGORY_STYLE[category].icon}
-                selected={state.category === category}
-                onPress={() => update({ category })}
-                theme={theme}
-              />
-            );
-          })}
-        </ScrollView>
-        {state.category === 'other' ? (
-          <View style={styles.customCategory}>
-            <Input
-              value={state.categoryLabel}
-              onChangeText={(categoryLabel) => update({ categoryLabel })}
-              placeholder="Category name, e.g. Petrol, Maid, Rent"
-              maxLength={MAX_CATEGORY_LABEL_LENGTH}
-              accessibilityLabel="Custom category name"
-              autoCapitalize="words"
-              autoFocus={state.categoryLabel === ''}
-            />
-            {categorySuggestions.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chips}
-              >
-                {categorySuggestions.map((label) => (
-                  <Chip
-                    key={label}
-                    label={label}
-                    selected={
-                      categoryLabelKey(label) === categoryLabelKey(state.categoryLabel.trim())
-                    }
-                    onPress={() => update({ categoryLabel: label })}
-                    theme={theme}
-                  />
-                ))}
-              </ScrollView>
-            ) : null}
-            <AppText variant="caption" color={theme.muted}>
-              Shared with the group. Empty means “Other”.
-            </AppText>
           </View>
         ) : null}
 
@@ -650,8 +607,24 @@ export function ExpenseForm({
         />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
+      <CategoryPickerSheet
+        visible={pickingCategory}
+        value={{ category: state.category, label: state.categoryLabel }}
+        suggestions={categorySuggestions}
+        onPick={({ category, label }) => {
+          setCategoryTouched(true);
+          setPickingCategory(false);
+          update({ category, categoryLabel: label });
+        }}
+        onClose={() => setPickingCategory(false)}
+      />
     </>
   );
+}
+
+/** Editing a recurring rule: its category was chosen when it was set up, don't override it. */
+function isRuleMode(repeatMode: ExpenseFormProps['repeatMode'], state: ExpenseFormState): boolean {
+  return repeatMode === 'rule' && state.description !== '';
 }
 
 const SOURCE_LABEL: Record<SuggestedRate['sources'][number], string> = {
@@ -764,41 +737,6 @@ function Hint({ text, theme }: { text: string; theme: Theme }) {
   );
 }
 
-function Chip({
-  label,
-  icon,
-  selected,
-  onPress,
-  theme,
-}: {
-  label: string;
-  icon?: IconName;
-  selected: boolean;
-  onPress: () => void;
-  theme: Theme;
-}) {
-  const fg = selected ? theme.onPrimarySoft : theme.text;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
-      style={[
-        styles.chip,
-        {
-          borderColor: selected ? theme.primary : theme.border,
-          backgroundColor: selected ? theme.primarySoft : theme.surface,
-        },
-      ]}
-    >
-      {icon ? <Icon name={icon} color={fg} size={16} /> : null}
-      <AppText variant="label" color={fg} style={selected ? styles.bold : undefined}>
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 20, paddingTop: 8, gap: 12, paddingBottom: 48 },
   grow: { flex: 1, minWidth: 0 },
@@ -818,35 +756,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'right',
   },
-  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rupee: { fontSize: 28, lineHeight: 36, fontWeight: '500' },
-  amountInput: {
-    minWidth: 120,
-    maxWidth: 260,
-    fontSize: 42,
-    fontWeight: '700',
-    textAlign: 'center',
-    paddingVertical: 4,
-  },
   fieldsCard: { padding: 0, borderRadius: 18 },
   field: { paddingHorizontal: 14, paddingVertical: 10 },
   fieldDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
   descriptionInput: { fontSize: 16, paddingVertical: 4, paddingHorizontal: 0 },
-  dateField: { flexDirection: 'row', alignItems: 'center', minHeight: 56 },
-  chips: { gap: 8, paddingVertical: 2 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    minHeight: 40,
-  },
+  dateField: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56 },
+  fieldDividerTop: { borderTopWidth: StyleSheet.hairlineWidth },
   section: { fontWeight: '600', marginTop: 6 },
   sectionRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   allToggle: { minHeight: 32, justifyContent: 'flex-end' },
-  customCategory: { gap: 8 },
   membersCard: { paddingVertical: 4, paddingHorizontal: 14, borderRadius: 18 },
   noteCard: { gap: 10, padding: 14, borderRadius: 18 },
   repeatBlock: { gap: 8 },

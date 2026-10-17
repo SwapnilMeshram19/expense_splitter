@@ -20,14 +20,93 @@ export type PayMethod =
   | { kind: 'link'; url: string }
   /** IBAN account (Europe, UK, UAE…). EUR groups also get an EPC (SEPA) QR code. */
   | { kind: 'iban'; name: string; iban: string; bic?: string }
-  /** Anything else, as the member typed it (US routing + account, Australian BSB…). */
-  | { kind: 'bank'; text: string }
+  /**
+   * Bank account in separate fields (India IFSC, US routing, UK sort code, Australia BSB, SWIFT),
+   * plus free text for anything else. Older entries have only `text`.
+   */
+  | ({ kind: 'bank'; text: string } & BankFields)
   /** Brazil. */
   | { kind: 'pix'; key: string; name: string; city: string }
   /** Singapore: +65 mobile number or a UEN. */
   | { kind: 'paynow'; proxy: string; name: string }
   /** Thailand: mobile number or 13-digit national ID. */
   | { kind: 'promptpay'; id: string };
+
+/** Which code identifies the branch/bank next to the account number. */
+export const BANK_CODE_TYPES = ['ifsc', 'routing', 'sort', 'bsb', 'swift', 'other'] as const;
+export type BankCodeType = (typeof BANK_CODE_TYPES)[number];
+
+export interface BankFields {
+  /** Account holder. */
+  name?: string;
+  account?: string;
+  code?: string;
+  codeType?: BankCodeType;
+  bankName?: string;
+}
+
+export const BANK_CODE_LABEL: Record<BankCodeType, string> = {
+  ifsc: 'IFSC',
+  routing: 'Routing number',
+  sort: 'Sort code',
+  bsb: 'BSB',
+  swift: 'SWIFT / BIC',
+  other: 'Bank code',
+};
+
+/** The code most people in a currency's country use for domestic transfers. */
+export function defaultBankCodeType(currency: CurrencyCode): BankCodeType {
+  switch (currency) {
+    case 'INR':
+      return 'ifsc';
+    case 'USD':
+      return 'routing';
+    case 'GBP':
+      return 'sort';
+    case 'AUD':
+      return 'bsb';
+    default:
+      return 'swift';
+  }
+}
+
+export const isBankCodeType = (v: unknown): v is BankCodeType =>
+  typeof v === 'string' && (BANK_CODE_TYPES as readonly string[]).includes(v);
+
+/** "HDFC0001234". Fifth character is always zero. */
+export const isValidIfsc = (code: string): boolean => /^[A-Z]{4}0[A-Z0-9]{6}$/.test(code);
+
+/** Account number without spaces or hyphens, uppercase (UK/US/IN are digits; some countries use letters). */
+export const normalizeAccountNumber = (raw: string): string => raw.replace(/[\s-]/g, '').toUpperCase();
+
+/** Bank code as stored: uppercase, no spaces; sort code and BSB keep digits only ("12-34-56" → "123456"). */
+export function normalizeBankCode(raw: string, type: BankCodeType): string {
+  const compact = raw.replace(/\s/g, '').toUpperCase();
+  return type === 'sort' || type === 'bsb' || type === 'routing' ? compact.replace(/-/g, '') : compact;
+}
+
+export function isValidBankCode(code: string, type: BankCodeType): boolean {
+  switch (type) {
+    case 'ifsc':
+      return isValidIfsc(code);
+    case 'routing':
+      return /^\d{9}$/.test(code);
+    case 'sort':
+    case 'bsb':
+      return /^\d{6}$/.test(code);
+    case 'swift':
+      return isValidBic(code);
+    case 'other':
+      return /^[A-Z0-9-]{2,34}$/.test(code);
+  }
+}
+
+/** "12-34-56" for sort codes, "123-456" for BSB; others as stored. */
+export function formatBankCode(code: string, type: BankCodeType): string {
+  if (type === 'sort' && /^\d{6}$/.test(code)) return code.replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3');
+  if (type === 'bsb' && /^\d{6}$/.test(code)) return code.replace(/(\d{3})(\d{3})/, '$1-$2');
+  return code;
+}
 
 export const MAX_PAY_METHODS = 6;
 export const MAX_LINK_LENGTH = 300;
@@ -331,6 +410,10 @@ export type PayMethodError =
   | 'BIC_INVALID'
   | 'NAME_REQUIRED'
   | 'TEXT_REQUIRED'
+  | 'ACCOUNT_REQUIRED'
+  | 'ACCOUNT_INVALID'
+  | 'BANK_CODE_INVALID'
+  | 'BANK_CODE_REQUIRED'
   | 'TOO_LONG'
   | 'PIX_KEY_INVALID'
   | 'PAYNOW_INVALID'
@@ -361,12 +444,8 @@ export function validatePayMethod(input: PayMethod): PayMethodResult {
       if (bic && !isValidBic(bic)) return fail('BIC_INVALID');
       return { ok: true, method: bic ? { kind: 'iban', name, iban, bic } : { kind: 'iban', name, iban } };
     }
-    case 'bank': {
-      const text = input.text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-      if (!text) return fail('TEXT_REQUIRED');
-      if (text.length > MAX_BANK_TEXT_LENGTH) return fail('TOO_LONG');
-      return { ok: true, method: { kind: 'bank', text } };
-    }
+    case 'bank':
+      return validateBank(input);
     case 'pix': {
       const key = normalizePixKey(input.key);
       const name = clean(input.name);
@@ -385,6 +464,39 @@ export function validatePayMethod(input: PayMethod): PayMethodResult {
       return { ok: true, method: { kind: 'promptpay', id: id.id } };
     }
   }
+}
+
+function validateBank(input: Extract<PayMethod, { kind: 'bank' }>): PayMethodResult {
+  const text = input.text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const name = clean(input.name ?? '');
+  const account = normalizeAccountNumber(input.account ?? '');
+  const codeType: BankCodeType = isBankCodeType(input.codeType) ? input.codeType : 'other';
+  const code = normalizeBankCode(input.code ?? '', codeType);
+  const bankName = clean(input.bankName ?? '');
+
+  if (!account && !text) return fail(code || name || bankName ? 'ACCOUNT_REQUIRED' : 'TEXT_REQUIRED');
+  if (text.length > MAX_BANK_TEXT_LENGTH) return fail('TOO_LONG');
+  if (name.length > MAX_IBAN_NAME_LENGTH || bankName.length > MAX_IBAN_NAME_LENGTH) return fail('TOO_LONG');
+
+  const method: Extract<PayMethod, { kind: 'bank' }> = { kind: 'bank', text };
+  if (account) {
+    if (!name) return fail('NAME_REQUIRED');
+    // Indian accounts are 9–18 digits; elsewhere allow the IBAN-style range of letters and digits.
+    const accountOk = codeType === 'ifsc' ? /^\d{9,18}$/.test(account) : /^[A-Z0-9]{4,34}$/.test(account);
+    if (!accountOk) return fail('ACCOUNT_INVALID');
+    method.account = account;
+  }
+  if (code) {
+    if (!isValidBankCode(code, codeType)) return fail('BANK_CODE_INVALID');
+    method.code = code;
+    method.codeType = codeType;
+  } else if (account && codeType === 'ifsc') {
+    // An Indian account number is useless to the payer without the IFSC.
+    return fail('BANK_CODE_REQUIRED');
+  }
+  if (name) method.name = name;
+  if (bankName) method.bankName = bankName;
+  return { ok: true, method };
 }
 
 /** Untrusted stored/synced value → the valid methods in it (invalid entries are dropped). */
@@ -412,7 +524,15 @@ export function parsePayMethods(value: unknown): PayMethod[] {
         candidate = { kind: 'iban', name: str(item.name) ?? '', iban: str(item.iban) ?? '', bic: str(item.bic) ?? undefined };
         break;
       case 'bank':
-        candidate = { kind: 'bank', text: str(item.text) ?? '' };
+        candidate = {
+          kind: 'bank',
+          text: str(item.text) ?? '',
+          name: str(item.name) ?? undefined,
+          account: str(item.account) ?? undefined,
+          code: str(item.code) ?? undefined,
+          codeType: isBankCodeType(item.codeType) ? item.codeType : undefined,
+          bankName: str(item.bankName) ?? undefined,
+        };
         break;
       case 'pix':
         candidate = { kind: 'pix', key: str(item.key) ?? '', name: str(item.name) ?? '', city: str(item.city) ?? '' };
@@ -446,8 +566,12 @@ export function samePayMethod(a: PayMethod, b: PayMethod): boolean {
       return linkDisplay(a.url).toLowerCase() === linkDisplay((b as typeof a).url).toLowerCase();
     case 'iban':
       return a.iban === (b as typeof a).iban;
-    case 'bank':
-      return a.text === (b as typeof a).text;
+    case 'bank': {
+      const other = b as typeof a;
+      return a.account || other.account
+        ? a.account === other.account && (a.code ?? '') === (other.code ?? '')
+        : a.text === other.text;
+    }
     case 'pix':
       return a.key === (b as typeof a).key;
     case 'paynow':
@@ -485,7 +609,7 @@ export function methodTitle(m: PayMethod): string {
     case 'iban':
       return 'Bank transfer (IBAN)';
     case 'bank':
-      return 'Bank details';
+      return m.account ? m.bankName || 'Bank account' : 'Bank details';
     case 'pix':
       return 'Pix';
     case 'paynow':
@@ -503,7 +627,7 @@ export function methodSummary(m: PayMethod): string {
     case 'iban':
       return `${m.iban.slice(0, 4)} ${m.iban.slice(4, 8)} … ${m.iban.slice(-4)}`;
     case 'bank':
-      return m.text.split('\n')[0]!.slice(0, 40);
+      return m.account ? `${m.name ?? ''} · A/c ••${m.account.slice(-4)}`.replace(/^ · /, '') : m.text.split('\n')[0]!.slice(0, 40);
     case 'pix':
       return m.key;
     case 'paynow':
@@ -521,7 +645,7 @@ export function methodShareLine(m: PayMethod): string {
     case 'iban':
       return `IBAN: ${formatIban(m.iban)} (${m.name}${m.bic ? `, BIC ${m.bic}` : ''})`;
     case 'bank':
-      return `Bank: ${m.text.replace(/\n+/g, ', ')}`;
+      return `Bank: ${bankLines(m).map((l) => (l.label ? `${l.label} ${l.value}` : l.value)).join(', ')}`;
     case 'pix':
       return `Pix: ${m.key}`;
     case 'paynow':
@@ -533,3 +657,20 @@ export function methodShareLine(m: PayMethod): string {
 
 /** For the activity log (append-only, synced): which kinds, never the account details. */
 export const methodKinds = (methods: readonly PayMethod[]): string[] => methods.map((m) => m.kind);
+
+/**
+ * Bank details as label/value pairs, in the order a payer types them into their banking app.
+ * Free text comes last, unlabelled. Used by the Pay screen (one copy button each) and messages.
+ */
+export function bankLines(m: Extract<PayMethod, { kind: 'bank' }>): { label: string; value: string; copy: string }[] {
+  const lines: { label: string; value: string; copy: string }[] = [];
+  if (m.name) lines.push({ label: 'Name', value: m.name, copy: m.name });
+  if (m.account) lines.push({ label: 'A/c', value: m.account, copy: m.account });
+  if (m.code) {
+    const type = m.codeType ?? 'other';
+    lines.push({ label: BANK_CODE_LABEL[type], value: formatBankCode(m.code, type), copy: m.code });
+  }
+  if (m.bankName) lines.push({ label: 'Bank', value: m.bankName, copy: m.bankName });
+  if (m.text) lines.push({ label: '', value: m.text.replace(/\n+/g, ', '), copy: m.text });
+  return lines;
+}

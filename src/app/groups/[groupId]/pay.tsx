@@ -21,6 +21,7 @@ import {
   minorToDecimal,
   payLinkFor,
   worksForCurrency,
+  bankLines,
   type PayMethod,
 } from '@/domain/payMethods';
 import { buildUpiPayUri, UPI_P2P_LIMIT_PAISE, UTR_PATTERN } from '@/domain/upi';
@@ -584,7 +585,14 @@ function MethodBody({
     case 'bank':
       return (
         <>
-          <CopyField label="Bank details" value={m.text} />
+          {bankLines(m).map((line) => (
+            <CopyField
+              key={line.label || 'other'}
+              label={line.label === 'A/c' ? 'Account number' : line.label || (m.account ? 'Other details' : 'Bank details')}
+              value={line.value}
+              copyValue={line.copy}
+            />
+          ))}
           {amount}
         </>
       );

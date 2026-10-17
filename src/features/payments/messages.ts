@@ -15,7 +15,15 @@ export function describePayMethodError(error: PayMethodError): string {
     case 'NAME_REQUIRED':
       return 'Enter the account holder’s name.';
     case 'TEXT_REQUIRED':
-      return 'Enter the bank details.';
+      return 'Enter the account number, or the details under “Other details”.';
+    case 'ACCOUNT_REQUIRED':
+      return 'Enter the account number.';
+    case 'ACCOUNT_INVALID':
+      return 'Check the account number: digits only, no spaces needed.';
+    case 'BANK_CODE_INVALID':
+      return 'That code doesn’t look right. Check for a typo.';
+    case 'BANK_CODE_REQUIRED':
+      return 'Enter the IFSC, e.g. HDFC0001234.';
     case 'TOO_LONG':
       return 'That’s too long.';
     case 'PIX_KEY_INVALID':
@@ -35,12 +43,12 @@ export function describePayDetailsError(error: PayDetailsError, memberName: stri
 
 /** The "Add a way to get paid" choices, in the order most people need them. */
 export const METHOD_CHOICES: readonly { kind: PayMethodKind; title: string; detail: string; icon: IconName }[] = [
+  { kind: 'bank', title: 'Bank account', detail: 'Account number + IFSC, routing, sort code…', icon: 'bank' },
   { kind: 'link', title: 'Payment link', detail: 'PayPal, Revolut, Wise, Venmo…', icon: 'link' },
   { kind: 'iban', title: 'Bank transfer (IBAN)', detail: 'Europe, UK, UAE…', icon: 'bank' },
   { kind: 'pix', title: 'Pix', detail: 'Brazil', icon: 'qr' },
   { kind: 'paynow', title: 'PayNow', detail: 'Singapore', icon: 'qr' },
   { kind: 'promptpay', title: 'PromptPay', detail: 'Thailand', icon: 'qr' },
-  { kind: 'bank', title: 'Other bank details', detail: 'Account number, routing…', icon: 'bank' },
 ];
 
 export const iconForKind = (kind: PayMethodKind): IconName =>
