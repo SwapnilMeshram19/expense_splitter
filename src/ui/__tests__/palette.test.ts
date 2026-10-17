@@ -67,8 +67,8 @@ describe('getTheme', () => {
     expect(a.positive).toBe(a.primary);
   });
 
-  it('uses Ocean as the first and default accent', () => {
-    expect(ACCENT_IDS[0]).toBe('ocean');
+  it('uses Aurora as the first and default accent', () => {
+    expect(ACCENT_IDS[0]).toBe('aurora');
   });
 
   it('recognises accent ids only', () => {

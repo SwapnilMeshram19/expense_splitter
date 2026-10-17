@@ -26,6 +26,13 @@ export function formatIsoDate(isoDate: string): string {
   if (!match || !month) return isoDate;
   return `${Number(match[3])} ${month} ${match[1]}`;
 }
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** 'Saturday, 17 Oct' for the Home header (no Intl: identical on every Android build). */
+export function formatDayLine(date: Date): string {
+  return `${WEEKDAYS[date.getDay()]}, ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
 /** Header greeting by the phone's local time. */
 export function greetingFor(date: Date): string {
   const hour = date.getHours();

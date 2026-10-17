@@ -25,8 +25,8 @@ afterEach(() => t.close());
 
 describe('parseThemePreference', () => {
   it('falls back to System + Ocean for missing or unknown values', () => {
-    expect(parseThemePreference(null, null)).toEqual({ mode: 'system', accent: 'ocean' });
-    expect(parseThemePreference('sepia', 'green')).toEqual({ mode: 'system', accent: 'ocean' });
+    expect(parseThemePreference(null, null)).toEqual({ mode: 'dark', accent: 'aurora' });
+    expect(parseThemePreference('sepia', 'green')).toEqual({ mode: 'dark', accent: 'aurora' });
     expect(parseThemePreference('dark', 'plum')).toEqual({ mode: 'dark', accent: 'plum' });
   });
 });
@@ -34,7 +34,7 @@ describe('parseThemePreference', () => {
 describe('theme preference store', () => {
   it('is not loaded until read from the DB', () => {
     expect(getThemePreference().loaded).toBe(false);
-    expect(loadThemePreference(t.ctx)).toEqual({ mode: 'system', accent: 'ocean', loaded: true });
+    expect(loadThemePreference(t.ctx)).toEqual({ mode: 'dark', accent: 'aurora', loaded: true });
   });
 
   it('persists choices in the local settings table and notifies subscribers', () => {
@@ -42,13 +42,13 @@ describe('theme preference store', () => {
     const seen: string[] = [];
     const unsubscribe = subscribeThemePreference((p) => seen.push(`${p.mode}/${p.accent}`));
 
-    setThemeMode(t.ctx, 'dark');
+    setThemeMode(t.ctx, 'system');
     setAccent(t.ctx, 'indigo');
     setAccent(t.ctx, 'indigo'); // no-op: same value
     unsubscribe();
     setThemeMode(t.ctx, 'light');
 
-    expect(seen).toEqual(['dark/ocean', 'dark/indigo']);
+    expect(seen).toEqual(['system/aurora', 'system/indigo']);
     expect(getSetting(t.ctx, THEME_MODE_KEY)).toBe('light');
     expect(getSetting(t.ctx, ACCENT_KEY)).toBe('indigo');
 

@@ -1,4 +1,4 @@
-import { formatIsoDate, fromIsoDate, toLocalIsoDate, todayIsoDate } from '../dates';
+import { formatDayLine, formatIsoDate, fromIsoDate, toLocalIsoDate, todayIsoDate } from '../dates';
 
 describe('dates', () => {
   it('formats ISO dates for display', () => {
@@ -22,5 +22,11 @@ describe('dates', () => {
 
   it('falls back to now for malformed input', () => {
     expect(fromIsoDate('bad')).toBeInstanceOf(Date);
+  });
+});
+describe('formatDayLine', () => {
+  it('reads weekday, day and short month', () => {
+    expect(formatDayLine(new Date(2026, 9, 17, 18, 0))).toBe('Saturday, 17 Oct');
+    expect(formatDayLine(new Date(2027, 0, 3))).toBe('Sunday, 3 Jan');
   });
 });

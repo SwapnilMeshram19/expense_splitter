@@ -29,9 +29,12 @@ function AddButton() {
         onPress={() => openAddExpense(db, getDeviceUserId())}
         accessibilityRole="button"
         accessibilityLabel="Add expense"
-        style={({ pressed }) => [styles.addRing, { borderColor: theme.background, opacity: pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [
+          styles.addRing,
+          { borderColor: theme.background, transform: [{ scale: pressed ? 0.94 : 1 }] },
+        ]}
       >
-        <GradientSurface style={styles.addButton}>
+        <GradientSurface style={[styles.addButton, { borderColor: theme.heroBorder }]}>
           <Icon name="add" color={theme.onGradient} size={26} />
         </GradientSurface>
       </Pressable>
@@ -59,8 +62,10 @@ export default function TabsLayout() {
         tabBarActiveTintColor: theme.onPrimarySoft,
         tabBarInactiveTintColor: theme.muted,
         tabBarStyle: {
-          backgroundColor: theme.surface,
+          // Same colour as the page: the bar recedes, content leads. A hairline marks the edge.
+          backgroundColor: theme.background,
           borderTopColor: theme.border,
+          borderTopWidth: StyleSheet.hairlineWidth,
           height: BAR_HEIGHT + insets.bottom,
           paddingTop: 6,
           paddingBottom: insets.bottom + 6,
@@ -84,5 +89,11 @@ const styles = StyleSheet.create({
   addSlot: { flex: 1, alignItems: 'center' },
   // Ring in the page colour around the gradient disc, so the button "cuts" into the tab bar.
   addRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 4, marginTop: -24, overflow: 'hidden' },
-  addButton: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  addButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 27,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
 });

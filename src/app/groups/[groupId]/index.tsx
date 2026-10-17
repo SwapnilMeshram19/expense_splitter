@@ -518,7 +518,13 @@ function SummaryCard({
             </AppText>
           ) : null}
           {myBalance !== 0 ? (
-            <AppText variant="title" color={myBalance > 0 ? theme.positive : theme.negative}>
+            <AppText
+              variant="display"
+              color={myBalance > 0 ? theme.positive : theme.negative}
+              style={styles.bigAmount}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
               {money(Math.abs(myBalance))}
             </AppText>
           ) : null}
@@ -727,7 +733,8 @@ const styles = StyleSheet.create({
   medium: { fontWeight: '500' },
   bold: { fontWeight: '600' },
   right: { alignItems: 'flex-end' },
-  summary: { gap: 12 },
+  summary: { gap: 14, padding: 20, borderRadius: 24 },
+  bigAmount: { fontVariant: ['tabular-nums'], letterSpacing: -0.8 },
   summaryTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarStack: { flexDirection: 'row', alignItems: 'center' },
   overlap: { marginLeft: -10 },

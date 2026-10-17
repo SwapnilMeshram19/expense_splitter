@@ -24,8 +24,12 @@ export interface ThemePreference {
 
 export const THEME_MODE_KEY = 'ui_theme_mode';
 export const ACCENT_KEY = 'ui_accent';
+/**
+ * Dark by default: the app is designed dark-first (premium, calm, easier on AMOLED batteries).
+ * Only applies until the user picks System or Light in Account > Appearance.
+ */
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = Object.freeze({
-  mode: 'system',
+  mode: 'dark',
   accent: DEFAULT_ACCENT,
 });
 

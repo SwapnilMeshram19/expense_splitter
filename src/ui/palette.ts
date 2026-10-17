@@ -11,9 +11,9 @@
 
 export type ColorScheme = 'light' | 'dark';
 
-export const ACCENT_IDS = ['ocean', 'indigo', 'plum', 'slate', 'teal'] as const;
+export const ACCENT_IDS = ['aurora', 'ocean', 'indigo', 'plum', 'slate', 'teal'] as const;
 export type AccentId = (typeof ACCENT_IDS)[number];
-export const DEFAULT_ACCENT: AccentId = 'ocean';
+export const DEFAULT_ACCENT: AccentId = 'aurora';
 
 interface AccentColors {
   primary: string;
@@ -27,6 +27,24 @@ interface AccentColors {
 }
 
 export const ACCENTS: Record<AccentId, { label: string; light: AccentColors; dark: AccentColors }> = {
+  // Default: periwinkle on near-black, hero from deep indigo to deep teal. Calm, not loud.
+  aurora: {
+    label: 'Aurora',
+    light: {
+      primary: '#3F49C9',
+      onPrimary: '#FFFFFF',
+      primarySoft: '#E8E9FB',
+      onPrimarySoft: '#2E369E',
+      gradient: ['#2A3190', '#0E6673'],
+    },
+    dark: {
+      primary: '#A3B1FF',
+      onPrimary: '#0E1236',
+      primarySoft: '#1D2250',
+      onPrimarySoft: '#C4CCFF',
+      gradient: ['#262D74', '#0B4D58'],
+    },
+  },
   ocean: {
     label: 'Ocean',
     light: {
@@ -137,36 +155,47 @@ interface BaseColors {
    */
   whatsappSoft: string;
   onWhatsappSoft: string;
+  /**
+   * Top edge of cards: a hair lighter than `border` in dark mode, so surfaces read as lit from
+   * above (the "glass" look) without shadows or blur, which cost frames on low-end GPUs.
+   */
+  highlight: string;
+  /** Hairline on the hero gradient. */
+  heroBorder: string;
 }
 
 const BASE: Record<ColorScheme, BaseColors> = {
   light: {
-    background: '#F3F6FA',
+    background: '#F4F5F8',
     surface: '#FFFFFF',
-    surfaceAlt: '#E9EEF5',
-    text: '#121722',
-    muted: '#5A6474',
-    border: '#DCE3EC',
-    negative: '#C63852',
+    surfaceAlt: '#ECEEF3',
+    text: '#11141B',
+    muted: '#586071',
+    border: '#E1E4EA',
+    negative: '#C2364F',
     warning: '#8A5A00',
     warningSoft: '#FCEFD2',
     onGradient: '#FFFFFF',
     whatsappSoft: '#DCF5E5',
     onWhatsappSoft: '#0B6235',
+    highlight: '#E1E4EA',
+    heroBorder: 'rgba(255,255,255,0.10)',
   },
   dark: {
-    background: '#0D1117',
-    surface: '#161B22',
-    surfaceAlt: '#1F2630',
-    text: '#EDF1F6',
-    muted: '#98A2B3',
-    border: '#2A3340',
-    negative: '#FFA3B1',
+    background: '#0A0D12',
+    surface: '#131820',
+    surfaceAlt: '#1B212B',
+    text: '#ECEFF4',
+    muted: '#9AA3B3',
+    border: '#212834',
+    negative: '#FF8296',
     warning: '#F5C76B',
     warningSoft: '#3A2E12',
     onGradient: '#FFFFFF',
     whatsappSoft: '#123222',
     onWhatsappSoft: '#86DFAA',
+    highlight: '#2C3442',
+    heroBorder: 'rgba(255,255,255,0.12)',
   },
 };
 

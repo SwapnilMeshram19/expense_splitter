@@ -1,7 +1,8 @@
-import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { PressableScale } from './PressableScale';
 import { useTheme } from './theme';
 
 /**
@@ -54,21 +55,18 @@ export function Button({
   }[variant];
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: inactive, busy }}
       hitSlop={size === 'sm' ? 4 : undefined}
-      style={({ pressed }) => [
+      scaleTo={0.97}
+      style={[
         styles.base,
         styles[size],
-        {
-          backgroundColor: colors.bg,
-          borderColor: colors.border,
-          opacity: inactive ? 0.55 : pressed ? 0.8 : 1,
-        },
+        { backgroundColor: colors.bg, borderColor: colors.border, opacity: inactive ? 0.55 : 1 },
         style,
       ]}
     >
@@ -92,7 +90,7 @@ export function Button({
           </AppText>
         </View>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 

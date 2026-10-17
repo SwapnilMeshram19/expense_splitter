@@ -6,13 +6,20 @@ interface CardProps extends ViewProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Surface with a hairline border. Flat on purpose: no shadows, which cost frames on low-end GPUs. */
+/**
+ * Surface with a hairline border whose top edge is a touch lighter in dark mode, so cards read as
+ * softly lit glass. Flat on purpose: no shadows or blur, which cost frames on low-end GPUs.
+ */
 export function Card({ style, ...rest }: CardProps) {
   const theme = useTheme();
   return (
     <View
       {...rest}
-      style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }, style]}
+      style={[
+        styles.card,
+        { backgroundColor: theme.surface, borderColor: theme.border, borderTopColor: theme.highlight },
+        style,
+      ]}
     />
   );
 }

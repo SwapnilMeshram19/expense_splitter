@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useMyProfile } from '@/features/auth/useMyProfile';
-import { greetingFor } from '@/lib/dates';
+import { formatDayLine, greetingFor } from '@/lib/dates';
 import { SyncIndicator } from '@/sync/SyncIndicator';
 
 import { AppText } from './AppText';
@@ -56,17 +56,25 @@ export function TabHeader({ title, hideAvatar = false, right }: TabHeaderProps) 
   );
 }
 
-/** "Good evening, Swapnil": the line under the Home header. */
+/** "Saturday, 17 Oct" over "Good evening, Swapnil": the lines under the Home header. */
 export function Greeting() {
   const theme = useTheme();
   const me = useMyProfile();
   // Computed once per mount: rendering must stay pure (no clock reads during render).
-  const [greeting] = useState(() => greetingFor(new Date()));
+  const [lines] = useState(() => {
+    const now = new Date();
+    return { day: formatDayLine(now), greeting: greetingFor(now) };
+  });
   const firstName = me.name?.trim().split(/\s+/)[0] ?? null;
   return (
-    <AppText variant="heading" color={theme.text} numberOfLines={1}>
-      {firstName ? `${greeting}, ${firstName}` : greeting}
-    </AppText>
+    <View style={styles.greeting}>
+      <AppText variant="label" color={theme.muted}>
+        {lines.day}
+      </AppText>
+      <AppText variant="title" color={theme.text} numberOfLines={1} style={styles.greetingText}>
+        {firstName ? `${lines.greeting}, ${firstName}` : lines.greeting}
+      </AppText>
+    </View>
   );
 }
 
@@ -79,4 +87,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   grow: { flex: 1, minWidth: 0 },
+  greeting: { gap: 2 },
+  greetingText: { letterSpacing: -0.4 },
 });
