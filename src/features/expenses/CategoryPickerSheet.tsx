@@ -41,6 +41,8 @@ export function CategoryPickerSheet({
   const [query, setQuery] = useState('');
   /** "Custom" tapped: the box is a name field and the grid steps aside. */
   const [naming, setNaming] = useState(false);
+  /** While typing, the sheet sits at the top so the keyboard can't cover the box. */
+  const [typing, setTyping] = useState(false);
   const inputRef = useRef<RNTextInput>(null);
   const options = categoryOptions(query, suggestions);
   const selectedCustomKey = value.category === 'other' ? categoryLabelKey(value.label.trim()) : null;
@@ -48,6 +50,7 @@ export function CategoryPickerSheet({
   const reset = () => {
     setQuery('');
     setNaming(false);
+    setTyping(false);
   };
   const close = () => {
     reset();
@@ -70,7 +73,7 @@ export function CategoryPickerSheet({
   const nothing = !naming && options.builtIns.length === 0 && options.customs.length === 0 && !options.create;
 
   return (
-    <BottomSheet visible={visible} onClose={close} title={naming ? 'New category' : 'Category'}>
+    <BottomSheet visible={visible} onClose={close} title={naming ? 'New category' : 'Category'} raised={typing}>
       <View
         style={[
           styles.search,
@@ -88,6 +91,8 @@ export function CategoryPickerSheet({
           returnKeyType={naming ? 'done' : 'search'}
           maxLength={MAX_CATEGORY_LABEL_LENGTH + 10}
           onSubmitEditing={create}
+          onFocus={() => setTyping(true)}
+          onBlur={() => setTyping(false)}
           accessibilityLabel={naming ? 'New category name' : 'Search categories'}
           style={styles.searchInput}
         />
