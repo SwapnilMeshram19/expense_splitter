@@ -71,14 +71,34 @@ app. They're secrets anyway so the release config lives in one place.
 `GOOGLE_SERVICES_JSON` must list both packages. The original Firebase Android app was registered as
 `in.ssoftapp.split`, so it's normally there already; the release run stops with a clear error if not.
 
-## Not covered yet (Phase 6.5)
+## Before the first run
 
-- **c.** Production Supabase project. Until it exists, `PROD_SUPABASE_URL` has nothing valid to point
-  at, so don't run a release before then. Also restrict the Supabase GitHub integration
-  (migrations auto-apply on push to `main`) to the dev project.
-- **f.** Play App Signing, then a new Google Android OAuth client for `in.ssoftapp.split` with the
-  **Play app signing** SHA-1 (not the upload key's; Play re-signs what users install), and
-  `assetlinks.json` with the Play signing SHA-256.
+The production Supabase project must exist and its three `PROD_*` secrets be set:
+`docs/production-supabase.md`. Until then the run stops at "Check release secrets".
+
+## First upload: Play Internal testing
+
+1. Play Console → **Create app** ("Expense Splitter", app, free). New apps use **Play App Signing**
+   automatically: Google generates the app signing key; your upload key only signs uploads.
+2. **Testing → Internal testing → Create new release** → upload the `.aab` from the workflow run.
+   Release name = versionName. Add yourself (and up to 100 testers) under **Testers**, by email list.
+3. **Test and release → App integrity → App signing**: copy the **app signing key** SHA-1 and SHA-256
+   (not the upload key's: Play re-signs what testers install).
+4. Google Cloud → **Credentials → Create OAuth client → Android**: package `in.ssoftapp.split`, the
+   app signing SHA-1. No rebuild needed: Google matches package + signature at sign-in time.
+5. Firebase → Project settings → the `in.ssoftapp.split` app → **Add fingerprint**: the same SHA-1 and
+   SHA-256 (keeps FCM and any Google APIs happy with the Play-signed build).
+6. Uninstall the old dev-keystore app with package `in.ssoftapp.split` from your phone (it can't be
+   updated by the Play build), then install from the internal-testing opt-in link.
+7. AdMob → your app → **Link to app store** once Play shows the listing; this starts AdMob's review.
+   Until it's approved, expect few or no live ads. Register your phone under **AdMob → Settings →
+   Test devices** first, so you see test ads and never click your own live ones.
+8. `assetlinks.json` at `https://split.ssoftapp.in/.well-known/assetlinks.json` with the app signing
+   SHA-256, so invite links open the app directly.
+
+Play asks for the store listing, content rating, Data safety, Ads declaration and target audience
+before _production_, but internal testing works with most of that unfinished. `docs/ads.md` has
+the ads-related answers.
 
 ## Cost
 

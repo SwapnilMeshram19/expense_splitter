@@ -86,9 +86,10 @@
     "check": "npm run typecheck && npm run lint && npm test -- --ci",
     "db:generate": "drizzle-kit generate",
     "domain:sync": "node scripts/sync-domain.mjs",
-    "functions:deploy": "supabase functions deploy sync-push --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt",
-    "functions:deploy:fx": "supabase functions deploy fx-refresh --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt",
-    "functions:deploy:push": "supabase functions deploy push-send --project-ref cudmaszrwrbgwsoizajd --use-api --no-verify-jwt"
+    "functions:deploy": "bash scripts/supabase-deploy.sh dev functions",
+    "functions:deploy:prod": "bash scripts/supabase-deploy.sh prod functions",
+    "db:push:dev": "bash scripts/supabase-deploy.sh dev db",
+    "db:push:prod": "bash scripts/supabase-deploy.sh prod db"
   },
   "private": true,
   "allowScripts": {
