@@ -239,8 +239,8 @@ describe('foreign bills', () => {
   });
 
   it('reports totals that are too large or round to zero in the group currency', () => {
-    expect(analyzeForm(usd({ amountText: '200000' }), members, 'INR', '96.64').problems).toEqual([
-      'That’s more than ₹1,00,00,000 in INR. Split it into smaller expenses.',
+    expect(analyzeForm(usd({ amountText: '20000000' }), members, 'INR', '96.64').problems).toEqual([
+      'That’s more than ₹1,00,00,00,000 in INR. Split it into smaller expenses.',
     ]);
     expect(
       analyzeForm(base({ currency: 'IDR', amountText: '1' }), members, 'KWD', '0.0000187').problems,
@@ -257,7 +257,7 @@ describe('foreign bills', () => {
     expect(jpy.splitHint).toBe('¥400 left to assign');
     expect(
       analyzeForm(base({ currency: 'JPY', amountText: '10.5' }), members, 'INR', '0.6').problems[0],
-    ).toBe('Enter a valid amount (up to ¥10,000,000, no decimals).');
+    ).toBe('Enter a valid amount (up to ¥1,000,000,000, no decimals).');
   });
 
   it('switches currency, trimming decimals the new currency can’t hold and resetting the rate', () => {

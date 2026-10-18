@@ -6,8 +6,12 @@
 
 export type Paise = number;
 
-/** Sanity cap per single amount: ₹1,00,00,000 (1 crore). Adjust if needed. */
-export const MAX_AMOUNT_PAISE: Paise = 1_00_00_000 * 100;
+/**
+ * Sanity cap per single amount: ₹1,00,00,00,000 (100 crore). Big enough for a flat, a car or a
+ * wedding; ten times below the server's column CHECK (currency.ts MAX_AMOUNT_MINOR_ANY), so balance
+ * sums stay far inside Number.MAX_SAFE_INTEGER.
+ */
+export const MAX_AMOUNT_PAISE: Paise = 1_00_00_00_000 * 100;
 
 export type ParseResult =
   | { ok: true; paise: Paise }
@@ -47,8 +51,8 @@ export function parseRupeesToPaise(input: string): ParseResult {
 export function sanitizeAmountInput(next: string, previous: string): string {
   const stripped = next.replace(/[₹\s,]/g, '');
   if (stripped === '') return '';
-  // digits, optional single dot, max 2 decimals; max 8 rupee digits (< ₹10 crore)
-  return /^\d{0,8}(\.\d{0,2})?$/.test(stripped) ? stripped : previous;
+  // digits, optional single dot, max 2 decimals; max 10 rupee digits (the cap has 10)
+  return /^\d{0,10}(\.\d{0,2})?$/.test(stripped) ? stripped : previous;
 }
 
 /** Group an integer digit string in Indian style: 1234567 -> 12,34,567 */

@@ -91,12 +91,12 @@ describe('group budgets', () => {
     expect(
       setGroupBudget(t.ctx, {
         groupId,
-        budget: { limit: 1_000_000_001, period: 'total' },
+        budget: { limit: 100_000_000_001, period: 'total' },
         actorMemberId: me,
       }),
     ).toEqual({
       ok: false,
-      error: { code: 'INVALID_BUDGET', max: 1_000_000_000 },
+      error: { code: 'INVALID_BUDGET', max: 100_000_000_000 },
     });
     setGroupBudget(t.ctx, { groupId, budget: { limit: 500, period: 'total' }, actorMemberId: me });
     expect(setGroupBudget(t.ctx, { groupId, budget: null, actorMemberId: me }).ok).toBe(true);

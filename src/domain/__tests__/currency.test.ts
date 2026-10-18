@@ -14,6 +14,8 @@ import {
   minorDigits,
   minorToInputString,
   parseAmount,
+  isOverAmountDigits,
+  readableAmount,
   sanitizeMoneyInput,
 } from '../currency';
 import { formatPaise, MAX_AMOUNT_PAISE } from '../money';
@@ -75,16 +77,16 @@ describe('currency table', () => {
 });
 
 describe('maxAmountMinor', () => {
-  it('keeps ₹1 crore for INR', () => {
+  it('is ₹100 crore for INR', () => {
     expect(maxAmountMinor('INR')).toBe(MAX_AMOUNT_PAISE);
-    expect(maxAmountLabel('INR')).toBe('₹1,00,00,000');
+    expect(maxAmountLabel('INR')).toBe('₹1,00,00,00,000');
   });
 
   it('scales by minor digits and denomination', () => {
-    expect(maxAmountMinor('USD')).toBe(10_000_000 * 100);
-    expect(maxAmountMinor('JPY')).toBe(10_000_000);
-    expect(maxAmountMinor('KWD')).toBe(10_000_000 * 1000);
-    expect(maxAmountMinor('VND')).toBe(10_000_000_000);
+    expect(maxAmountMinor('USD')).toBe(1_000_000_000 * 100);
+    expect(maxAmountMinor('JPY')).toBe(1_000_000_000);
+    expect(maxAmountMinor('KWD')).toBe(1_000_000_000 * 1000);
+    expect(maxAmountMinor('VND')).toBe(100_000_000_000);
     // High denomination with 2 digits hits the server-wide ceiling.
     expect(maxAmountMinor('IDR')).toBe(MAX_AMOUNT_MINOR_ANY);
     expect(maxAmountMinor('IQD')).toBe(MAX_AMOUNT_MINOR_ANY);
@@ -177,9 +179,9 @@ describe('parseAmount', () => {
     expect(parseAmount('-5', 'USD')).toEqual({ ok: false, error: 'INVALID' });
     expect(parseAmount('1e5', 'USD')).toEqual({ ok: false, error: 'INVALID' });
     expect(parseAmount('0.00', 'USD')).toEqual({ ok: false, error: 'ZERO' });
-    expect(parseAmount('10000000.01', 'USD')).toEqual({ ok: false, error: 'TOO_LARGE' });
+    expect(parseAmount('1000000000.01', 'USD')).toEqual({ ok: false, error: 'TOO_LARGE' });
     expect(parseAmount('99999999999999999999', 'JPY')).toEqual({ ok: false, error: 'TOO_LARGE' });
-    expect(parseAmount('10000000', 'USD')).toEqual({ ok: true, minor: 1_000_000_000 });
+    expect(parseAmount('1000000000', 'USD')).toEqual({ ok: true, minor: 100_000_000_000 });
   });
 });
 
@@ -195,10 +197,39 @@ describe('sanitizeMoneyInput', () => {
   });
 
   it('limits whole digits by the cap', () => {
-    expect(sanitizeMoneyInput('12345678', '', 'USD')).toBe('12345678');
-    expect(sanitizeMoneyInput('123456789', 'prev', 'USD')).toBe('prev');
+    expect(sanitizeMoneyInput('1234567890', '', 'USD')).toBe('1234567890');
+    expect(sanitizeMoneyInput('12345678901', 'prev', 'USD')).toBe('prev');
     expect(sanitizeMoneyInput('12345678901', '', 'IDR')).toBe('12345678901');
-    // INR behaves exactly like sanitizeAmountInput (8 rupee digits).
-    expect(sanitizeMoneyInput('₹123456789', 'prev', 'INR')).toBe('prev');
+    // INR behaves exactly like sanitizeAmountInput (10 rupee digits: ₹1,00,00,00,000).
+    expect(sanitizeMoneyInput('₹1000000000', 'prev', 'INR')).toBe('1000000000');
+    expect(sanitizeMoneyInput('₹12345678901', 'prev', 'INR')).toBe('prev');
+  });
+});
+
+describe('isOverAmountDigits', () => {
+  it('is true only when the cap alone refused the text', () => {
+    expect(isOverAmountDigits('12345678901', 'INR')).toBe(true);
+    expect(isOverAmountDigits('₹12345678901.5', 'INR')).toBe(true);
+    expect(isOverAmountDigits('1000000000', 'INR')).toBe(false);
+    expect(isOverAmountDigits('12.505', 'INR')).toBe(false); // too many decimals, not too big
+    expect(isOverAmountDigits('12a', 'INR')).toBe(false);
+    expect(isOverAmountDigits('', 'INR')).toBe(false);
+    expect(isOverAmountDigits('12345678901', 'USD')).toBe(true);
+    expect(isOverAmountDigits('1.5', 'JPY')).toBe(false); // JPY has no decimals: invalid, not big
+  });
+});
+
+describe('readableAmount', () => {
+  it('groups long amounts for reading, lakh/crore for rupees', () => {
+    expect(readableAmount('10000000', 'INR')).toBe('₹1,00,00,000');
+    expect(readableAmount('250000.5', 'INR')).toBe('₹2,50,000.50');
+    expect(readableAmount('1000000', 'USD')).toBe('$1,000,000');
+  });
+
+  it('stays quiet for short or invalid amounts', () => {
+    expect(readableAmount('9999', 'INR')).toBeNull();
+    expect(readableAmount('', 'INR')).toBeNull();
+    expect(readableAmount('12.', 'INR')).toBeNull();
+    expect(readableAmount('12345678901', 'INR')).toBeNull();
   });
 });

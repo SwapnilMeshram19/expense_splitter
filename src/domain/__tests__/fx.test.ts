@@ -102,7 +102,7 @@ describe('foreignTotal', () => {
     expect(t('XYZ', 100, '1')).toEqual({ ok: false, error: { code: 'FX_UNKNOWN_CURRENCY' } });
     expect(t('USD', 0, '1')).toEqual({ ok: false, error: { code: 'FX_INVALID_AMOUNT' } });
     expect(t('USD', 1.5, '1')).toEqual({ ok: false, error: { code: 'FX_INVALID_AMOUNT' } });
-    expect(t('USD', 1_000_000_001, '1')).toEqual({
+    expect(t('USD', 100_000_000_001, '1')).toEqual({
       ok: false,
       error: { code: 'FX_INVALID_AMOUNT' },
     });
@@ -115,10 +115,10 @@ describe('foreignTotal', () => {
       error: { code: 'FX_INVALID_RATE', error: 'NOT_CANONICAL' },
     });
     expect(t('IDR', 1, '0.0001')).toEqual({ ok: false, error: { code: 'FX_TOTAL_ZERO' } });
-    // $2,00,000 at 96.64 = ₹1.93 crore, above the ₹1 crore cap.
-    expect(t('USD', 20_000_000, '96.64')).toEqual({
+    // $2,00,00,000 at 96.64 = ₹193 crore, above the ₹100 crore cap.
+    expect(t('USD', 2_000_000_000, '96.64')).toEqual({
       ok: false,
-      error: { code: 'FX_TOTAL_TOO_LARGE', max: 1_00_00_000_00 },
+      error: { code: 'FX_TOTAL_TOO_LARGE', max: 1_00_00_00_000_00 },
     });
   });
 
@@ -128,7 +128,7 @@ describe('foreignTotal', () => {
       'USD',
       known,
     );
-    expect(r).toEqual({ ok: false, error: { code: 'FX_TOTAL_TOO_LARGE', max: 1_000_000_000 } });
+    expect(r).toEqual({ ok: false, error: { code: 'FX_TOTAL_TOO_LARGE', max: 100_000_000_000 } });
   });
 });
 

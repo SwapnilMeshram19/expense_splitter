@@ -4,12 +4,13 @@ import type { AppDb } from '../context';
 import { settings } from '../schema';
 
 /**
- * Ids of example groups ("Goa trip · example") that exist on this phone only.
+ * Ids of example groups that builds up to 1.0.0 created on first launch (this phone only). The app
+ * no longer makes them; removeLegacySampleGroups() deletes any left over at startup.
  *
- * Kept in the local settings table (never synced) and read by the sync engine, which leaves these
- * groups and everything in them out of every push, so example data can never reach the server or
- * anyone else's phone. Lives in its own module with no repository imports, like access.ts, so the
- * engine can read it without an import cycle.
+ * Kept in the local settings table (never synced) and still read by the sync engine, which leaves
+ * these groups out of every push: if the cleanup ever fails, example data still can't reach the
+ * server. Lives in its own module with no repository imports, like access.ts, so the engine can
+ * read it without an import cycle.
  */
 export const SAMPLE_GROUP_IDS_KEY = 'sample_group_ids';
 

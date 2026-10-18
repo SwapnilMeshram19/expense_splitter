@@ -224,7 +224,7 @@ function rejectUnknownType(input: never): SplitResult {
 
 /**
  * Compute who owes what for an expense of `totalPaise` (minor units of one currency). Never throws
- * for user input. `maxAmount` is that currency's per-amount cap (default: ₹1 crore in paise).
+ * for user input. `maxAmount` is that currency's per-amount cap (default: ₹100 crore in paise).
  */
 export function computeSplit(
   totalPaise: Paise,

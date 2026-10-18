@@ -19,10 +19,9 @@ export function addExpenseTarget(groups: readonly Group[]): AddExpenseTarget {
   return { kind: 'pick' };
 }
 
-/** Once a real group exists, "+" leaves the example group out (it's still editable from its screen). */
+/** "+" never targets a leftover example group from an old build (deleted at startup anyway). */
 export function addExpenseGroups(groups: readonly Group[], sampleIds: ReadonlySet<string>): Group[] {
-  const real = groups.filter((g) => !sampleIds.has(g.id));
-  return real.length > 0 ? real : [...groups];
+  return groups.filter((g) => !sampleIds.has(g.id));
 }
 
 /** The centre "+" tab. */

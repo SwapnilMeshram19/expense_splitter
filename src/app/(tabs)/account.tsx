@@ -285,6 +285,7 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
 
   return (
     <Card style={listCardStyle}>
+      <ListRow icon="info" title="How it works" onPress={() => router.push('/welcome')} />
       <ListRow icon="shield" title="Privacy policy" onPress={() => void WebBrowser.openBrowserAsync(PRIVACY_URL)} />
       {privacyOptionsRequired ? (
         <ListRow

@@ -70,7 +70,7 @@ export default function NewGroupScreen() {
         <Input
           value={groupName}
           onChangeText={setGroupName}
-          placeholder="e.g. Goa trip, Flat 302"
+          placeholder="e.g. Trip, Flatmates, Office lunch"
           maxLength={MAX_NAME_LENGTH}
           accessibilityLabel="Group name"
           autoFocus

@@ -1,9 +1,11 @@
 import { FlashList } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 
+import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
@@ -11,6 +13,7 @@ import { formatMoney, type CurrencyCode } from '@/domain/currency';
 import { AdSlot } from '@/features/ads/AdSlot';
 import { shouldShowHomeAd } from '@/features/ads/adPolicy';
 import { useApprox } from '@/features/fx/useApprox';
+import { shouldShowGuide } from '@/features/onboarding/guide';
 import {
   loadOverview,
   OVERVIEW_TABLES,
@@ -34,7 +37,7 @@ import { useTheme, type Theme } from '@/ui/theme';
 
 const loadHome = () => loadOverview(db, getDeviceUserId());
 
-type HomeRow = GroupSummary | { heading: 'Settled up' | 'Example' };
+type HomeRow = GroupSummary | { heading: 'Settled up' };
 
 /** "≈ ₹3,900" for an amount in another currency, or null. */
 type Approx = (minor: number, from: CurrencyCode) => string | null;
@@ -50,19 +53,19 @@ export default function HomeScreen() {
     overview.groups.some((g) => g.myBalance !== 0 && g.group.currency !== homeCurrency),
   );
 
+  // First launch on a phone with no groups: the short guide, once (Account → How it works reopens it).
+  useEffect(() => {
+    if (shouldShowGuide(appContext)) router.push('/welcome');
+  }, []);
+
   // Groups where you owe or are owed first; settled ones below their own heading, so what needs
   // doing is always at the top. (Read-only groups stay where they are: they need attention too.)
-  // The example group sits on its own at the bottom once a real group exists.
-  const real = overview.groups.filter((g) => !g.sample);
-  const samples = real.length > 0 ? overview.groups.filter((g) => g.sample) : [];
-  const listed = real.length > 0 ? real : overview.groups;
-  const open = listed.filter((g) => g.myBalance !== 0 || g.lost);
-  const done = listed.filter((g) => g.myBalance === 0 && !g.lost);
+  const open = overview.groups.filter((g) => g.myBalance !== 0 || g.lost);
+  const done = overview.groups.filter((g) => g.myBalance === 0 && !g.lost);
   const rows: HomeRow[] = [
     ...open,
     ...(done.length > 0 && open.length > 0 ? [{ heading: 'Settled up' as const }] : []),
     ...done,
-    ...(samples.length > 0 ? [{ heading: 'Example' as const }, ...samples] : []),
   ];
 
   return (
@@ -82,10 +85,10 @@ export default function HomeScreen() {
           ) : null
         }
         ListEmptyComponent={<EmptyState />}
-        // One quiet ad below the groups, only once there's a real group (never for someone still
-        // exploring the example). Never on any form or payment screen.
+        // One quiet ad below the groups, only once there's a group. Never on any form or payment
+        // screen.
         ListFooterComponent={
-          shouldShowHomeAd(real.length) ? <AdSlot placement="home" style={styles.ad} /> : null
+          shouldShowHomeAd(overview.groups.length) ? <AdSlot placement="home" style={styles.ad} /> : null
         }
         ItemSeparatorComponent={Separator}
         renderItem={({ item }) =>
@@ -339,18 +342,6 @@ function GroupRow({
                 Read-only · no longer shared
               </AppText>
             </View>
-          ) : summary.sample ? (
-            <View style={styles.sampleLine}>
-              <View style={[styles.chip, styles.sampleChip, { backgroundColor: theme.primarySoft }]}>
-                <Icon name="sparkle" color={theme.onPrimarySoft} size={12} />
-                <AppText variant="caption" color={theme.onPrimarySoft} style={styles.chipText}>
-                  Example
-                </AppText>
-              </View>
-              <AppText variant="caption" color={theme.muted}>
-                Only on this phone
-              </AppText>
-            </View>
           ) : (
             <AppText variant="caption" color={theme.muted}>
               {me ? members : `${members} · you’re not a member`}
@@ -420,6 +411,14 @@ function EmptyState() {
             style={styles.grow}
           />
         </View>
+        <Button
+          label="How it works"
+          icon="help"
+          size="sm"
+          variant="soft"
+          onPress={() => router.push('/welcome')}
+          style={styles.howItWorks}
+        />
       </Card>
     </Animated.View>
   );
@@ -490,8 +489,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   chipText: { fontWeight: '500' },
-  sampleLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  sampleChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 0 },
   balance: { alignItems: 'flex-end' },
   budget: { marginTop: 6 },
   separator: { height: 10 },
@@ -508,4 +505,5 @@ const styles = StyleSheet.create({
   emptyBlock: { gap: 16, paddingTop: 4 },
   empty: { gap: 10, paddingVertical: 28, paddingHorizontal: 20 },
   emptyActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  howItWorks: { alignSelf: 'center' },
 });

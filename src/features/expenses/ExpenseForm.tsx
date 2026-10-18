@@ -7,6 +7,9 @@ import {
   currencyInfo,
   currencyPrefix,
   formatMoney,
+  isOverAmountDigits,
+  maxAmountLabel,
+  readableAmount,
   sanitizeMoneyInput,
   type CurrencyCode,
 } from '@/domain/currency';
@@ -111,6 +114,8 @@ export function ExpenseForm({
   const [showIosDate, setShowIosDate] = useState(false);
   const [showIosEnd, setShowIosEnd] = useState(false);
   const [pickingCategory, setPickingCategory] = useState(false);
+  // The last keypress was refused for going past the per-amount cap: say so instead of ignoring it.
+  const [amountAtCap, setAmountAtCap] = useState(false);
   // New expenses follow the description ("Swiggy" → Food) until the user picks a category.
   const [categoryTouched, setCategoryTouched] = useState(
     expenseId !== null || isRuleMode(repeatMode, initialState),
@@ -220,6 +225,7 @@ export function ExpenseForm({
   const setCurrency = (currency: CurrencyCode) => {
     setState((s) => withCurrency(s, currency));
     setError(null);
+    setAmountAtCap(false);
   };
 
   const formatPreview = (minor: number | undefined) =>
@@ -258,12 +264,19 @@ export function ExpenseForm({
           <HeroAmountInput
             prefix={currencyPrefix(entryCurrency)}
             value={state.amountText}
-            onChangeText={(text) =>
-              update({ amountText: sanitizeMoneyInput(text, state.amountText, entryCurrency) })
-            }
+            onChangeText={(text) => {
+              setAmountAtCap(isOverAmountDigits(text, entryCurrency));
+              update({ amountText: sanitizeMoneyInput(text, state.amountText, entryCurrency) });
+            }}
             keyboardType={currencyInfo(entryCurrency).digits === 0 ? 'number-pad' : 'decimal-pad'}
             accessibilityLabel={`Amount in ${currencyInfo(entryCurrency).name}`}
             autoFocus={state.description === '' && state.amountText === ''}
+          />
+          <AmountHint
+            atCap={amountAtCap}
+            readable={readableAmount(state.amountText, entryCurrency)}
+            limit={maxAmountLabel(entryCurrency)}
+            theme={theme}
           />
         </View>
 
@@ -737,6 +750,36 @@ function Hint({ text, theme }: { text: string; theme: Theme }) {
   );
 }
 
+/**
+ * One line under the big amount: the limit when a keypress went past it, otherwise the typed
+ * digits grouped ("₹1,00,00,000") once there are enough zeros to miscount. Fixed height, so the
+ * form doesn't jump while typing.
+ */
+function AmountHint({
+  atCap,
+  readable,
+  limit,
+  theme,
+}: {
+  atCap: boolean;
+  readable: string | null;
+  limit: string;
+  theme: Theme;
+}) {
+  const text = atCap ? `Up to ${limit} in one expense` : readable;
+  return (
+    <AppText
+      variant="caption"
+      color={atCap ? theme.warning : theme.muted}
+      style={styles.amountHint}
+      accessibilityLiveRegion={atCap ? 'polite' : 'none'}
+      numberOfLines={1}
+    >
+      {text ?? ' '}
+    </AppText>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 20, paddingTop: 8, gap: 12, paddingBottom: 48 },
   grow: { flex: 1, minWidth: 0 },
@@ -744,6 +787,7 @@ const styles = StyleSheet.create({
   bold: { fontWeight: '600' },
   amountBlock: { alignItems: 'center', paddingVertical: 8 },
   amountLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  amountHint: { minHeight: 16, textAlign: 'center' },
   rateCard: { gap: 8, padding: 14, borderRadius: 18 },
   rateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rateInput: {

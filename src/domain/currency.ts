@@ -38,9 +38,12 @@ export const DEFAULT_CURRENCY: CurrencyCode = 'INR';
  */
 export const MAX_AMOUNT_MINOR_ANY = 1_000_000_000_000;
 
-/** Per-amount cap in major units: ₹1 crore / $10M; 10^10 for high-denomination currencies. */
-const MAX_MAJOR_DEFAULT = 10_000_000;
-const MAX_MAJOR_HIGH = 10_000_000_000;
+/**
+ * Per-amount cap in major units: ₹100 crore / $1B; 10^11 for high-denomination currencies. Always
+ * clamped to MAX_AMOUNT_MINOR_ANY (the server CHECK), so raising these never needs a migration.
+ */
+const MAX_MAJOR_DEFAULT = 1_000_000_000;
+const MAX_MAJOR_HIGH = 100_000_000_000;
 
 // code, digits, symbol ('' = show the code), name. "*" after the digit marks a high-denomination
 // currency. Keep sorted by code. Funds, metals and SDR are left out on purpose, as are non-ISO local
@@ -253,7 +256,7 @@ export function currencyInfo(code: CurrencyCode): CurrencyInfo {
 
 export const minorDigits = (code: CurrencyCode): number => currencyInfo(code).digits;
 
-/** Largest single amount (expense, payment) in minor units of `code`. INR keeps ₹1 crore. */
+/** Largest single amount (expense, payment) in minor units of `code`. INR: ₹100 crore. */
 export function maxAmountMinor(code: CurrencyCode): number {
   if (code === 'INR') return MAX_AMOUNT_PAISE;
   const info = currencyInfo(code);
@@ -406,18 +409,46 @@ export function parseAmount(input: string, code: CurrencyCode): AmountParseResul
   return { ok: true, minor };
 }
 
+/** Whole-part digits the cap allows: 10 for INR (₹1,00,00,00,000). */
+const wholeDigitLimit = (code: CurrencyCode): number =>
+  String(Math.floor(maxAmountMinor(code) / 10 ** currencyInfo(code).digits)).length;
+
+const stripAmountText = (text: string): string => text.replace(/[₹\s, ]/g, '');
+
+/** A partial amount of `code` with up to `whole` digits before the decimal point. */
+function partialAmountPattern(code: CurrencyCode, whole: number | null): RegExp {
+  const { digits } = currencyInfo(code);
+  const w = whole === null ? '' : `{0,${whole}}`;
+  const head = whole === null ? '\\d*' : `\\d${w}`;
+  return digits === 0 ? new RegExp(`^${head}$`) : new RegExp(`^${head}(\\.\\d{0,${digits}})?$`);
+}
+
 /**
  * Restrict live TextInput text to a valid partial amount of `code`; returns `previous` when the
  * new text is invalid. Whole-part digits are capped by the currency's limit.
  */
 export function sanitizeMoneyInput(next: string, previous: string, code: CurrencyCode): string {
-  const stripped = next.replace(/[₹\s, ]/g, '');
+  const stripped = stripAmountText(next);
   if (stripped === '') return '';
-  const { digits } = currencyInfo(code);
-  const wholeDigits = String(Math.floor(maxAmountMinor(code) / 10 ** digits)).length;
-  const pattern =
-    digits === 0
-      ? new RegExp(`^\\d{0,${wholeDigits}}$`)
-      : new RegExp(`^\\d{0,${wholeDigits}}(\\.\\d{0,${digits}})?$`);
-  return pattern.test(stripped) ? stripped : previous;
+  return partialAmountPattern(code, wholeDigitLimit(code)).test(stripped) ? stripped : previous;
+}
+
+/**
+ * True when `next` is a well-formed amount that sanitizeMoneyInput refused only for having too
+ * many digits: the field shows the limit instead of silently ignoring the keypress.
+ */
+export function isOverAmountDigits(next: string, code: CurrencyCode): boolean {
+  const stripped = stripAmountText(next);
+  if (stripped === '' || !partialAmountPattern(code, null).test(stripped)) return false;
+  return !partialAmountPattern(code, wholeDigitLimit(code)).test(stripped);
+}
+
+/**
+ * Typed digits grouped for reading ("10000000" → "₹1,00,00,000"), from 10,000 up, where counting
+ * zeros gets hard. Null below that, or when the text isn't a valid amount.
+ */
+export function readableAmount(text: string, code: CurrencyCode): string | null {
+  const parsed = parseAmount(text, code);
+  if (!parsed.ok || parsed.minor < 10_000 * 10 ** currencyInfo(code).digits) return null;
+  return formatMoney(parsed.minor, code);
 }

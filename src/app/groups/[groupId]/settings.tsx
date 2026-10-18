@@ -6,7 +6,6 @@ import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
-import { isSampleGroup } from '@/db/repositories/sampleIds';
 import {
   deleteGroup,
   getGroup,
@@ -40,7 +39,6 @@ import { isValidVpa } from '@/domain/upi';
 import { BudgetEditor } from '@/features/groups/BudgetEditor';
 import { isGroupLost } from '@/db/repositories/access';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
-import { confirmRemoveSample } from '@/features/groups/SampleBanner';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -86,7 +84,6 @@ function loadSettingsView(groupId: string) {
     members,
     lost: isGroupLost(db, groupId),
     currencyLocked: isCurrencyLocked(db, groupId),
-    sample: isSampleGroup(db, groupId),
   };
 }
 
@@ -152,7 +149,6 @@ export default function GroupSettingsScreen() {
       me={view.me}
       members={view.members}
       currencyLocked={view.currencyLocked}
-      sample={view.sample}
     />
   );
 }
@@ -170,15 +166,12 @@ function SettingsForm({
   me,
   members,
   currencyLocked,
-  sample,
 }: {
   group: Group;
   me: string;
   members: MemberRow[];
   /** The group has expenses or payments (deleted ones too): its currency can't change. */
   currencyLocked: boolean;
-  /** Example group: can't be shared; deleting removes it from this phone at once. */
-  sample: boolean;
 }) {
   const theme = useTheme();
   const { currency } = group;
@@ -275,9 +268,7 @@ function SettingsForm({
         keyboardShouldPersistTaps="handled"
       >
         <Card style={listCardStyle}>
-          {sample ? null : (
-            <ListRow icon="personAdd" title="Invite people" onPress={() => open('/groups/[groupId]/invite')} />
-          )}
+          <ListRow icon="personAdd" title="Invite people" onPress={() => open('/groups/[groupId]/invite')} />
           <ListRow
             icon="wallet"
             title="Your payment details"
@@ -450,10 +441,10 @@ function SettingsForm({
         </Card>
 
         <Button
-          label={sample ? 'Delete example group' : 'Delete group'}
+          label="Delete group"
           icon="delete"
           variant="danger"
-          onPress={() => (sample ? confirmRemoveSample(group.id) : confirmDeleteGroup(group, me))}
+          onPress={() => confirmDeleteGroup(group, me)}
         />
         <AppText variant="caption" color={theme.muted} style={styles.centerText}>
           Everyone must be settled up first.

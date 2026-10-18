@@ -34,14 +34,17 @@ describe('parseRupeesToPaise', () => {
     ['1.005', 'TOO_MANY_DECIMALS'], // the classic float trap: 1.005 * 100 = 100.4999…
     ['0', 'ZERO'],
     ['0.00', 'ZERO'],
-    ['100000001', 'TOO_LARGE'], // above ₹1 crore cap
+    ['1000000001', 'TOO_LARGE'], // above the ₹100 crore cap
     ['12345678901234', 'TOO_LARGE'], // 14 rupee digits, rejected before Number()
   ])('rejects %p with %s', (input, error) => {
     expect(parseRupeesToPaise(input)).toEqual({ ok: false, error });
   });
 
   it('accepts exactly the cap', () => {
-    expect(parseRupeesToPaise('1,00,00,000')).toEqual({ ok: true, paise: MAX_AMOUNT_PAISE });
+    expect(parseRupeesToPaise('1,00,00,00,000')).toEqual({ ok: true, paise: MAX_AMOUNT_PAISE });
+    // ₹1 crore and ₹50 crore are ordinary amounts now.
+    expect(parseRupeesToPaise('10000000')).toEqual({ ok: true, paise: 1_00_00_000_00 });
+    expect(parseRupeesToPaise('50,00,00,000.50')).toEqual({ ok: true, paise: 50_00_00_000_50 });
   });
 });
 
@@ -65,7 +68,8 @@ describe('sanitizeAmountInput', () => {
     expect(sanitizeAmountInput('12.505', '12.50')).toBe('12.50');
     expect(sanitizeAmountInput('12.5.', '12.5')).toBe('12.5');
     expect(sanitizeAmountInput('12a', '12')).toBe('12');
-    expect(sanitizeAmountInput('123456789', '12345678')).toBe('12345678');
+    expect(sanitizeAmountInput('1234567890', '123456789')).toBe('1234567890');
+    expect(sanitizeAmountInput('12345678901', '1234567890')).toBe('1234567890');
   });
 });
 

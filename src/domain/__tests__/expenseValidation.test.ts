@@ -244,19 +244,19 @@ describe('validateExpense: currencies', () => {
   });
 
   it('uses the group currency cap for plain expenses', () => {
-    // ¥9,000,000 fits the JPY cap (¥1 crore); ¥20,000,000 does not.
+    // ¥900,000,000 fits the JPY cap (¥100 crore); ¥2,000,000,000 does not.
     const jpy: ExpenseInput = {
       description: 'Ryokan',
-      amountPaise: 9_000_000,
+      amountPaise: 900_000_000,
       expenseDate: '2026-10-01',
-      payers: [{ memberId: 'a', amountPaise: 9_000_000 }],
+      payers: [{ memberId: 'a', amountPaise: 900_000_000 }],
       splitInput: { type: 'equal', memberIds: ['a', 'b'] },
       currency: 'JPY',
     };
     expect(validateExpense(jpy, members).ok).toBe(true);
     expect(
       validateExpense(
-        { ...jpy, amountPaise: 20_000_000, payers: [{ memberId: 'a', amountPaise: 20_000_000 }] },
+        { ...jpy, amountPaise: 2_000_000_000, payers: [{ memberId: 'a', amountPaise: 2_000_000_000 }] },
         members,
       ),
     ).toEqual({

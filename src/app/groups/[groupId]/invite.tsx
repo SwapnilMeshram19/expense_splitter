@@ -5,7 +5,6 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
-import { isSampleGroup } from '@/db/repositories/sampleIds';
 import { groups } from '@/db/schema';
 import { useAuth } from '@/features/auth/authStore';
 import { createInvite, revokeAllInvites, type CreatedInvite } from '@/features/invites/inviteApi';
@@ -49,26 +48,6 @@ export default function InviteScreen() {
         <Stack.Screen options={{ title: 'Invite' }} />
         <AppText color={theme.muted}>This group no longer exists.</AppText>
       </View>
-    );
-  }
-
-  if (isSampleGroup(db, groupId)) {
-    return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Stack.Screen options={{ title: 'Invite' }} />
-        <Card style={styles.hero}>
-          <View style={[styles.heroIcon, { backgroundColor: theme.primarySoft }]}>
-            <Icon name="sparkle" color={theme.onPrimarySoft} size={28} />
-          </View>
-          <AppText variant="heading" style={styles.centerText}>
-            The example can’t be shared
-          </AppText>
-          <AppText color={theme.muted} style={styles.centerText}>
-            Start your own group, then invite your friends to it.
-          </AppText>
-          <Button label="New group" icon="add" size="lg" onPress={() => router.replace('/groups/new')} style={styles.stretch} />
-        </Card>
-      </ScrollView>
     );
   }
 

@@ -208,7 +208,7 @@ export async function refreshWeeklyReminder(): Promise<void> {
     const n = await N;
     await n.cancelScheduledNotificationAsync(WEEKLY_ID).catch(() => undefined);
     if (!getNotificationPrefs(appContext).weekly || permission !== 'granted') return;
-    const text = weeklyReminderText(loadOverview(db, getDeviceUserId(), undefined, 'never').totals);
+    const text = weeklyReminderText(loadOverview(db, getDeviceUserId()).totals);
     if (!text) return;
     await n.scheduleNotificationAsync({
       identifier: WEEKLY_ID,

@@ -5,7 +5,6 @@ import { groupExpensesQuery } from '@/db/repositories/expenses';
 import { getGroup, groupBudgetStatus } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
-import { isSampleGroup } from '@/db/repositories/sampleIds';
 import { groupSettlementsQuery } from '@/db/repositories/settlements';
 import type { Expense, Group, Settlement } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt, type PayerLine } from '@/domain/balances';
@@ -52,8 +51,6 @@ export interface GroupView {
   group: Group;
   me: string | null;
   lost: boolean;
-  /** The example group: this phone only, never shared. */
-  sample: boolean;
   /** Writes allowed: I'm a member and access hasn't been revoked. */
   canEdit: boolean;
   names: Map<string, string>;
@@ -206,7 +203,6 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     group,
     me,
     lost,
-    sample: isSampleGroup(db, groupId),
     canEdit: me !== null && !lost,
     names,
     activeMembers: allMembers.filter((m) => m.deletedAt === null).map((m) => ({ id: m.id, name: m.displayName })),

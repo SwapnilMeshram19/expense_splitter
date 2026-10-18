@@ -28,8 +28,9 @@ export function chooseAdUnit(
   return id && AD_UNIT_ID.test(id) ? id : null;
 }
 
-export function shouldShowHomeAd(realGroupCount: number): boolean {
-  return realGroupCount > 0;
+/** Home shows its banner only once there's a group (never on the empty, first-run Home). */
+export function shouldShowHomeAd(groupCount: number): boolean {
+  return groupCount > 0;
 }
 
 /** Only lists long enough that one ad doesn't dominate: at most one, after the 8th entry. */

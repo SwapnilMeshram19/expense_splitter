@@ -11,15 +11,14 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
-import { seedSampleGroupIfNew } from '@/db/repositories/sampleGroup';
-import { getDeviceUserId } from '@/db/session';
+import { removeLegacySampleGroups } from '@/db/repositories/sampleGroup';
 import { startAds } from '@/features/ads/adsRuntime';
 import { startAuth } from '@/features/auth/authStore';
 import { startNotifications } from '@/features/notifications/notifications';
+import { deleteLocalReceipt } from '@/features/receipts/receiptFiles';
 import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startReceiptQueue } from '@/features/receipts/receiptStorage';
 import { startRecurringGenerator } from '@/features/recurring/runRecurring';
-import { todayIsoDate } from '@/lib/dates';
 import { startSyncScheduler } from '@/sync/scheduler';
 import { loadHapticsPreference } from '@/ui/haptics';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
@@ -41,12 +40,12 @@ export default function RootLayout() {
     const unsubscribe = subscribeThemePreference((pref) => applyNativeColorScheme(pref.mode));
     // Home currency and rupee grouping, before the first screen formats any amount.
     const stopRegion = startRegionPreference();
-    // First launch ever: an example group to explore (this phone only; never synced). Before
-    // auth and the scheduler, so it exists, already marked local, before any push could run.
+    // Builds up to 1.0.0 seeded an example group (this phone only). Delete any left over, before
+    // auth and the scheduler; the sync engine skips it anyway if this ever fails.
     try {
-      seedSampleGroupIfNew(appContext, { deviceUserId: getDeviceUserId(), today: todayIsoDate() });
+      for (const receiptId of removeLegacySampleGroups(appContext)) deleteLocalReceipt(receiptId);
     } catch {
-      // Best effort: the app works the same without it.
+      // Best effort: a leftover stays hidden and never syncs.
     }
     startAuth();
     // Receipt photos follow their expenses: upload/clean up after each successful sync.
@@ -110,6 +109,10 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Home' }} />
         <Stack.Screen name="pick-group" options={{ title: 'Add expense to', presentation: 'modal' }} />
+        <Stack.Screen
+          name="welcome"
+          options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }}
+        />
       </Stack>
     </KeyboardProvider>
   );

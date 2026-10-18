@@ -124,10 +124,10 @@ describe('group currency', () => {
       actorMemberId: jpy.me,
     };
     expect(
-      recordSettlement(t.ctx, { ...big, groupId: jpy.groupId, amountPaise: 10_000_000 }).ok,
+      recordSettlement(t.ctx, { ...big, groupId: jpy.groupId, amountPaise: 1_000_000_000 }).ok,
     ).toBe(true);
     expect(
-      recordSettlement(t.ctx, { ...big, groupId: jpy.groupId, amountPaise: 10_000_001 }),
+      recordSettlement(t.ctx, { ...big, groupId: jpy.groupId, amountPaise: 1_000_000_001 }),
     ).toEqual({
       ok: false,
       error: { code: 'INVALID_AMOUNT' },

@@ -51,7 +51,7 @@ Never put real unit IDs in a dev build: clicks on your own live ads get the acco
 
 ## Checking it works (dev build)
 
-- Fresh install → only the example group → no ad anywhere.
+- Fresh install → no groups (first-run guide, then empty Home) → no ad anywhere.
 - Create a real group → a "Sponsored" test banner appears below the groups on Home.
 - Activity with 12+ entries → one test banner after the 8th.
 - Airplane mode → no empty box, no errors.
