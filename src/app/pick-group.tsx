@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
-import { editableGroups } from '@/features/overview/openAddExpense';
+import { sampleGroupIds } from '@/db/repositories/sampleIds';
+import { addExpenseGroups, editableGroups } from '@/features/overview/openAddExpense';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { GroupTile } from '@/ui/GroupTile';
@@ -14,7 +15,7 @@ import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
 
 const TABLES = ['groups', 'members', 'settings'];
-const load = () => editableGroups(db, getDeviceUserId());
+const load = () => addExpenseGroups(editableGroups(db, getDeviceUserId()), sampleGroupIds(db));
 
 /** Opened by the centre "+" when there are several groups. Read-only groups aren't offered. */
 export default function PickGroupScreen() {

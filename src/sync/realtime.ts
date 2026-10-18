@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { db } from '@/db/client';
 import { editableGroups } from '@/db/repositories/editableGroups';
+import { sampleGroupIds } from '@/db/repositories/sampleIds';
 import { getDeviceUserId } from '@/db/session';
 import { GROUP_CHANGED_EVENT, groupTopic, parseOrigin } from '@/domain/changeSignals';
 import { getSupabase } from '@/lib/supabase';
@@ -30,7 +31,10 @@ export function updateChangeSignals(active: boolean): void {
   let desired: string[] = [];
   if (active) {
     try {
+      // Example groups don't exist on the server: no channel for them.
+      const sample = sampleGroupIds(db);
       desired = editableGroups(db, getDeviceUserId())
+        .filter((g) => !sample.has(g.id))
         .slice(0, MAX_SIGNAL_CHANNELS)
         .map((g) => g.id.toLowerCase());
     } catch {

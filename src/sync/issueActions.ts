@@ -1,6 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, notInArray, sql } from 'drizzle-orm';
 
 import type { RepoContext } from '@/db/context';
+import { sampleGroupIds } from '@/db/repositories/sampleIds';
 import {
   activityLog,
   expensePayers,
@@ -66,17 +67,35 @@ export function queueRefetchGroupIds(ctx: RepoContext, ids: readonly string[]): 
   const next = [...new Set([...getRefetchGroupIds(ctx), ...ids])];
   writeSetting(ctx, SYNC_REFETCH_GROUPS_KEY, JSON.stringify(next));
 }
-/** Rows waiting to be pushed (including ones blocked by an issue). */
+/** Rows waiting to be pushed (including ones blocked by an issue). Example groups never are. */
 export function countPendingChanges(ctx: RepoContext): number {
   const count = sql<number>`count(*)`;
   const db = ctx.db;
+  const sample = [...sampleGroupIds(db)];
+  // notInArray with an empty list is always true in drizzle, so no special case is needed.
+  const n = (q: { get: () => { n: number } | undefined }) => q.get()?.n ?? 0;
   return (
-    (db.select({ n: count }).from(groups).where(eq(groups.dirty, true)).get()?.n ?? 0) +
-    (db.select({ n: count }).from(members).where(eq(members.dirty, true)).get()?.n ?? 0) +
-    (db.select({ n: count }).from(expenses).where(eq(expenses.dirty, true)).get()?.n ?? 0) +
-    (db.select({ n: count }).from(settlements).where(eq(settlements.dirty, true)).get()?.n ?? 0) +
-    (db.select({ n: count }).from(recurringRules).where(eq(recurringRules.dirty, true)).get()?.n ?? 0) +
-    (db.select({ n: count }).from(activityLog).where(eq(activityLog.dirty, true)).get()?.n ?? 0)
+    n(db.select({ n: count }).from(groups).where(and(eq(groups.dirty, true), notInArray(groups.id, sample)))) +
+    n(db.select({ n: count }).from(members).where(and(eq(members.dirty, true), notInArray(members.groupId, sample)))) +
+    n(db.select({ n: count }).from(expenses).where(and(eq(expenses.dirty, true), notInArray(expenses.groupId, sample)))) +
+    n(
+      db
+        .select({ n: count })
+        .from(settlements)
+        .where(and(eq(settlements.dirty, true), notInArray(settlements.groupId, sample))),
+    ) +
+    n(
+      db
+        .select({ n: count })
+        .from(recurringRules)
+        .where(and(eq(recurringRules.dirty, true), notInArray(recurringRules.groupId, sample))),
+    ) +
+    n(
+      db
+        .select({ n: count })
+        .from(activityLog)
+        .where(and(eq(activityLog.dirty, true), notInArray(activityLog.groupId, sample))),
+    )
   );
 }
 

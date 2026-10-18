@@ -23,6 +23,7 @@ import {
   type SettledPart,
 } from '@/features/groups/loadGroupView';
 import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
+import { SampleBanner } from '@/features/groups/SampleBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { balancesMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
@@ -190,6 +191,7 @@ export default function GroupDetailScreen() {
   const header = (
     <View style={styles.header}>
       {view.lost ? <LostAccessBanner groupId={groupId} groupName={view.group.name} /> : null}
+      {view.sample ? <SampleBanner groupId={groupId} /> : null}
       {!me && !view.lost ? (
         <Banner tone="warning" title="You’re not in this group" body="Read-only on this phone." />
       ) : null}
@@ -202,7 +204,7 @@ export default function GroupDetailScreen() {
         approx={approx(Math.abs(view.myBalance), currency)}
         onSettle={() => setSegment('balances')}
         onShare={openShare}
-        onInvite={canEdit ? openInvite : undefined}
+        onInvite={canEdit && !view.sample ? openInvite : undefined}
       />
       {view.invalidCount > 0 ? (
         <Banner

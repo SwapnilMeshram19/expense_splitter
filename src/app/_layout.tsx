@@ -11,11 +11,14 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
+import { seedSampleGroupIfNew } from '@/db/repositories/sampleGroup';
+import { getDeviceUserId } from '@/db/session';
 import { startAuth } from '@/features/auth/authStore';
 import { startNotifications } from '@/features/notifications/notifications';
 import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startReceiptQueue } from '@/features/receipts/receiptStorage';
 import { startRecurringGenerator } from '@/features/recurring/runRecurring';
+import { todayIsoDate } from '@/lib/dates';
 import { startSyncScheduler } from '@/sync/scheduler';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
@@ -35,6 +38,13 @@ export default function RootLayout() {
     const unsubscribe = subscribeThemePreference((pref) => applyNativeColorScheme(pref.mode));
     // Home currency and rupee grouping, before the first screen formats any amount.
     const stopRegion = startRegionPreference();
+    // First launch ever: an example group to explore (this phone only; never synced). Before
+    // auth and the scheduler, so it exists, already marked local, before any push could run.
+    try {
+      seedSampleGroupIfNew(appContext, { deviceUserId: getDeviceUserId(), today: todayIsoDate() });
+    } catch {
+      // Best effort: the app works the same without it.
+    }
     startAuth();
     // Receipt photos follow their expenses: upload/clean up after each successful sync.
     const stopReceipts = startReceiptQueue();

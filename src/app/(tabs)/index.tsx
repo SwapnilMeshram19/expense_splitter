@@ -32,7 +32,7 @@ import { useTheme, type Theme } from '@/ui/theme';
 
 const loadHome = () => loadOverview(db, getDeviceUserId());
 
-type HomeRow = GroupSummary | { heading: 'Settled up' };
+type HomeRow = GroupSummary | { heading: 'Settled up' | 'Example' };
 
 /** "≈ ₹3,900" for an amount in another currency, or null. */
 type Approx = (minor: number, from: CurrencyCode) => string | null;
@@ -50,12 +50,17 @@ export default function HomeScreen() {
 
   // Groups where you owe or are owed first; settled ones below their own heading, so what needs
   // doing is always at the top. (Read-only groups stay where they are: they need attention too.)
-  const open = overview.groups.filter((g) => g.myBalance !== 0 || g.lost);
-  const done = overview.groups.filter((g) => g.myBalance === 0 && !g.lost);
+  // The example group sits on its own at the bottom once a real group exists.
+  const real = overview.groups.filter((g) => !g.sample);
+  const samples = real.length > 0 ? overview.groups.filter((g) => g.sample) : [];
+  const listed = real.length > 0 ? real : overview.groups;
+  const open = listed.filter((g) => g.myBalance !== 0 || g.lost);
+  const done = listed.filter((g) => g.myBalance === 0 && !g.lost);
   const rows: HomeRow[] = [
     ...open,
     ...(done.length > 0 && open.length > 0 ? [{ heading: 'Settled up' as const }] : []),
     ...done,
+    ...(samples.length > 0 ? [{ heading: 'Example' as const }, ...samples] : []),
   ];
 
   return (
@@ -66,7 +71,7 @@ export default function HomeScreen() {
         refreshControl={refreshControl}
         data={rows}
         extraData={approx}
-        keyExtractor={(row) => ('heading' in row ? 'heading-settled' : row.group.id)}
+        keyExtractor={(row) => ('heading' in row ? `heading-${row.heading}` : row.group.id)}
         getItemType={(row) => ('heading' in row ? 'heading' : 'group')}
         contentContainerStyle={{ ...styles.list, paddingBottom: tabBarSpace }}
         ListHeaderComponent={
@@ -327,6 +332,18 @@ function GroupRow({
                 Read-only · no longer shared
               </AppText>
             </View>
+          ) : summary.sample ? (
+            <View style={styles.sampleLine}>
+              <View style={[styles.chip, styles.sampleChip, { backgroundColor: theme.primarySoft }]}>
+                <Icon name="sparkle" color={theme.onPrimarySoft} size={12} />
+                <AppText variant="caption" color={theme.onPrimarySoft} style={styles.chipText}>
+                  Example
+                </AppText>
+              </View>
+              <AppText variant="caption" color={theme.muted}>
+                Only on this phone
+              </AppText>
+            </View>
           ) : (
             <AppText variant="caption" color={theme.muted}>
               {me ? members : `${members} · you’re not a member`}
@@ -466,6 +483,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   chipText: { fontWeight: '500' },
+  sampleLine: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  sampleChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 0 },
   balance: { alignItems: 'flex-end' },
   budget: { marginTop: 6 },
   separator: { height: 10 },

@@ -3,6 +3,7 @@ import { isGroupLost } from '@/db/repositories/access';
 import { activeGroupsQuery, groupBudgetStatus } from '@/db/repositories/groups';
 import { loadGroupLedger } from '@/db/repositories/ledger';
 import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
+import { sampleGroupIds } from '@/db/repositories/sampleIds';
 import type { Group } from '@/db/schema';
 import { computeBalances, computePairwiseDebts, type Debt } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
@@ -22,6 +23,8 @@ export interface GroupSummary {
   canEdit: boolean;
   /** Progress against the group's budget, or null without one. */
   budget: BudgetStatus | null;
+  /** The example group (this phone only). */
+  sample: boolean;
 }
 
 export interface MyTransfer {
@@ -74,12 +77,26 @@ export const compareCurrencies = (a: CurrencyCode, b: CurrencyCode): number =>
  * converted figure would move every day with the rate and match nothing anyone actually pays.
  * Within one currency the totals are plain integer sums (no rounding involved).
  */
-export function loadOverview(db: AppDb, deviceUserId: string, today: string = todayIsoDate()): Overview {
+export function loadOverview(
+  db: AppDb,
+  deviceUserId: string,
+  today: string = todayIsoDate(),
+  /**
+   * 'auto': the example group counts in totals and transfers only while it's the only group (so a
+   * new user sees a real-looking Home), never once a real group exists. 'never': for the weekly
+   * reminder, which must not nag about made-up money.
+   */
+  sampleTotals: 'auto' | 'never' = 'auto',
+): Overview {
   const groups: GroupSummary[] = [];
   const transfers: MyTransfer[] = [];
   const totals = new Map<CurrencyCode, CurrencyTotal>();
+  const sampleIds = sampleGroupIds(db);
+  const allGroups = activeGroupsQuery(db).all();
+  const hasRealGroups = allGroups.some((g) => !sampleIds.has(g.id));
 
-  for (const group of activeGroupsQuery(db).all()) {
+  for (const group of allGroups) {
+    const sample = sampleIds.has(group.id);
     const me = findSelfMemberId(db, group.id, deviceUserId);
     const lost = isGroupLost(db, group.id);
     const members = groupMembersQuery(db, group.id).all();
@@ -96,8 +113,10 @@ export function loadOverview(db: AppDb, deviceUserId: string, today: string = to
       lost,
       canEdit,
       budget: groupBudgetStatus(db, group, today),
+      sample,
     });
 
+    if (sample && (sampleTotals === 'never' || hasRealGroups)) continue;
     if (!me || myBalance === 0) continue;
     const total = totals.get(group.currency) ?? {
       currency: group.currency,

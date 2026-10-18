@@ -18,6 +18,7 @@ import {
   type StoredSplitInput,
 } from '@/db/schema';
 import { SYNC_LOST_GROUPS_KEY } from '@/db/repositories/access';
+import { sampleGroupIds } from '@/db/repositories/sampleIds';
 import { isPristineOccurrence } from '@/db/repositories/recurring';
 import { isBudgetPeriod } from '@/domain/budget';
 import { parsePayMethods, serializePayMethods } from '@/domain/payMethods';
@@ -117,8 +118,13 @@ export interface CollectedBatch {
 export function collectPushBatch(ctx: RepoContext, limit: number = MAX_BATCH_ROWS): CollectedBatch | null {
   const db = ctx.db;
   const blocked = new Set(getSyncIssues(ctx).map((i) => keyOf(i.table, i.id)));
-  const open = <T extends { id: string }>(table: WireTable, rows: T[]) =>
-    rows.filter((r) => !blocked.has(keyOf(table, r.id)));
+  // Example groups live on this phone only: never pushed, nor anything in them.
+  const sample = sampleGroupIds(db);
+  const open = <T extends { id: string; groupId?: string }>(table: WireTable, rows: T[]) =>
+    rows.filter(
+      (r) =>
+        !blocked.has(keyOf(table, r.id)) && !sample.has(table === 'groups' ? r.id : (r.groupId ?? '')),
+    );
 
   let room = limit;
   const take = <T>(rows: T[]): T[] => {
