@@ -13,6 +13,7 @@ import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
 import { seedSampleGroupIfNew } from '@/db/repositories/sampleGroup';
 import { getDeviceUserId } from '@/db/session';
+import { startAds } from '@/features/ads/adsRuntime';
 import { startAuth } from '@/features/auth/authStore';
 import { startNotifications } from '@/features/notifications/notifications';
 import { startRegionPreference } from '@/features/region/deviceLocales';
@@ -20,6 +21,7 @@ import { startReceiptQueue } from '@/features/receipts/receiptStorage';
 import { startRecurringGenerator } from '@/features/recurring/runRecurring';
 import { todayIsoDate } from '@/lib/dates';
 import { startSyncScheduler } from '@/sync/scheduler';
+import { loadHapticsPreference } from '@/ui/haptics';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
 
@@ -35,6 +37,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (!success) return;
     applyNativeColorScheme(loadThemePreference(appContext).mode);
+    loadHapticsPreference(appContext);
     const unsubscribe = subscribeThemePreference((pref) => applyNativeColorScheme(pref.mode));
     // Home currency and rupee grouping, before the first screen formats any amount.
     const stopRegion = startRegionPreference();
@@ -53,7 +56,10 @@ export default function RootLayout() {
     startSyncScheduler();
     // Push registration, the weekly reminder, and opening a tapped notification.
     const stopNotifications = startNotifications();
+    // Ad consent + SDK, deferred until the first screen has settled (see adsRuntime.ts).
+    const stopAds = startAds();
     return () => {
+      stopAds();
       stopNotifications();
       unsubscribe();
       stopRegion();

@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { appContext } from '@/db/appContext';
@@ -23,6 +23,7 @@ import {
   RESEND_COOLDOWN_S,
 } from '@/features/auth/messages';
 import { currencyLabel, formatMoney } from '@/domain/currency';
+import { showAdPrivacyOptions, useAdsState } from '@/features/ads/adsRuntime';
 import { GoogleButton } from '@/features/auth/GoogleButton';
 import { useMyProfile } from '@/features/auth/useMyProfile';
 import { NotificationsCard } from '@/features/notifications/NotificationsCard';
@@ -32,6 +33,7 @@ import { getAppVariant } from '@/lib/appVariant';
 import { SyncPanel } from '@/sync/SyncPanel';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
+import { setHapticsEnabled, useHapticsEnabled } from '@/ui/haptics';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -188,6 +190,7 @@ function RegionCard() {
 function AppearanceCard() {
   const theme = useTheme();
   const preference = useThemePreference();
+  const hapticsOn = useHapticsEnabled();
 
   return (
     <Card style={styles.card}>
@@ -215,6 +218,23 @@ function AppearanceCard() {
           ))}
         </View>
       </View>
+      <View style={styles.switchRow}>
+        <View style={styles.grow}>
+          <AppText variant="body" style={styles.medium}>
+            Vibration feedback
+          </AppText>
+          <AppText variant="caption" color={theme.muted}>
+            A light tap when you save, pay or pick an option
+          </AppText>
+        </View>
+        <Switch
+          value={hapticsOn}
+          onValueChange={(value) => setHapticsEnabled(appContext, value)}
+          trackColor={{ true: theme.primary, false: theme.surfaceAlt }}
+          thumbColor={theme.surface}
+          accessibilityLabel="Vibration feedback"
+        />
+      </View>
     </Card>
   );
 }
@@ -241,6 +261,8 @@ function AccentSwatch({ id, selected }: { id: AccentId; selected: boolean }) {
 
 function LinksCard({ signedIn }: { signedIn: boolean }) {
   const [busy, setBusy] = useState(false);
+  // Only where the law requires it (EEA/UK): reopen the ad consent form.
+  const { privacyOptionsRequired } = useAdsState();
 
   const confirmSignOut = () =>
     Alert.alert(
@@ -264,6 +286,17 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
   return (
     <Card style={listCardStyle}>
       <ListRow icon="shield" title="Privacy policy" onPress={() => void WebBrowser.openBrowserAsync(PRIVACY_URL)} />
+      {privacyOptionsRequired ? (
+        <ListRow
+          icon="lock"
+          title="Ad privacy choices"
+          onPress={() =>
+            void showAdPrivacyOptions().catch(() =>
+              Alert.alert('Couldn’t open ad choices', 'Check your connection and try again.'),
+            )
+          }
+        />
+      ) : null}
       <ListRow
         icon="help"
         title="Help & support"
@@ -463,6 +496,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   field: { gap: 8 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  medium: { fontWeight: '500' },
   inlineLink: { alignSelf: 'flex-start', minHeight: 32, justifyContent: 'center' },
   bold: { fontWeight: '600' },
   swatches: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },

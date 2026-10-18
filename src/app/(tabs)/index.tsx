@@ -8,6 +8,8 @@ import { db } from '@/db/client';
 import { useLiveData } from '@/db/hooks/useLiveData';
 import { getDeviceUserId } from '@/db/session';
 import { formatMoney, type CurrencyCode } from '@/domain/currency';
+import { AdSlot } from '@/features/ads/AdSlot';
+import { shouldShowHomeAd } from '@/features/ads/adPolicy';
 import { useApprox } from '@/features/fx/useApprox';
 import {
   loadOverview,
@@ -80,6 +82,11 @@ export default function HomeScreen() {
           ) : null
         }
         ListEmptyComponent={<EmptyState />}
+        // One quiet ad below the groups, only once there's a real group (never for someone still
+        // exploring the example). Never on any form or payment screen.
+        ListFooterComponent={
+          shouldShowHomeAd(real.length) ? <AdSlot placement="home" style={styles.ad} /> : null
+        }
         ItemSeparatorComponent={Separator}
         renderItem={({ item }) =>
           'heading' in item ? (
@@ -488,6 +495,7 @@ const styles = StyleSheet.create({
   balance: { alignItems: 'flex-end' },
   budget: { marginTop: 6 },
   separator: { height: 10 },
+  ad: { marginTop: 18 },
   subheading: { fontWeight: '600', paddingTop: 10 },
   settledBadge: {
     flexDirection: 'row',

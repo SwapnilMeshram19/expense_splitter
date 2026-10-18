@@ -6,6 +6,10 @@
  *   the Play Store app, has its own local SQLite and talks to the dev Supabase project.
  * - production: package in.ssoftapp.split. Only the release workflow sets APP_VARIANT=production.
  *
+ * AdMob: development always uses Google's test app ID (no risk of invalid-traffic flags while
+ * testing). Production needs ADMOB_ANDROID_APP_ID at build time; the ad unit IDs are EXPO_PUBLIC_*
+ * values read in src/features/ads/adUnits.ts.
+ *
  * Supabase URL/key and the Google web client ID are NOT here: they're EXPO_PUBLIC_* values read in
  * src/lib/env.ts, and Expo picks them from .env.development* / .env.production* by build mode.
  *
@@ -56,21 +60,58 @@ export function resolveVariant(raw: string | undefined): AppVariant {
   throw new Error(`APP_VARIANT must be "development" or "production", got "${value}".`);
 }
 
-const POPPINS_DIR = './node_modules/@expo-google-fonts/poppins';
-const POPPINS_WEIGHTS = [
-  { weight: 400, file: '400Regular/Poppins_400Regular.ttf' },
-  { weight: 500, file: '500Medium/Poppins_500Medium.ttf' },
-  { weight: 600, file: '600SemiBold/Poppins_600SemiBold.ttf' },
-  { weight: 700, file: '700Bold/Poppins_700Bold.ttf' },
+/** Subset Inter (Latin, punctuation, ₹/currency, ≈): see scripts/subset-inter.sh. */
+const INTER_WEIGHTS = [
+  { weight: 400, path: './assets/fonts/Inter-Regular.ttf' },
+  { weight: 500, path: './assets/fonts/Inter-Medium.ttf' },
+  { weight: 600, path: './assets/fonts/Inter-SemiBold.ttf' },
+  { weight: 700, path: './assets/fonts/Inter-Bold.ttf' },
 ] as const;
+
+/** Google's published sample AdMob app IDs: always serve test ads, never earn, never get flagged. */
+export const ADMOB_TEST_APP_IDS = {
+  android: 'ca-app-pub-3940256099942544~3347511713',
+  ios: 'ca-app-pub-3940256099942544~1458002511',
+} as const;
+
+const ADMOB_APP_ID = /^ca-app-pub-\d{16}~\d{10}$/;
+
+export interface AdMobAppIds {
+  android: string;
+  ios: string;
+}
+
+/**
+ * Development: test IDs, always (whatever the env says). Production: the real Android app ID is
+ * required, so a release can't ship with the test ID and silently earn nothing. iOS isn't shipped
+ * yet, so it falls back to the test ID until ADMOB_IOS_APP_ID exists.
+ */
+export function resolveAdMobAppIds(
+  variant: AppVariant,
+  env: { android?: string; ios?: string },
+): AdMobAppIds {
+  if (variant === 'development') return { ...ADMOB_TEST_APP_IDS };
+  const android = env.android?.trim();
+  if (!android || !ADMOB_APP_ID.test(android)) {
+    throw new Error(
+      'Production build needs ADMOB_ANDROID_APP_ID (AdMob → Apps → App settings, ' +
+        'like ca-app-pub-1234567890123456~1234567890).',
+    );
+  }
+  const ios = env.ios?.trim();
+  return { android, ios: ios && ADMOB_APP_ID.test(ios) ? ios : ADMOB_TEST_APP_IDS.ios };
+}
 
 interface BuildOptions {
   /** Firebase config for push. Missing → the app builds and works, just without push. */
   googleServicesFile?: string;
+  /** Defaults to the test IDs (tests, config inspection). appConfig() always passes real ones. */
+  admob?: AdMobAppIds;
 }
 
 export function buildConfig(variant: AppVariant, options: BuildOptions = {}): ExpoConfig {
   const v = VARIANTS[variant];
+  const admob = options.admob ?? ADMOB_TEST_APP_IDS;
 
   return {
     name: v.name,
@@ -122,16 +163,16 @@ export function buildConfig(variant: AppVariant, options: BuildOptions = {}): Ex
           android: {
             fonts: [
               {
-                fontFamily: 'Poppins',
-                fontDefinitions: POPPINS_WEIGHTS.map(({ weight, file }) => ({
-                  path: `${POPPINS_DIR}/${file}`,
+                fontFamily: 'Inter',
+                fontDefinitions: INTER_WEIGHTS.map(({ weight, path: fontPath }) => ({
+                  path: fontPath,
                   weight,
                 })),
               },
             ],
           },
           ios: {
-            fonts: POPPINS_WEIGHTS.map(({ file }) => `${POPPINS_DIR}/${file}`),
+            fonts: INTER_WEIGHTS.map(({ path: fontPath }) => fontPath),
           },
         },
       ],
@@ -154,6 +195,18 @@ export function buildConfig(variant: AppVariant, options: BuildOptions = {}): Ex
           microphonePermission: false,
         },
       ],
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: admob.android,
+          iosAppId: admob.ios,
+          // No measurement before consent; SDK init and ad loading off the main thread, which is
+          // what keeps low-end phones from janking at startup and while a banner loads.
+          delayAppMeasurementInit: true,
+          optimizeInitialization: true,
+          optimizeAdLoading: true,
+        },
+      ],
     ],
     extra: {
       appVariant: variant,
@@ -165,7 +218,12 @@ export default function appConfig(): ExpoConfig {
   // Not in git: CI writes it from the GOOGLE_SERVICES_JSON secret (android-dev-build.yml). One file
   // holds both packages once both are added to the Firebase project.
   const googleServices = path.join(__dirname, 'google-services.json');
-  return buildConfig(resolveVariant(process.env.APP_VARIANT), {
+  const variant = resolveVariant(process.env.APP_VARIANT);
+  return buildConfig(variant, {
     googleServicesFile: existsSync(googleServices) ? './google-services.json' : undefined,
+    admob: resolveAdMobAppIds(variant, {
+      android: process.env.ADMOB_ANDROID_APP_ID,
+      ios: process.env.ADMOB_IOS_APP_ID,
+    }),
   });
 }

@@ -22,6 +22,7 @@ import { AmountInput, FieldLabel, Input } from '@/ui/Field';
 import { Icon } from '@/ui/Icon';
 import { MemberPicker } from '@/ui/MemberPicker';
 import { Card } from '@/ui/Card';
+import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
 
 type ReadySetup = Extract<SettleSetup, { ok: true }>;
@@ -123,6 +124,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
       setError(describeSettlementError(result.error, nameOf, currency));
       return;
     }
+    haptic('success');
     router.back();
     celebrateIfSettled(params.groupId);
   };

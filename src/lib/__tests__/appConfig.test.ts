@@ -1,4 +1,10 @@
-import { buildConfig, resolveVariant, VARIANTS } from '../../../app.config';
+import {
+  ADMOB_TEST_APP_IDS,
+  buildConfig,
+  resolveAdMobAppIds,
+  resolveVariant,
+  VARIANTS,
+} from '../../../app.config';
 
 describe('resolveVariant', () => {
   it('defaults to development when unset or blank, so nothing builds against production by accident', () => {
@@ -62,5 +68,66 @@ describe('buildConfig', () => {
     expect(dev.android?.intentFilters).toEqual(prod.android?.intentFilters);
     expect(dev.ios?.infoPlist).toEqual(prod.ios?.infoPlist);
     expect(prod.plugins).toContain('./plugins/with-upi-queries');
+  });
+});
+
+describe('fonts', () => {
+  it('embeds the subset Inter files on both platforms', () => {
+    const fontPlugin = buildConfig('production').plugins?.find(
+      (
+        p,
+      ): p is [
+        string,
+        {
+          android: { fonts: { fontFamily: string; fontDefinitions: { path: string }[] }[] };
+          ios: { fonts: string[] };
+        },
+      ] => Array.isArray(p) && p[0] === 'expo-font',
+    );
+    expect(fontPlugin).toBeDefined();
+    const [, options] = fontPlugin!;
+    expect(options.android.fonts[0]!.fontFamily).toBe('Inter');
+    expect(options.android.fonts[0]!.fontDefinitions.map((d) => d.path)).toEqual(options.ios.fonts);
+    expect(options.ios.fonts.every((path) => path.startsWith('./assets/fonts/Inter-'))).toBe(true);
+  });
+});
+
+describe('resolveAdMobAppIds', () => {
+  const REAL = 'ca-app-pub-1234567890123456~1234567890';
+
+  it('always uses the test app IDs in development', () => {
+    expect(resolveAdMobAppIds('development', { android: REAL })).toEqual(ADMOB_TEST_APP_IDS);
+  });
+
+  it('requires a real Android app ID in production', () => {
+    expect(() => resolveAdMobAppIds('production', {})).toThrow(/ADMOB_ANDROID_APP_ID/);
+    // A unit ID (slash) pasted where the app ID (tilde) belongs.
+    expect(() =>
+      resolveAdMobAppIds('production', { android: 'ca-app-pub-1234567890123456/1234567890' }),
+    ).toThrow(/ADMOB_ANDROID_APP_ID/);
+  });
+
+  it('uses the real Android ID and falls back to the iOS test ID until iOS ships', () => {
+    expect(resolveAdMobAppIds('production', { android: ` ${REAL} ` })).toEqual({
+      android: REAL,
+      ios: ADMOB_TEST_APP_IDS.ios,
+    });
+  });
+
+  it('passes the IDs to the ads config plugin with the low-end-friendly flags', () => {
+    const ids = { android: REAL, ios: ADMOB_TEST_APP_IDS.ios };
+    const plugin = buildConfig('production', { admob: ids }).plugins?.find(
+      (p) => Array.isArray(p) && p[0] === 'react-native-google-mobile-ads',
+    );
+    expect(plugin).toEqual([
+      'react-native-google-mobile-ads',
+      {
+        androidAppId: REAL,
+        iosAppId: ADMOB_TEST_APP_IDS.ios,
+        delayAppMeasurementInit: true,
+        optimizeInitialization: true,
+        optimizeAdLoading: true,
+      },
+    ]);
   });
 });

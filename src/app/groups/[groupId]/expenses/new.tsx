@@ -12,6 +12,7 @@ import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
 import { createRule, discardNewRule } from '@/db/repositories/recurring';
 import { deviceTimeZone } from '@/features/recurring/deviceTimeZone';
 import { describeRuleError } from '@/features/recurring/messages';
+import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
 import { AppText } from '@/ui/AppText';
 
@@ -74,6 +75,7 @@ export default function NewExpenseScreen() {
         group: setup.groupCurrency,
       });
     }
+    haptic('success');
     router.back();
     return null;
   };

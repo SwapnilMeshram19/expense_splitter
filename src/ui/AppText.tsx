@@ -4,8 +4,9 @@ import { useTheme } from './theme';
 
 type Variant = 'body' | 'title' | 'heading' | 'label' | 'caption' | 'amount' | 'display';
 
-// Explicit line heights: Poppins' built-in metrics are tall, which pushed text off-centre next
-// to icons and inside pills. With includeFontPadding off (Android), these boxes are exact.
+// Explicit line heights: fonts' built-in metrics differ (Poppins' were tall and pushed text
+// off-centre next to icons and inside pills). With includeFontPadding off (Android), these boxes
+// are exact whatever the font.
 const VARIANTS = {
   display: { fontSize: 32, lineHeight: 40, fontWeight: '700', letterSpacing: -0.5 },
   title: { fontSize: 24, lineHeight: 32, fontWeight: '700' },

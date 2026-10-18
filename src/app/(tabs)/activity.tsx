@@ -11,6 +11,9 @@ import {
   RECENT_ACTIVITY_TABLES,
   type RecentActivityItem,
 } from '@/features/activity/loadRecentActivity';
+import { AdSlot } from '@/features/ads/AdSlot';
+import { isAdRow, withActivityAd } from '@/features/ads/adPolicy';
+import { useAdsState } from '@/features/ads/adsRuntime';
 import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
@@ -27,6 +30,9 @@ export default function ActivityTab() {
   const tabBarSpace = useTabBarSpace();
   const items = useLiveData(RECENT_ACTIVITY_TABLES, load);
   const refreshControl = useSyncRefreshControl();
+  // At most one ad, after the 8th entry, and only in long lists.
+  const { ready: adsReady } = useAdsState();
+  const rows = withActivityAd(items, adsReady);
 
   return (
     <View style={styles.container}>
@@ -34,8 +40,9 @@ export default function ActivityTab() {
       <TabHeader title="Activity" />
       <FlashList
         refreshControl={refreshControl}
-        data={items}
-        keyExtractor={(item) => item.id}
+        data={rows}
+        keyExtractor={(row) => row.id}
+        getItemType={(row) => (isAdRow(row) ? 'ad' : 'activity')}
         contentContainerStyle={{ ...styles.list, paddingBottom: tabBarSpace }}
         ListEmptyComponent={
           <Card style={styles.empty}>
@@ -52,7 +59,13 @@ export default function ActivityTab() {
             </AppText>
           ) : null
         }
-        renderItem={({ item }) => <ActivityRow item={item} />}
+        renderItem={({ item }) =>
+          isAdRow(item) ? (
+            <AdSlot placement="activity" style={styles.ad} />
+          ) : (
+            <ActivityRow item={item} />
+          )
+        }
       />
     </View>
   );
@@ -99,4 +112,5 @@ const styles = StyleSheet.create({
   title: { fontWeight: '500' },
   empty: { gap: 8, marginTop: 8 },
   footer: { textAlign: 'center', paddingVertical: 16 },
+  ad: { marginVertical: 12 },
 });

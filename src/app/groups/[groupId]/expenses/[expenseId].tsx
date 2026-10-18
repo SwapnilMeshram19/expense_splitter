@@ -13,6 +13,7 @@ import { saveWithReceipt } from '@/features/receipts/saveWithReceipt';
 import { expenseShareText } from '@/features/share/loaders';
 import { useShareSheet } from '@/features/share/ShareSheet';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
+import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
 import { AppText } from '@/ui/AppText';
 
@@ -50,6 +51,7 @@ export default function EditExpenseScreen() {
         group: setup.groupCurrency,
       });
     }
+    haptic('success');
     router.back();
     return null;
   };

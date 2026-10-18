@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from './AppText';
+import { haptic } from './haptics';
 import { useTheme } from './theme';
 
 interface SegmentedProps<T extends string> {
@@ -26,7 +27,11 @@ export function Segmented<T extends string>({ options, value, onChange, accessib
             key={option.value}
             accessibilityRole="radio"
             accessibilityState={{ checked: selected }}
-            onPress={() => onChange(option.value)}
+            onPress={() => {
+              if (selected) return;
+              haptic('selection');
+              onChange(option.value);
+            }}
             style={[
               styles.segment,
               selected && [styles.selected, { backgroundColor: theme.surface }],

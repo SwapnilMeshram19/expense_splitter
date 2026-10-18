@@ -2,13 +2,14 @@
 
 `app.config.ts` builds one of two apps, chosen by `APP_VARIANT`:
 
-|                                 | development (default)                   | production                           |
-| ------------------------------- | --------------------------------------- | ------------------------------------ |
-| Android package / iOS bundle ID | `in.ssoftapp.split.dev`                 | `in.ssoftapp.split`                  |
-| Launcher label                  | Split Dev (orange icon)                 | Expense Splitter                     |
-| URL scheme                      | `expensesplitter-dev`                   | `expensesplitter`                    |
-| Built by                        | Actions → Android dev build (debug APK) | release workflow (signed .aab)       |
-| Supabase / Google web client    | `.env.development.local`                | CI secrets → `.env.production.local` |
+|                                 | development (default)                   | production                               |
+| ------------------------------- | --------------------------------------- | ---------------------------------------- |
+| Android package / iOS bundle ID | `in.ssoftapp.split.dev`                 | `in.ssoftapp.split`                      |
+| Launcher label                  | Split Dev (orange icon)                 | Expense Splitter                         |
+| URL scheme                      | `expensesplitter-dev`                   | `expensesplitter`                        |
+| Built by                        | Actions → Android dev build (debug APK) | release workflow (signed .aab)           |
+| Supabase / Google web client    | `.env.development.local`                | CI secrets → `.env.production.local`     |
+| AdMob                           | Google test IDs (always)                | real IDs from CI secrets (`docs/ads.md`) |
 
 Both can be installed side by side: separate local SQLite, separate sign-in, separate push token.
 Unset `APP_VARIANT` means development, so nothing reaches production by accident; a typo fails the

@@ -48,6 +48,7 @@ import { Card } from '@/ui/Card';
 import { CopyField } from '@/ui/CopyField';
 import { AmountInput, FieldLabel, Input } from '@/ui/Field';
 import { Icon, type IconName } from '@/ui/Icon';
+import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
 
 type Ready = Extract<PaySetup, { ok: true }>;
@@ -275,6 +276,7 @@ function PayFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: st
       }
       recorded.current = true;
       clearPendingUpiPayment(appContext);
+      haptic('success');
       router.back();
       celebrateIfSettled(groupId);
     };
