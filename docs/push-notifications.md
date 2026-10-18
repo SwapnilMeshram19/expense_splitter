@@ -5,11 +5,12 @@ Everything here is free (Firebase Cloud Messaging has no per-message charge).
 ## 1. Firebase project
 
 1. <https://console.firebase.google.com> → **Add project** (Google Analytics: off).
-2. **Add app → Android**, package name **`in.ssoftapp.split`** (must match exactly).
-   Download `google-services.json`.
+2. **Add app → Android** twice: **`in.ssoftapp.split`** (store app) and **`in.ssoftapp.split.dev`**
+   (dev build), names must match exactly. Download `google-services.json` after adding both: one file
+   holds both apps (see `docs/app-variants.md`).
 3. GitHub → repo → **Settings → Secrets and variables → Actions → New repository secret**
    - Name: `GOOGLE_SERVICES_JSON`, value: the whole file's contents.
-   The APK workflow writes it next to `app.json` before building; it is git-ignored.
+     The APK workflow writes it next to `app.config.ts` before building; it is git-ignored.
 4. Firebase → **Project settings → Service accounts → Generate new private key**. Keep the JSON
    file private: it can send notifications to every user. Never commit it.
 

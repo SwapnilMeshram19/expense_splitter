@@ -74,6 +74,8 @@
     "web": "expo start --web",
     "lint": "expo lint --max-warnings 0",
     "start:lan": "expo start",
+    "config:dev": "APP_VARIANT=development expo config --type public",
+    "config:prod": "APP_VARIANT=production expo config --type public",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

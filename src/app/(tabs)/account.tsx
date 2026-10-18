@@ -28,6 +28,7 @@ import { useMyProfile } from '@/features/auth/useMyProfile';
 import { NotificationsCard } from '@/features/notifications/NotificationsCard';
 import { chooseHomeCurrency } from '@/features/region/deviceLocales';
 import { useRegionPreference } from '@/features/region/regionPreference';
+import { getAppVariant } from '@/lib/appVariant';
 import { SyncPanel } from '@/sync/SyncPanel';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
@@ -84,7 +85,8 @@ export default function AccountTab() {
         <AppearanceCard />
         <LinksCard signedIn={auth.status === 'signedIn'} />
         <AppText variant="caption" color={theme.muted} style={styles.version}>
-          Expense Splitter · version {Constants.expoConfig?.version ?? '—'} · ssoftapp.in
+          Expense Splitter · version {Constants.expoConfig?.version ?? '—'}
+          {getAppVariant() === 'development' ? ' · dev build' : ''} · ssoftapp.in
         </AppText>
       </KeyboardAwareScrollView>
     </View>

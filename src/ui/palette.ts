@@ -203,7 +203,7 @@ export interface Theme extends BaseColors, AccentColors {
   scheme: ColorScheme;
   accent: AccentId;
   positive: string;
-  /** Embedded at build time by the expo-font config plugin (app.json), weights 400–700. */
+  /** Embedded at build time by the expo-font config plugin (app.config.ts), weights 400–700. */
   fontFamily: string;
 }
 
