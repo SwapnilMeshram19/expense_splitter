@@ -13,6 +13,9 @@
  * Supabase URL/key and the Google web client ID are NOT here: they're EXPO_PUBLIC_* values read in
  * src/lib/env.ts, and Expo picks them from .env.development* / .env.production* by build mode.
  *
+ * Version: APP_VERSION_NAME / APP_VERSION_CODE, set by the release workflow from its inputs. Unset →
+ * Expo's defaults (package.json version, versionCode 1), which is what dev builds want.
+ *
  * Keep this file free of app imports: Node evaluates it, the app bundle never includes it.
  */
 import { existsSync } from 'node:fs';
@@ -102,20 +105,59 @@ export function resolveAdMobAppIds(
   return { android, ios: ios && ADMOB_APP_ID.test(ios) ? ios : ADMOB_TEST_APP_IDS.ios };
 }
 
+export interface AppVersion {
+  /** versionName users see, like 1.2.3. */
+  name?: string;
+  /** Android versionCode: must grow with every upload to Play. */
+  code?: number;
+}
+
+/** Play rejects versionCode above 2100000000. */
+export const MAX_VERSION_CODE = 2_100_000_000;
+
+/**
+ * Both optional (dev builds, `npm run config:prod`); when set they must be valid, so a bad workflow
+ * input fails at config time rather than as a Play upload error after a 30-minute build.
+ */
+export function resolveAppVersion(env: { name?: string; code?: string }): AppVersion {
+  const version: AppVersion = {};
+  const name = env.name?.trim();
+  if (name) {
+    if (!/^\d+\.\d+\.\d+$/.test(name)) {
+      throw new Error(`APP_VERSION_NAME must look like 1.2.3, got "${name}".`);
+    }
+    version.name = name;
+  }
+  const code = env.code?.trim();
+  if (code) {
+    const n = Number(code);
+    if (!/^[1-9]\d*$/.test(code) || n > MAX_VERSION_CODE) {
+      throw new Error(
+        `APP_VERSION_CODE must be a whole number from 1 to ${MAX_VERSION_CODE}, got "${code}".`,
+      );
+    }
+    version.code = n;
+  }
+  return version;
+}
+
 interface BuildOptions {
   /** Firebase config for push. Missing → the app builds and works, just without push. */
   googleServicesFile?: string;
   /** Defaults to the test IDs (tests, config inspection). appConfig() always passes real ones. */
   admob?: AdMobAppIds;
+  version?: AppVersion;
 }
 
 export function buildConfig(variant: AppVariant, options: BuildOptions = {}): ExpoConfig {
   const v = VARIANTS[variant];
   const admob = options.admob ?? ADMOB_TEST_APP_IDS;
+  const version = options.version ?? {};
 
   return {
     name: v.name,
     slug: 'expense-splitter',
+    ...(version.name ? { version: version.name } : {}),
     scheme: v.scheme,
     icon: './assets/images/icon.png',
     platforms: ['android', 'ios'],
@@ -128,6 +170,7 @@ export function buildConfig(variant: AppVariant, options: BuildOptions = {}): Ex
     },
     android: {
       package: v.id,
+      ...(version.code ? { versionCode: version.code } : {}),
       adaptiveIcon: {
         foregroundImage: './assets/images/android-icon-foreground.png',
         ...(v.iconBackgroundImage ? { backgroundImage: v.iconBackgroundImage } : {}),
@@ -224,6 +267,10 @@ export default function appConfig(): ExpoConfig {
     admob: resolveAdMobAppIds(variant, {
       android: process.env.ADMOB_ANDROID_APP_ID,
       ios: process.env.ADMOB_IOS_APP_ID,
+    }),
+    version: resolveAppVersion({
+      name: process.env.APP_VERSION_NAME,
+      code: process.env.APP_VERSION_CODE,
     }),
   });
 }

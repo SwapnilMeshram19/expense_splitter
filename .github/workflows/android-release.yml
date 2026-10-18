@@ -1,0 +1,303 @@
+name: Android release
+
+# Manual only (Actions → Android release → Run workflow, branch main). Builds the signed .aab you
+# upload to Play Console. One-time setup and the secrets list: docs/release.md.
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: versionName users see (1.2.3)
+        required: true
+        type: string
+      version_code:
+        description: versionCode, higher than every build ever uploaded to Play
+        required: true
+        type: string
+
+# Never cancel a release halfway; a second run waits for the first.
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # only to push the android/<versionCode> tag at the end
+
+# Inputs go through env, never ${{ }} inside run: (no script injection from a workflow input).
+# app.config.ts reads APP_VARIANT, APP_VERSION_* and ADMOB_ANDROID_APP_ID at config time, which happens
+# in `expo config`, prebuild AND inside Gradle (the JS bundle step), so they're job-wide. The AdMob app
+# ID ships in the manifest anyway. Real secrets (keystore, passwords, publishable key,
+# google-services.json) are given only to the steps that need them, after npm ci, so no dependency's
+# install script or config plugin ever sees them.
+env:
+  APP_VARIANT: production
+  APP_VERSION_NAME: ${{ inputs.version_name }}
+  APP_VERSION_CODE: ${{ inputs.version_code }}
+  ADMOB_ANDROID_APP_ID: ${{ secrets.ADMOB_ANDROID_APP_ID }}
+  EXPECTED_PACKAGE: in.ssoftapp.split
+  # Public already (package.json functions:deploy). Used to prove the release bundle isn't on dev.
+  SUPABASE_DEV_PROJECT_REF: cudmaszrwrbgwsoizajd
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Releases come from main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run this workflow on main (this run: $GITHUB_REF)"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Validate version inputs
+        run: |
+          if ! [[ "$APP_VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version_name must look like 1.2.3, got '$APP_VERSION_NAME'"
+            exit 1
+          fi
+          # Regex first: no leading zero, so bash never reads the number as octal.
+          if ! [[ "$APP_VERSION_CODE" =~ ^[1-9][0-9]{0,9}$ ]] || (( APP_VERSION_CODE > 2100000000 )); then
+            echo "::error::version_code must be a whole number from 1 to 2100000000, got '$APP_VERSION_CODE'"
+            exit 1
+          fi
+          # Each successful run tags android/<versionCode>. Play rejects a code it has seen; better to
+          # learn that now than after a 30-minute build.
+          LAST=$(git ls-remote --tags origin 'refs/tags/android/*' \
+            | sed -nE 's#.*refs/tags/android/([0-9]+)$#\1#p' | sort -n | tail -n 1)
+          LAST=${LAST:-0}
+          if (( APP_VERSION_CODE <= LAST )); then
+            echo "::error::version_code must be greater than $LAST (the last released build)"
+            exit 1
+          fi
+          echo "Releasing $APP_VERSION_NAME ($APP_VERSION_CODE); previous versionCode: $LAST"
+
+      - name: Check release secrets
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          PROD_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PROD_SUPABASE_PUBLISHABLE_KEY }}
+          PROD_GOOGLE_WEB_CLIENT_ID: ${{ secrets.PROD_GOOGLE_WEB_CLIENT_ID }}
+          EXPO_PUBLIC_ADMOB_HOME_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_HOME_BANNER_ID }}
+          EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          missing=()
+          for name in \
+            ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS \
+            ANDROID_UPLOAD_KEY_PASSWORD ANDROID_UPLOAD_CERT_SHA256 GOOGLE_SERVICES_JSON \
+            PROD_SUPABASE_URL PROD_SUPABASE_PUBLISHABLE_KEY PROD_GOOGLE_WEB_CLIENT_ID \
+            ADMOB_ANDROID_APP_ID EXPO_PUBLIC_ADMOB_HOME_BANNER_ID EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          (( ${#missing[@]} == 0 )) || fail "Missing secrets: ${missing[*]} (see docs/release.md)"
+
+          # Same rule as src/lib/env.ts: project URL only. The app would throw at sign-in otherwise.
+          [[ "$PROD_SUPABASE_URL" =~ ^https://[^/[:space:]]+$ ]] \
+            || fail "PROD_SUPABASE_URL must be the project URL only (https://<ref>.supabase.co, no path or trailing slash)"
+          [[ "$PROD_SUPABASE_URL" != *"$SUPABASE_DEV_PROJECT_REF"* ]] \
+            || fail "PROD_SUPABASE_URL points at the dev project"
+          [[ "$PROD_SUPABASE_PUBLISHABLE_KEY" == sb_publishable_* ]] \
+            || fail "PROD_SUPABASE_PUBLISHABLE_KEY must be the publishable key (sb_publishable_…), never a secret key"
+          [[ "$PROD_GOOGLE_WEB_CLIENT_ID" == *.apps.googleusercontent.com ]] \
+            || fail "PROD_GOOGLE_WEB_CLIENT_ID must end in .apps.googleusercontent.com"
+          # A missing or malformed unit ID doesn't crash the app (AdSlot just shows nothing), which is
+          # exactly why a release refuses it: it would ship and silently earn nothing.
+          for id in EXPO_PUBLIC_ADMOB_HOME_BANNER_ID EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID; do
+            [[ "${!id}" =~ ^ca-app-pub-[0-9]{16}/[0-9]{10}$ ]] \
+              || fail "$id must look like ca-app-pub-1234567890123456/1234567890 (a unit ID, with a slash)"
+            [[ "${!id}" != ca-app-pub-3940256099942544/* ]] || fail "$id is one of Google's test units"
+          done
+          [[ "$ANDROID_UPLOAD_CERT_SHA256" =~ ^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$ ]] \
+            || fail "ANDROID_UPLOAD_CERT_SHA256 must be the colon-separated SHA-256 printed by keytool"
+          # ADMOB_ANDROID_APP_ID format (and not the test ID) is enforced by app.config.ts.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests, typecheck and lint must pass
+        run: npm run check
+
+      - name: Check app identity from app.config.ts
+        run: |
+          npx expo config --type public --json > "$RUNNER_TEMP/expo-config.json"
+          node -e '
+            const c = require(process.env.RUNNER_TEMP + "/expo-config.json");
+            const got = { package: c.android.package, version: c.version, versionCode: c.android.versionCode };
+            const want = {
+              package: process.env.EXPECTED_PACKAGE,
+              version: process.env.APP_VERSION_NAME,
+              versionCode: Number(process.env.APP_VERSION_CODE),
+            };
+            console.log("expo config:", JSON.stringify(got));
+            if (JSON.stringify(got) !== JSON.stringify(want)) {
+              console.error("expected:   " + JSON.stringify(want));
+              process.exit(1);
+            }
+          '
+
+      - name: Write production env (.env.production.local)
+        env:
+          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          PROD_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PROD_SUPABASE_PUBLISHABLE_KEY }}
+          PROD_GOOGLE_WEB_CLIENT_ID: ${{ secrets.PROD_GOOGLE_WEB_CLIENT_ID }}
+          EXPO_PUBLIC_ADMOB_HOME_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_HOME_BANNER_ID }}
+          EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID }}
+        run: |
+          # .env.local and .env.production would also load in production mode; neither belongs in git.
+          for f in .env.local .env.production; do
+            [ ! -e "$f" ] || { echo "::error::$f is committed; remove it from git (see .env.example)"; exit 1; }
+          done
+          # Everything here is readable inside the app bundle. Fine for these values (publishable key +
+          # RLS, public client and unit IDs). Never add a secret key or anything server-side.
+          umask 077
+          {
+            echo "EXPO_PUBLIC_SUPABASE_URL=$PROD_SUPABASE_URL"
+            echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$PROD_SUPABASE_PUBLISHABLE_KEY"
+            echo "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$PROD_GOOGLE_WEB_CLIENT_ID"
+            echo "EXPO_PUBLIC_ADMOB_HOME_BANNER_ID=$EXPO_PUBLIC_ADMOB_HOME_BANNER_ID"
+            echo "EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID=$EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID"
+          } > .env.production.local
+
+      - name: Firebase config (required for a release)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          # The dev workflow only warns; a release without push must not ship by accident.
+          printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+          node -e 'const c=require("./google-services.json"); if(!c.client.some(x=>x.client_info.android_client_info.package_name===process.env.EXPECTED_PACKAGE)){console.error("google-services.json has no Android app "+process.env.EXPECTED_PACKAGE+": add it in Firebase, download the file again and update GOOGLE_SERVICES_JSON (docs/release.md)");process.exit(1)}'
+
+      - name: Generate native Android project (CNG)
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Check generated Gradle identity
+        run: |
+          G=android/app/build.gradle
+          has() { grep -Fq "$1 '$2'" "$G" || grep -Fq "$1 \"$2\"" "$G"; }
+          has applicationId "$EXPECTED_PACKAGE" \
+            || { echo "::error::$G applicationId is not $EXPECTED_PACKAGE"; grep -n applicationId "$G"; exit 1; }
+          has versionName "$APP_VERSION_NAME" \
+            || { echo "::error::$G versionName is not $APP_VERSION_NAME"; grep -n versionName "$G"; exit 1; }
+          grep -Eq "^\s*versionCode ${APP_VERSION_CODE}\s*$" "$G" \
+            || { echo "::error::$G versionCode is not $APP_VERSION_CODE"; grep -n versionCode "$G"; exit 1; }
+
+      - name: Install upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+        run: |
+          # Outside the workspace, written only now (npm ci and prebuild have already run).
+          KS="$RUNNER_TEMP/upload.keystore"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$KS"
+          chmod 600 "$KS"
+          norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
+          # Wrong password, alias or keystore fails here in seconds, not after the Gradle build.
+          GOT=$(keytool -list -v -keystore "$KS" -alias "$ANDROID_UPLOAD_KEY_ALIAS" \
+            -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD \
+            | awk '/SHA256:/ && !done { sub(/.*SHA256: */, ""); print; done = 1 }')
+          if [ -z "$GOT" ] || [ "$(printf '%s' "$GOT" | norm)" != "$(printf '%s' "$ANDROID_UPLOAD_CERT_SHA256" | norm)" ]; then
+            echo "::error::Keystore alias doesn't match ANDROID_UPLOAD_CERT_SHA256 (got '${GOT:-nothing}')"
+            exit 1
+          fi
+          echo "UPLOAD_KEYSTORE=$KS" >> "$GITHUB_ENV"
+
+      - name: Build signed release bundle
+        working-directory: android
+        env:
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        # android.injected.signing.* is what Android Studio's "Generate Signed Bundle" uses: it
+        # overrides the template's release signingConfig (the debug key) with no config plugin and no
+        # edits to the generated android/. The verify step catches it if AGP ever stops honouring it.
+        # armeabi-v7a stays: many low-end Android Go phones in India are 32-bit only.
+        run: |
+          ./gradlew bundleRelease --no-daemon \
+            -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
+            -Pandroid.injected.signing.store.file="$UPLOAD_KEYSTORE" \
+            -Pandroid.injected.signing.store.password="$ANDROID_UPLOAD_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_UPLOAD_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_UPLOAD_KEY_PASSWORD"
+
+      - name: Verify the bundle (upload key, production backend)
+        env:
+          ANDROID_UPLOAD_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
+          [ -s "$AAB" ] || fail "No bundle at $AAB"
+
+          # 1. Signed with the upload key, not the template's debug key.
+          SIGNED=$(keytool -printcert -jarfile "$AAB" \
+            | awk '/SHA256:/ && !done { sub(/.*SHA256: */, ""); print; done = 1 }')
+          if [ -z "$SIGNED" ] || [ "$(printf '%s' "$SIGNED" | norm)" != "$(printf '%s' "$ANDROID_UPLOAD_CERT_SHA256" | norm)" ]; then
+            fail "Bundle isn't signed with the upload key: the android.injected.signing.* properties were ignored"
+          fi
+
+          # 2. The JS talks to production. Hermes bytecode keeps string literals as plain text.
+          JS="$RUNNER_TEMP/index.android.bundle"
+          unzip -p "$AAB" base/assets/index.android.bundle > "$JS"
+          [ -s "$JS" ] || fail "No JS bundle inside the .aab"
+          HOST=${PROD_SUPABASE_URL#https://}
+          grep -aqF "$HOST" "$JS" \
+            || fail "JS bundle doesn't contain the production Supabase host: .env.production.local wasn't used"
+          ! grep -aqF "$SUPABASE_DEV_PROJECT_REF" "$JS" \
+            || fail "JS bundle contains the dev Supabase project ref"
+          rm -f "$JS"
+
+          mkdir -p dist
+          OUT="dist/expense-splitter-${APP_VERSION_NAME}-${APP_VERSION_CODE}.aab"
+          cp "$AAB" "$OUT"
+          echo "AAB_PATH=$OUT" >> "$GITHUB_ENV"
+
+      - name: Remove signing material and env files
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.keystore" .env.production.local google-services.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: expense-splitter-${{ inputs.version_name }}-${{ inputs.version_code }}
+          path: ${{ env.AAB_PATH }}
+          if-no-files-found: error
+          compression-level: 0 # an .aab is already a zip
+          # Private repos get 500 MB of free artifact storage; a release .aab is ~30-60 MB.
+          retention-days: 14
+
+      - name: Tag the release commit
+        run: |
+          git tag "android/$APP_VERSION_CODE" "$GITHUB_SHA"
+          git push origin "refs/tags/android/$APP_VERSION_CODE"
+
+      # Secret values would show as *** here, so the summary sticks to non-secret facts.
+      - name: Summary
+        run: |
+          {
+            echo "### Expense Splitter $APP_VERSION_NAME ($APP_VERSION_CODE)"
+            echo ""
+            echo "- Package: \`$EXPECTED_PACKAGE\`"
+            echo "- Commit: \`$GITHUB_SHA\` (tag \`android/$APP_VERSION_CODE\`)"
+            echo "- Verified: upload-key signature, production Supabase host, no dev project ref"
+            echo ""
+            echo "Download the .aab from this run's artifacts → Play Console → Testing → Internal testing."
+          } >> "$GITHUB_STEP_SUMMARY"

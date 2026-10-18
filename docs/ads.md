@@ -34,7 +34,7 @@ Never put real unit IDs in a dev build: clicks on your own live ads get the acco
 4. **app-ads.txt**: AdMob shows a line like
    `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`. Serve it at
    `https://ssoftapp.in/app-ads.txt` (the developer website on the Play listing) once it's live.
-5. **GitHub → Settings → Secrets and variables → Actions** (used by the release workflow):
+5. **GitHub → Settings → Secrets and variables → Actions** (used by the release workflow, `docs/release.md`):
    - `ADMOB_ANDROID_APP_ID`: the App ID (config time: the production build fails without it).
    - `EXPO_PUBLIC_ADMOB_HOME_BANNER_ID`, `EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID`: the unit IDs
      (bundled into the JS). Missing or malformed → no ads in that slot, never a crash.

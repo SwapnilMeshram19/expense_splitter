@@ -7,7 +7,7 @@
 | Android package / iOS bundle ID | `in.ssoftapp.split.dev`                 | `in.ssoftapp.split`                      |
 | Launcher label                  | Split Dev (orange icon)                 | Expense Splitter                         |
 | URL scheme                      | `expensesplitter-dev`                   | `expensesplitter`                        |
-| Built by                        | Actions → Android dev build (debug APK) | release workflow (signed .aab)           |
+| Built by                        | Actions → Android dev build (debug APK) | Actions → Android release (signed .aab)  |
 | Supabase / Google web client    | `.env.development.local`                | CI secrets → `.env.production.local`     |
 | AdMob                           | Google test IDs (always)                | real IDs from CI secrets (`docs/ads.md`) |
 

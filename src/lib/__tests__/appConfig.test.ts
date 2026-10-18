@@ -1,7 +1,9 @@
 import {
   ADMOB_TEST_APP_IDS,
   buildConfig,
+  MAX_VERSION_CODE,
   resolveAdMobAppIds,
+  resolveAppVersion,
   resolveVariant,
   VARIANTS,
 } from '../../../app.config';
@@ -129,5 +131,41 @@ describe('resolveAdMobAppIds', () => {
         optimizeAdLoading: true,
       },
     ]);
+  });
+});
+
+describe('resolveAppVersion', () => {
+  it('leaves both unset when the env has nothing (dev builds keep Expo defaults)', () => {
+    expect(resolveAppVersion({})).toEqual({});
+    expect(resolveAppVersion({ name: ' ', code: '' })).toEqual({});
+  });
+
+  it('parses valid release inputs', () => {
+    expect(resolveAppVersion({ name: ' 1.4.0 ', code: '17' })).toEqual({ name: '1.4.0', code: 17 });
+    expect(resolveAppVersion({ code: String(MAX_VERSION_CODE) })).toEqual({
+      code: MAX_VERSION_CODE,
+    });
+  });
+
+  it('rejects names that are not x.y.z', () => {
+    for (const name of ['1.4', 'v1.4.0', '1.4.0-beta', '1.4.0.1']) {
+      expect(() => resolveAppVersion({ name })).toThrow(/APP_VERSION_NAME/);
+    }
+  });
+
+  it('rejects codes Play would refuse', () => {
+    for (const code of ['0', '-1', '1.5', '017', 'abc', String(MAX_VERSION_CODE + 1)]) {
+      expect(() => resolveAppVersion({ code })).toThrow(/APP_VERSION_CODE/);
+    }
+  });
+
+  it('puts the version into the Expo config only when set', () => {
+    const plain = buildConfig('production');
+    expect(plain.version).toBeUndefined();
+    expect(plain.android?.versionCode).toBeUndefined();
+
+    const release = buildConfig('production', { version: { name: '1.4.0', code: 17 } });
+    expect(release.version).toBe('1.4.0');
+    expect(release.android?.versionCode).toBe(17);
   });
 });
