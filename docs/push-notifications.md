@@ -29,7 +29,7 @@ Then apply the migration and deploy the function:
 
 ```bash
 npx supabase db push --db-url "$DB_URL"
-npm run functions:deploy -- push-send   # dev; functions:deploy:prod for production
+npm run functions:deploy -- push-send
 ```
 
 ## 3. App

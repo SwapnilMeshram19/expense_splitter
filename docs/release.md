@@ -9,7 +9,7 @@ Actions runners and artifact storage on the free plan, no EAS.
 1. Inputs: `version_name` (`1.2.3`) and `version_code` (whole number, greater than every code ever
    uploaded). Each successful run tags the commit `android/<versionCode>`, and the next run refuses a
    code that isn't higher than the last tag.
-2. Checks every secret before spending runner minutes: production Supabase URL (not the dev ref),
+2. Checks every secret before spending runner minutes: Supabase URL (project URL only),
    publishable key (`sb_publishable_…`), Google web client ID, real AdMob unit IDs (not Google's test
    units), upload cert fingerprint format.
 3. `npm run check` (typecheck, lint, tests) must pass.
@@ -20,8 +20,8 @@ Actions runners and artifact storage on the free plan, no EAS.
 6. Decodes the upload keystore outside the workspace, checks its SHA-256 against
    `ANDROID_UPLOAD_CERT_SHA256`, builds `bundleRelease` signed via Gradle's
    `android.injected.signing.*` properties (no edits to the generated `android/`).
-7. Verifies the `.aab`: signed with the upload key, the JS bundle contains the production Supabase
-   host and not the dev project ref. Deletes keystore and env files, uploads the `.aab` as an artifact
+7. Verifies the `.aab`: signed with the upload key, the JS bundle contains the Supabase host (so
+   `.env.production.local` was used). Deletes keystore and env files, uploads the `.aab` as an artifact
    (14 days), pushes the tag.
 
 Upload the artifact to **Play Console → Testing → Internal testing** first, never straight to
@@ -48,20 +48,20 @@ Keep `upload.jks` and the password in your password manager plus one offline cop
 
 ### 2. Repository secrets (Settings → Secrets and variables → Actions → Secrets)
 
-| Secret                                 | Value                                                                   |
-| -------------------------------------- | ----------------------------------------------------------------------- |
-| `ANDROID_UPLOAD_KEYSTORE_BASE64`       | `upload.jks.b64` contents                                               |
-| `ANDROID_UPLOAD_KEYSTORE_PASSWORD`     | keystore password                                                       |
-| `ANDROID_UPLOAD_KEY_ALIAS`             | `upload`                                                                |
-| `ANDROID_UPLOAD_KEY_PASSWORD`          | key password (same as the store password for PKCS12)                    |
-| `ANDROID_UPLOAD_CERT_SHA256`           | `AB:CD:…` from `keytool -list -v`                                       |
-| `PROD_SUPABASE_URL`                    | production project URL, `https://<prod-ref>.supabase.co`, no path       |
-| `PROD_SUPABASE_PUBLISHABLE_KEY`        | production publishable key (`sb_publishable_…`), **never** a secret key |
-| `PROD_GOOGLE_WEB_CLIENT_ID`            | Google OAuth **Web** client ID (`….apps.googleusercontent.com`)         |
-| `ADMOB_ANDROID_APP_ID`                 | `ca-app-pub-…~…` (see `docs/ads.md`)                                    |
-| `EXPO_PUBLIC_ADMOB_HOME_BANNER_ID`     | `ca-app-pub-…/…`                                                        |
-| `EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID` | `ca-app-pub-…/…`                                                        |
-| `GOOGLE_SERVICES_JSON`                 | already exists; must include `in.ssoftapp.split` (and `.dev`)           |
+| Secret                                 | Value                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `ANDROID_UPLOAD_KEYSTORE_BASE64`       | `upload.jks.b64` contents                                                |
+| `ANDROID_UPLOAD_KEYSTORE_PASSWORD`     | keystore password                                                        |
+| `ANDROID_UPLOAD_KEY_ALIAS`             | `upload`                                                                 |
+| `ANDROID_UPLOAD_KEY_PASSWORD`          | key password (same as the store password for PKCS12)                     |
+| `ANDROID_UPLOAD_CERT_SHA256`           | `AB:CD:…` from `keytool -list -v`                                        |
+| `SUPABASE_URL`                         | already exists (keep-alive); `https://<ref>.supabase.co`, no path        |
+| `SUPABASE_PUBLISHABLE_KEY`             | already exists; publishable key (`sb_publishable_…`), never a secret key |
+| `GOOGLE_WEB_CLIENT_ID`                 | Google OAuth **Web** client ID, same as in `.env.development.local`      |
+| `ADMOB_ANDROID_APP_ID`                 | `ca-app-pub-…~…` (see `docs/ads.md`)                                     |
+| `EXPO_PUBLIC_ADMOB_HOME_BANNER_ID`     | `ca-app-pub-…/…`                                                         |
+| `EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID` | `ca-app-pub-…/…`                                                         |
+| `GOOGLE_SERVICES_JSON`                 | already exists; must include `in.ssoftapp.split` (and `.dev`)            |
 
 Only the keystore, passwords and `GOOGLE_SERVICES_JSON` are truly secret; the rest ship inside the
 app. They're secrets anyway so the release config lives in one place.
@@ -73,8 +73,8 @@ app. They're secrets anyway so the release config lives in one place.
 
 ## Before the first run
 
-The production Supabase project must exist and its three `PROD_*` secrets be set:
-`docs/production-supabase.md`. Until then the run stops at "Check release secrets".
+Work through `docs/production-supabase.md` (one project serves both variants): stop automatic
+migrations, run the readiness check, clear test data, add `GOOGLE_WEB_CLIENT_ID`.
 
 ## First upload: Play Internal testing
 

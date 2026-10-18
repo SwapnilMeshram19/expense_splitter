@@ -34,8 +34,6 @@ env:
   APP_VERSION_CODE: ${{ inputs.version_code }}
   ADMOB_ANDROID_APP_ID: ${{ secrets.ADMOB_ANDROID_APP_ID }}
   EXPECTED_PACKAGE: in.ssoftapp.split
-  # Public already (package.json functions:deploy). Used to prove the release bundle isn't on dev.
-  SUPABASE_DEV_PROJECT_REF: cudmaszrwrbgwsoizajd
 
 jobs:
   release:
@@ -80,9 +78,9 @@ jobs:
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
           ANDROID_UPLOAD_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
-          PROD_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PROD_SUPABASE_PUBLISHABLE_KEY }}
-          PROD_GOOGLE_WEB_CLIENT_ID: ${{ secrets.PROD_GOOGLE_WEB_CLIENT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
           EXPO_PUBLIC_ADMOB_HOME_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_HOME_BANNER_ID }}
           EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID }}
         run: |
@@ -91,21 +89,19 @@ jobs:
           for name in \
             ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS \
             ANDROID_UPLOAD_KEY_PASSWORD ANDROID_UPLOAD_CERT_SHA256 GOOGLE_SERVICES_JSON \
-            PROD_SUPABASE_URL PROD_SUPABASE_PUBLISHABLE_KEY PROD_GOOGLE_WEB_CLIENT_ID \
+            SUPABASE_URL SUPABASE_PUBLISHABLE_KEY GOOGLE_WEB_CLIENT_ID \
             ADMOB_ANDROID_APP_ID EXPO_PUBLIC_ADMOB_HOME_BANNER_ID EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID; do
             [ -n "${!name}" ] || missing+=("$name")
           done
           (( ${#missing[@]} == 0 )) || fail "Missing secrets: ${missing[*]} (see docs/release.md)"
 
           # Same rule as src/lib/env.ts: project URL only. The app would throw at sign-in otherwise.
-          [[ "$PROD_SUPABASE_URL" =~ ^https://[^/[:space:]]+$ ]] \
-            || fail "PROD_SUPABASE_URL must be the project URL only (https://<ref>.supabase.co, no path or trailing slash)"
-          [[ "$PROD_SUPABASE_URL" != *"$SUPABASE_DEV_PROJECT_REF"* ]] \
-            || fail "PROD_SUPABASE_URL points at the dev project"
-          [[ "$PROD_SUPABASE_PUBLISHABLE_KEY" == sb_publishable_* ]] \
-            || fail "PROD_SUPABASE_PUBLISHABLE_KEY must be the publishable key (sb_publishable_…), never a secret key"
-          [[ "$PROD_GOOGLE_WEB_CLIENT_ID" == *.apps.googleusercontent.com ]] \
-            || fail "PROD_GOOGLE_WEB_CLIENT_ID must end in .apps.googleusercontent.com"
+          [[ "$SUPABASE_URL" =~ ^https://[^/[:space:]]+$ ]] \
+            || fail "SUPABASE_URL must be the project URL only (https://<ref>.supabase.co, no path or trailing slash)"
+          [[ "$SUPABASE_PUBLISHABLE_KEY" == sb_publishable_* ]] \
+            || fail "SUPABASE_PUBLISHABLE_KEY must be the publishable key (sb_publishable_…), never a secret key"
+          [[ "$GOOGLE_WEB_CLIENT_ID" == *.apps.googleusercontent.com ]] \
+            || fail "GOOGLE_WEB_CLIENT_ID must end in .apps.googleusercontent.com"
           # A missing or malformed unit ID doesn't crash the app (AdSlot just shows nothing), which is
           # exactly why a release refuses it: it would ship and silently earn nothing.
           for id in EXPO_PUBLIC_ADMOB_HOME_BANNER_ID EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID; do
@@ -155,9 +151,9 @@ jobs:
 
       - name: Write production env (.env.production.local)
         env:
-          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
-          PROD_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PROD_SUPABASE_PUBLISHABLE_KEY }}
-          PROD_GOOGLE_WEB_CLIENT_ID: ${{ secrets.PROD_GOOGLE_WEB_CLIENT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
           EXPO_PUBLIC_ADMOB_HOME_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_HOME_BANNER_ID }}
           EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID: ${{ secrets.EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID }}
         run: |
@@ -169,9 +165,9 @@ jobs:
           # RLS, public client and unit IDs). Never add a secret key or anything server-side.
           umask 077
           {
-            echo "EXPO_PUBLIC_SUPABASE_URL=$PROD_SUPABASE_URL"
-            echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$PROD_SUPABASE_PUBLISHABLE_KEY"
-            echo "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$PROD_GOOGLE_WEB_CLIENT_ID"
+            echo "EXPO_PUBLIC_SUPABASE_URL=$SUPABASE_URL"
+            echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY"
+            echo "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID"
             echo "EXPO_PUBLIC_ADMOB_HOME_BANNER_ID=$EXPO_PUBLIC_ADMOB_HOME_BANNER_ID"
             echo "EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID=$EXPO_PUBLIC_ADMOB_ACTIVITY_BANNER_ID"
           } > .env.production.local
@@ -241,7 +237,7 @@ jobs:
       - name: Verify the bundle (upload key, production backend)
         env:
           ANDROID_UPLOAD_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
-          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
           norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
@@ -255,15 +251,13 @@ jobs:
             fail "Bundle isn't signed with the upload key: the android.injected.signing.* properties were ignored"
           fi
 
-          # 2. The JS talks to production. Hermes bytecode keeps string literals as plain text.
+          # 2. The JS bundle was built from .env.production.local. Hermes bytecode keeps string literals as plain text.
           JS="$RUNNER_TEMP/index.android.bundle"
           unzip -p "$AAB" base/assets/index.android.bundle > "$JS"
           [ -s "$JS" ] || fail "No JS bundle inside the .aab"
-          HOST=${PROD_SUPABASE_URL#https://}
+          HOST=${SUPABASE_URL#https://}
           grep -aqF "$HOST" "$JS" \
-            || fail "JS bundle doesn't contain the production Supabase host: .env.production.local wasn't used"
-          ! grep -aqF "$SUPABASE_DEV_PROJECT_REF" "$JS" \
-            || fail "JS bundle contains the dev Supabase project ref"
+            || fail "JS bundle doesn't contain the Supabase host: .env.production.local wasn't used"
           rm -f "$JS"
 
           mkdir -p dist
@@ -297,7 +291,7 @@ jobs:
             echo ""
             echo "- Package: \`$EXPECTED_PACKAGE\`"
             echo "- Commit: \`$GITHUB_SHA\` (tag \`android/$APP_VERSION_CODE\`)"
-            echo "- Verified: upload-key signature, production Supabase host, no dev project ref"
+            echo "- Verified: upload-key signature, Supabase host in the JS bundle"
             echo ""
             echo "Download the .aab from this run's artifacts → Play Console → Testing → Internal testing."
           } >> "$GITHUB_STEP_SUMMARY"

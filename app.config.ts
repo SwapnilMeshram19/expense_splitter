@@ -3,7 +3,8 @@
  *
  * Two variants, picked by APP_VARIANT at config time (prebuild, `expo start`, CI):
  * - development (default): package in.ssoftapp.split.dev, "Split Dev", orange icon. Installs next to
- *   the Play Store app, has its own local SQLite and talks to the dev Supabase project.
+ *   the Play Store app and has its own local SQLite. Both variants use the same (live) Supabase
+ *   project, so test with test accounts and test groups.
  * - production: package in.ssoftapp.split. Only the release workflow sets APP_VARIANT=production.
  *
  * AdMob: development always uses Google's test app ID (no risk of invalid-traffic flags while

@@ -8,10 +8,12 @@
 | Launcher label                  | Split Dev (orange icon)                 | Expense Splitter                         |
 | URL scheme                      | `expensesplitter-dev`                   | `expensesplitter`                        |
 | Built by                        | Actions → Android dev build (debug APK) | Actions → Android release (signed .aab)  |
-| Supabase / Google web client    | `.env.development.local`                | CI secrets → `.env.production.local`     |
+| Supabase / Google web client    | same project; `.env.development.local`  | same values from CI secrets              |
 | AdMob                           | Google test IDs (always)                | real IDs from CI secrets (`docs/ads.md`) |
 
 Both can be installed side by side: separate local SQLite, separate sign-in, separate push token.
+They share one Supabase project (`docs/production-supabase.md`), so dev builds see real data: test with
+test accounts and test groups.
 Unset `APP_VARIANT` means development, so nothing reaches production by accident; a typo fails the
 build. Check what a variant resolves to with `npm run config:dev` / `npm run config:prod`.
 
