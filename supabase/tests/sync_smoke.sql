@@ -1,4 +1,5 @@
--- apply_push + pull_changes smoke test. One transaction, rolled back: leaves no data.
+-- apply_push + pull_page smoke test (pull_changes was dropped in 20261018120000).
+-- One transaction, rolled back: leaves no data.
 -- Run: source ~/.supabase-dev.env && psql -v ON_ERROR_STOP=1 -f supabase/tests/sync_smoke.sql
 begin;
 
@@ -175,12 +176,14 @@ declare res jsonb;
 begin
   -- Rows written by a transaction that is still open are never returned incrementally:
   -- this is what makes the cursor safe against concurrent pushes.
-  res := public.pull_changes(null);
+  res := public.pull_page(null);
   assert res->>'cursor' is not null, 'cursor must be returned';
+  assert (res->>'more')::boolean = false, 'nothing committed: a single page';
   assert not (res->'groups' @> '[{"id":"90000000-0000-0000-0000-000000000001"}]'),
     'uncommitted rows must not appear in an incremental pull';
 
-  res := public.pull_changes(null, array['90000000-0000-0000-0000-000000000001']::uuid[]);
+  res := public.pull_page(null, array['90000000-0000-0000-0000-000000000001']::uuid[]);
+  assert (res->>'more')::boolean = false, 'full fetch of a small group fits one page';
   assert res->'group_ids' = '["90000000-0000-0000-0000-000000000001"]', format('group_ids: %s', res->'group_ids');
   assert jsonb_array_length(res->'groups') = 1, 'full fetch: 1 group';
   assert jsonb_array_length(res->'members') = 2, 'full fetch: 2 members';
@@ -202,7 +205,7 @@ set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-000000000002","r
 do $$
 declare res jsonb;
 begin
-  res := public.pull_changes(null, array['90000000-0000-0000-0000-000000000001']::uuid[]);
+  res := public.pull_page(null, array['90000000-0000-0000-0000-000000000001']::uuid[]);
   assert jsonb_array_length(res->'groups') = 0 and jsonb_array_length(res->'members') = 0,
     format('RLS must hide other groups: %s', res);
   assert res->'group_ids' = '["90000000-0000-0000-0000-000000000002"]', format('Bala group_ids: %s', res->'group_ids');
@@ -214,13 +217,19 @@ set local role anon;
 do $$
 begin
   begin
-    perform public.pull_changes(null);
+    perform public.pull_page(null);
     raise exception 'FAIL: anon can pull';
   exception when insufficient_privilege then null;
   end;
 end $$;
 
+-- 8. The old endpoint is gone.
 reset role;
+do $$
+begin
+  assert to_regprocedure('public.pull_changes(text, uuid[])') is null, 'pull_changes must be dropped';
+end $$;
+
 rollback;
 
 select 'sync smoke test passed' as result;
