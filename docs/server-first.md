@@ -91,7 +91,8 @@ ESLint (`no-restricted-imports`) stops screens from importing the old repositori
    npx supabase secrets set WEB_ORIGINS="https://split.ssoftapp.in,http://localhost:5173" --project-ref cudmaszrwrbgwsoizajd
    ```
 
-   Without it the API sends no CORS headers: the mobile app works, browsers are refused.
+   Without it the API sends no CORS headers: the mobile app works, browsers are refused. The web
+   app itself is described in `docs/web.md`.
 
 ## Deploy order
 

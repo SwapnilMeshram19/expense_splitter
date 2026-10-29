@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
       - run: npm ci
       - name: Domain copy in sync
         run: |
@@ -39,3 +42,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test -- --ci
+      # The web app: same shared code, its own dependencies (typecheck + production build).
+      - run: npm ci --prefix web --no-audit --no-fund
+      - run: npm --prefix web run check

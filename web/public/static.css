@@ -1,0 +1,51 @@
+/* Static pages (privacy). A separate file: the CSP allows no inline styles. */
+:root {
+  color-scheme: dark light;
+  --bg: #0a0d12;
+  --text: #eceff4;
+  --muted: #9aa3b3;
+  --link: #a3b1ff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f5f8;
+    --text: #11141b;
+    --muted: #586071;
+    --link: #3f49c9;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+}
+
+main {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin-top: 1.8em;
+}
+
+a {
+  color: var(--link);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+li {
+  margin-bottom: 0.6em;
+}

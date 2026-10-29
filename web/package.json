@@ -1,0 +1,33 @@
+{
+  "name": "expense-splitter-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Expense Splitter in the browser (split.ssoftapp.in). Reuses src/domain, src/api and src/data from the app.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "check": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "idb-keyval": "^6.2.2",
+    "qrcode-generator": "^2.0.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "wouter": "^3.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "@vitejs/plugin-react": "^6.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.0"
+  }
+}

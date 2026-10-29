@@ -1,0 +1,29 @@
+# Cloudflare Pages response headers (https://developers.cloudflare.com/pages/configuration/headers/).
+#
+# CSP: scripts only from this site and Google's sign-in script; network only to this Supabase
+# project (REST, Edge Functions, Realtime websocket) and Google sign-in. If the Supabase project
+# ever changes, update both connect-src entries. COOP allows Google's sign-in popup to answer.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; connect-src 'self' https://cudmaszrwrbgwsoizajd.supabase.co wss://cudmaszrwrbgwsoizajd.supabase.co https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+# Hashed file names: safe to cache for a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Android App Links verification.
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+
+# Invite links are private: never in search results.
+/join
+  X-Robots-Tag: noindex, nofollow
+
+/join/*
+  X-Robots-Tag: noindex, nofollow

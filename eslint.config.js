@@ -28,6 +28,7 @@ module.exports = defineConfig([
   },
   {
     // supabase/ holds Deno code (npm: specifiers, .ts imports) and SQL: not part of the app build.
-    ignores: ['dist/*', '.expo/*', 'supabase/**', 'src/db/migrations/*'],
+    // web/ is the browser app: typechecked and built by its own config (npm run web:check).
+    ignores: ['dist/*', '.expo/*', 'supabase/**', 'src/db/migrations/*', 'web/**'],
   },
 ]);
