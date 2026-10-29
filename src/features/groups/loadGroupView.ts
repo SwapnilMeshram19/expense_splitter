@@ -1,12 +1,5 @@
-import type { AppDb } from '@/db/context';
-import { isGroupLost } from '@/db/repositories/access';
-import { groupActivityQuery } from '@/db/repositories/activity';
-import { groupExpensesQuery } from '@/db/repositories/expenses';
-import { getGroup, groupBudgetStatus } from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
-import { groupSettlementsQuery } from '@/db/repositories/settlements';
-import type { Expense, Group, Settlement } from '@/db/schema';
+import { budgetStatusOf, findSelfMemberId } from '@/data/selectors';
+import { ledgerOf, type ActivityEntry, type Expense, type Group, type GroupSnapshot, type Settlement } from '@/domain/model';
 import { computeBalances, computePairwiseDebts, type Debt, type PayerLine } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
 import { lastSettledIndex } from '@/domain/settledPoint';
@@ -50,8 +43,7 @@ export interface SettledPart {
 export interface GroupView {
   group: Group;
   me: string | null;
-  lost: boolean;
-  /** Writes allowed: I'm a member and access hasn't been revoked. */
+  /** Writes allowed: I'm an active member. */
   canEdit: boolean;
   names: Map<string, string>;
   /** Active members, in the order they joined (avatar stack, balances). */
@@ -101,25 +93,31 @@ export function withDateHeaders(
   return result;
 }
 
-export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, todayIso: string): GroupView | null {
-  const group = getGroup(db, groupId);
-  if (!group) return null;
+/**
+ * Everything the group screen shows, from the group's snapshot. `activity` is the latest history
+ * page (loaded separately, newest first); `pending` says which rows aren't on the server yet.
+ */
+export function loadGroupView(
+  snapshot: GroupSnapshot | null,
+  userId: string,
+  todayIso: string,
+  activityEntries: readonly ActivityEntry[] = [],
+): GroupView | null {
+  if (!snapshot) return null;
+  const group = snapshot.group;
 
-  const me = findSelfMemberId(db, groupId, deviceUserId);
-  const lost = isGroupLost(db, groupId);
-  const allMembers = groupMembersQuery(db, groupId).all();
+  const me = findSelfMemberId(snapshot, userId);
+  const allMembers = snapshot.members;
   const names = new Map(allMembers.map((m) => [m.id, m.displayName]));
 
-  const ledger = loadGroupLedger(db, groupId);
+  const ledger = ledgerOf(snapshot);
   const { balances, invalidIds } = computeBalances(ledger.expenses, ledger.settlements);
   const transfers = group.simplifyDebts
     ? simplifyDebts(balances)
     : computePairwiseDebts(ledger.expenses, ledger.settlements).debts;
 
   const linesById = new Map(ledger.expenses.map((e) => [e.id, e]));
-  const expenseRows = groupExpensesQuery(db, groupId)
-    .all()
-    .map((expense) => {
+  const expenseRows = snapshot.expenses.map((expense) => {
       const payers = linesById.get(expense.id)?.payers ?? [];
       const shares = linesById.get(expense.id)?.shares ?? [];
       const myPaid = payers.find((p) => p.memberId === me)?.amountPaise ?? 0;
@@ -136,9 +134,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
       };
     });
 
-  const settlementRows = groupSettlementsQuery(db, groupId)
-    .all()
-    .map((settlement) => ({
+  const settlementRows = snapshot.settlements.map((settlement) => ({
       kind: 'settlement' as const,
       key: `s-${settlement.id}`,
       date: toLocalIsoDate(new Date(settlement.settledAt)),
@@ -191,9 +187,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
       : null;
 
   const nameOf = (id: string) => names.get(id) ?? 'Someone';
-  const activity = groupActivityQuery(db, groupId)
-    .all()
-    .map((entry) => ({
+  const activity = activityEntries.map((entry) => ({
       key: entry.id,
       ...describeActivity(entry, { me, nameOf, currency: group.currency }),
       time: formatTimestamp(entry.createdAt),
@@ -202,8 +196,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
   return {
     group,
     me,
-    lost,
-    canEdit: me !== null && !lost,
+    canEdit: me !== null,
     names,
     activeMembers: allMembers.filter((m) => m.deletedAt === null).map((m) => ({ id: m.id, name: m.displayName })),
     invalidCount: invalidIds.length,
@@ -216,7 +209,7 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
       .map((m) => ({ id: m.id, balance: balances.get(m.id) ?? 0 })),
     myBalance: me ? (balances.get(me) ?? 0) : 0,
     activity,
-    budget: groupBudgetStatus(db, group, todayIso),
+    budget: budgetStatusOf(snapshot, todayIso),
     upiIds: new Map(
       allMembers.flatMap((m) =>
         m.deletedAt === null && isValidVpa(m.upiVpa) ? [[m.id, m.upiVpa] as const] : [],
@@ -225,14 +218,3 @@ export function loadGroupView(db: AppDb, groupId: string, deviceUserId: string, 
     totalSpent: expenseRows.reduce((sum, row) => sum + row.expense.amountPaise, 0),
   };
 }
-
-export const GROUP_VIEW_TABLES = [
-  'groups',
-  'members',
-  'expenses',
-  'expense_payers',
-  'expense_shares',
-  'settlements',
-  'settings',
-  'activity_log',
-] as const;

@@ -1,5 +1,5 @@
-import { applyPull } from '@/sync/engine';
-import { expenseToWire, type Incoming, type PullResult, type WireExpense } from '@/sync/wire';
+import { applyPull } from '@/legacy/sync/engine';
+import { expenseToWire, type Incoming, type PullResult, type WireExpense } from '@/legacy/sync/wire';
 
 import { createExpense, getExpense, updateExpense, type ExpenseDraft } from '../repositories/expenses';
 import { createGroup } from '../repositories/groups';

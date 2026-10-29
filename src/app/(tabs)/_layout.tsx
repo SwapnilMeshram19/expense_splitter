@@ -1,8 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 
-import { db } from '@/db/client';
-import { getDeviceUserId } from '@/db/session';
 import { openAddExpense } from '@/features/overview/openAddExpense';
 import { GradientSurface } from '@/ui/GradientSurface';
 import { Icon, type IconName } from '@/ui/Icon';
@@ -24,7 +22,7 @@ function AddButton() {
   return (
     <View style={styles.addSlot}>
       <Pressable
-        onPress={() => openAddExpense(db, getDeviceUserId())}
+        onPress={openAddExpense}
         accessibilityRole="button"
         accessibilityLabel="Add expense"
         style={({ pressed }) => [

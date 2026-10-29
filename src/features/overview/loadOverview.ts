@@ -1,10 +1,5 @@
-import type { AppDb } from '@/db/context';
-import { isGroupLost } from '@/db/repositories/access';
-import { activeGroupsQuery, groupBudgetStatus } from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
-import { sampleGroupIds } from '@/db/repositories/sampleIds';
-import type { Group } from '@/db/schema';
+import { budgetStatusOf, findSelfMemberId } from '@/data/selectors';
+import { ledgerOf, type Group, type GroupSnapshot } from '@/domain/model';
 import { computeBalances, computePairwiseDebts, type Debt } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
 import { DEFAULT_CURRENCY, type CurrencyCode } from '@/domain/currency';
@@ -18,8 +13,7 @@ export interface GroupSummary {
   /** My net balance in this group, minor units of group.currency: > 0 I'm owed, < 0 I owe. */
   myBalance: Paise;
   activeMemberCount: number;
-  lost: boolean;
-  /** Writes allowed: I'm a member and the server hasn't revoked access. */
+  /** Writes allowed: I'm an active member. */
   canEdit: boolean;
   /** Progress against the group's budget, or null without one. */
   budget: BudgetStatus | null;
@@ -76,36 +70,30 @@ export const compareCurrencies = (a: CurrencyCode, b: CurrencyCode): number =>
  * Within one currency the totals are plain integer sums (no rounding involved).
  */
 export function loadOverview(
-  db: AppDb,
-  deviceUserId: string,
+  snapshots: readonly GroupSnapshot[],
+  userId: string,
   today: string = todayIsoDate(),
 ): Overview {
   const groups: GroupSummary[] = [];
   const transfers: MyTransfer[] = [];
   const totals = new Map<CurrencyCode, CurrencyTotal>();
-  // Example groups from old builds are deleted at startup; if one survived, it stays hidden.
-  const sampleIds = sampleGroupIds(db);
-  const allGroups = activeGroupsQuery(db)
-    .all()
-    .filter((g) => !sampleIds.has(g.id));
 
-  for (const group of allGroups) {
-    const me = findSelfMemberId(db, group.id, deviceUserId);
-    const lost = isGroupLost(db, group.id);
-    const members = groupMembersQuery(db, group.id).all();
-    const ledger = loadGroupLedger(db, group.id);
+  for (const snapshot of snapshots) {
+    const group = snapshot.group;
+    const me = findSelfMemberId(snapshot, userId);
+    const members = snapshot.members;
+    const ledger = ledgerOf(snapshot);
     const { balances } = computeBalances(ledger.expenses, ledger.settlements);
     const myBalance = me ? (balances.get(me) ?? 0) : 0;
-    const canEdit = me !== null && !lost;
+    const canEdit = me !== null;
 
     groups.push({
       group,
       me,
       myBalance,
       activeMemberCount: members.filter((m) => m.deletedAt === null).length,
-      lost,
       canEdit,
-      budget: groupBudgetStatus(db, group, today),
+      budget: budgetStatusOf(snapshot, today),
     });
 
     if (!me || myBalance === 0) continue;
@@ -158,14 +146,3 @@ export function loadOverview(
     transfers,
   };
 }
-
-/** Tables the overview reads: 'settings' holds the lost-access list. */
-export const OVERVIEW_TABLES = [
-  'groups',
-  'members',
-  'expenses',
-  'expense_payers',
-  'expense_shares',
-  'settlements',
-  'settings',
-] as const;

@@ -1,4 +1,4 @@
-import type { Expense, RecurringRule } from '@/db/schema';
+import type { Expense, RecurringRule } from '@/domain/model';
 import { formStateFromExpense, type ExpenseFormState } from '@/features/expenses/formState';
 
 /** The expense form, filled from a rule (the rule's start date shows as the first date). */
@@ -29,7 +29,8 @@ export function formStateFromRule(
     updatedAt: rule.updatedAt,
     deletedAt: rule.deletedAt,
     version: rule.version,
-    dirty: rule.dirty,
+    payers: rule.payers.map((l) => ({ ...l, originalAmountMinor: null })),
+    shares: rule.shares,
   };
   return {
     ...formStateFromExpense(

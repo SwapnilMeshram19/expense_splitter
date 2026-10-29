@@ -1,6 +1,6 @@
 import { getSupabase } from '@/lib/supabase';
 
-import { syncOrigin } from './origin';
+import { syncOrigin } from '@/data/origin';
 import type { SyncTransport } from './runSync';
 import type { PullResult, PushResult } from './wire';
 

@@ -1,35 +1,30 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { deleteSettlement } from '@/db/repositories/settlements';
-import type { Settlement } from '@/db/schema';
-import { getDeviceUserId } from '@/db/session';
+import { dataStore } from '@/data';
+import { runCommand, useActivity, useData } from '@/data/hooks';
+import { useRefreshControl } from '@/data/useRefreshControl';
+import type { Settlement } from '@/domain/model';
 import type { Debt } from '@/domain/balances';
 import { formatMoney } from '@/domain/currency';
 import { describeMyExpenseShare } from '@/features/balances/describe';
 import { useApprox } from '@/features/fx/useApprox';
 import {
-  GROUP_VIEW_TABLES,
   loadGroupView,
   type ActivityRow,
   type GroupView,
   type HistoryRow,
   type SettledPart,
 } from '@/features/groups/loadGroupView';
-import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { balancesMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
 import { useShareSheet } from '@/features/share/ShareSheet';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
 import { todayIsoDate } from '@/lib/dates';
-import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Banner } from '@/ui/Banner';
@@ -108,9 +103,13 @@ export default function GroupDetailScreen() {
   const insets = useSafeAreaInsets();
   const [segment, setSegment] = useState<Segment>('expenses');
   const [showSettled, setShowSettled] = useState(false);
-  const compute = useCallback(() => loadGroupView(db, groupId, getDeviceUserId(), todayIsoDate()), [groupId]);
-  const view = useLiveData(GROUP_VIEW_TABLES, compute);
-  const refreshControl = useSyncRefreshControl();
+  // History loads only when its tab is open (it's the one part not kept on the phone).
+  const activity = useActivity(segment === 'activity' ? groupId : '__none__');
+  const view = useData(() => {
+    const store = dataStore();
+    return loadGroupView(store.group(groupId), store.planningUserId(), todayIsoDate(), activity.entries);
+  }, [groupId, activity.entries]);
+  const refreshControl = useRefreshControl();
   // "≈ in your currency" under my balance when this group uses another currency.
   const approx = useApprox(!!view && view.myBalance !== 0);
   const share = useShareSheet();
@@ -176,8 +175,12 @@ export default function GroupDetailScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            const result = deleteSettlement(appContext, settlement.id, me);
+          onPress: async () => {
+            const result = await runCommand('settlement.delete', {
+              groupId,
+              settlementId: settlement.id,
+              expectedVersion: settlement.version,
+            });
             if (!result.ok) {
               Alert.alert('Could not delete', describeSettlementError(result.error, nameOf, currency));
             }
@@ -189,10 +192,7 @@ export default function GroupDetailScreen() {
 
   const header = (
     <View style={styles.header}>
-      {view.lost ? <LostAccessBanner groupId={groupId} groupName={view.group.name} /> : null}
-      {!me && !view.lost ? (
-        <Banner tone="warning" title="You’re not in this group" body="Read-only on this phone." />
-      ) : null}
+      {!me ? <Banner tone="warning" title="You’re not in this group" body="Read-only." /> : null}
       {canEdit ? <PendingUpiBanner groupId={groupId} nameOf={nameOf} /> : null}
       <SummaryCard
         view={view}
@@ -257,7 +257,7 @@ export default function GroupDetailScreen() {
               })
             }
             accessibilityRole="button"
-            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}${item.expense.note ? ', has a note' : ''}${item.expense.receiptId ? ', has a receipt' : ''}${item.expense.recurringRuleId ? ', repeats' : ''}`}
+            accessibilityLabel={`${item.expense.description}, ${paidBy}, ${share.label}${item.expense.note ? ', has a note' : ''}${item.expense.receiptId ? ', has a receipt' : ''}${item.expense.recurringRuleId ? ', repeats' : ''}${dataStore().pendingStatus(item.expense.id) === 'queued' ? ', not sent yet' : ''}`}
             style={({ pressed }) => [styles.historyRow, { opacity: pressed ? 0.7 : 1 }]}
           >
             <CategoryTile category={item.expense.category} />
@@ -269,6 +269,9 @@ export default function GroupDetailScreen() {
                 {item.expense.note ? <Icon name="note" color={theme.muted} size={16} /> : null}
                 {item.expense.receiptId ? <Icon name="receipt" color={theme.muted} size={16} /> : null}
                 {item.expense.recurringRuleId ? <Icon name="repeat" color={theme.muted} size={16} /> : null}
+                {dataStore().pendingStatus(item.expense.id) === 'queued' ? (
+                  <Icon name="cloudUpload" color={theme.muted} size={16} />
+                ) : null}
               </View>
               <AppText variant="caption" color={theme.muted} numberOfLines={1}>
                 {item.expense.categoryLabel ? `${item.expense.categoryLabel} · ${paidBy}` : paidBy}

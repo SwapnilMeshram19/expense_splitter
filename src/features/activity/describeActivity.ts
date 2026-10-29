@@ -3,7 +3,7 @@
  * Snapshots are JSON that may come from other devices or older app versions (after sync),
  * so they are parsed defensively: malformed entries degrade to "X made a change".
  */
-import type { ActivityLogEntry } from '@/db/schema';
+import type { ActivityEntry as ActivityLogEntry } from '@/domain/model';
 import {
   currencyLabel,
   DEFAULT_CURRENCY,

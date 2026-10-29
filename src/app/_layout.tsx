@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 
+import { startData } from '@/data/native';
 import { appContext } from '@/db/appContext';
 import { db } from '@/db/client';
 import migrations from '@/db/migrations/migrations';
@@ -18,8 +19,6 @@ import { startNotifications } from '@/features/notifications/notifications';
 import { deleteLocalReceipt } from '@/features/receipts/receiptFiles';
 import { startRegionPreference } from '@/features/region/deviceLocales';
 import { startReceiptQueue } from '@/features/receipts/receiptStorage';
-import { startRecurringGenerator } from '@/features/recurring/runRecurring';
-import { startSyncScheduler } from '@/sync/scheduler';
 import { loadHapticsPreference } from '@/ui/haptics';
 import { applyNativeColorScheme, useTheme } from '@/ui/theme';
 import { loadThemePreference, subscribeThemePreference, useThemePreference } from '@/ui/themePreference';
@@ -31,8 +30,8 @@ export default function RootLayout() {
   // Start loading the Android icon font while migrations run, so icons don't pop in later.
   useFonts({ MaterialSymbols_400Regular });
 
-  // Order matters: the saved theme first (it gates the first real render), then auth links the
-  // account to local data before the scheduler's first push.
+  // Order matters: the saved theme first (it gates the first real render), then the data store
+  // loads its cache (screens show it at once), then auth starts and fetches fresh data.
   useEffect(() => {
     if (!success) return;
     applyNativeColorScheme(loadThemePreference(appContext).mode);
@@ -40,19 +39,17 @@ export default function RootLayout() {
     const unsubscribe = subscribeThemePreference((pref) => applyNativeColorScheme(pref.mode));
     // Home currency and rupee grouping, before the first screen formats any amount.
     const stopRegion = startRegionPreference();
-    // Builds up to 1.0.0 seeded an example group (this phone only). Delete any left over, before
-    // auth and the scheduler; the sync engine skips it anyway if this ever fails.
+    // Builds up to 1.0.0 seeded an example group (this phone only). Delete any left over before
+    // the one-time hand-over of old local data; the legacy engine skips it anyway.
     try {
       for (const receiptId of removeLegacySampleGroups(appContext)) deleteLocalReceipt(receiptId);
     } catch {
       // Best effort: a leftover stays hidden and never syncs.
     }
+    const stopData = startData();
     startAuth();
-    // Receipt photos follow their expenses: upload/clean up after each successful sync.
+    // Receipt photos follow their expenses: upload/clean up after each refresh.
     const stopReceipts = startReceiptQueue();
-    // Repeating expenses due today (also offline); the server's hourly job does the same.
-    const stopRecurring = startRecurringGenerator();
-    startSyncScheduler();
     // Push registration, the weekly reminder, and opening a tapped notification.
     const stopNotifications = startNotifications();
     // Ad consent + SDK, deferred until the first screen has settled (see adsRuntime.ts).
@@ -63,7 +60,7 @@ export default function RootLayout() {
       unsubscribe();
       stopRegion();
       stopReceipts();
-      stopRecurring();
+      stopData();
     };
   }, [success]);
 
@@ -109,6 +106,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Home' }} />
         <Stack.Screen name="pick-group" options={{ title: 'Add expense to', presentation: 'modal' }} />
+        <Stack.Screen name="pending" options={{ title: 'Not saved yet' }} />
         <Stack.Screen
           name="welcome"
           options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }}

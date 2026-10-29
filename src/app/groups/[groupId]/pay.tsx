@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
+import { dataStore } from '@/data';
+import { runCommand } from '@/data/hooks';
 import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { MAX_NOTE_LENGTH, recordSettlement } from '@/db/repositories/settlements';
-import type { SettlementMethod } from '@/db/schema';
+import { newId } from '@/lib/newId';
+
+import type { SettlementMethod } from '@/domain/model';
 import {
   formatMoney,
   minorDigits,
@@ -50,6 +52,8 @@ import { AmountInput, FieldLabel, Input } from '@/ui/Field';
 import { Icon, type IconName } from '@/ui/Icon';
 import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
+
+const SETTLEMENT_NOTE_MAX = 100;
 
 type Ready = Extract<PaySetup, { ok: true }>;
 type Phase = 'form' | 'waiting' | 'confirm';
@@ -256,25 +260,27 @@ function PayFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: st
       attempt.inrPaise && attempt.rate ? `1 ${currency} = ₹${attempt.rate}` : null,
       ref ? `ref ${ref}` : null,
     ];
-    const note = parts.filter(Boolean).join(' · ').slice(0, MAX_NOTE_LENGTH);
+    const note = parts.filter(Boolean).join(' · ').slice(0, SETTLEMENT_NOTE_MAX);
     const method: SettlementMethod = attempt.upi ? 'upi' : 'other';
 
-    const save = () => {
+    const save = async () => {
       if (recorded.current) return;
-      const result = recordSettlement(appContext, {
+      recorded.current = true;
+      const result = await runCommand('settlement.add', {
         groupId,
+        id: newId(),
         fromMemberId: me,
         toMemberId: payee.id,
         amountPaise: minor,
         method,
         note,
-        actorMemberId: me,
+        settledAt: Date.now(),
       });
       if (!result.ok) {
+        recorded.current = false;
         setError(describeSettlementError(result.error, (id) => (id === payee.id ? payee.name : 'This person'), currency));
         return;
       }
-      recorded.current = true;
       clearPendingUpiPayment(appContext);
       haptic('success');
       router.back();
@@ -282,14 +288,14 @@ function PayFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId: st
     };
 
     // The payee may already have recorded it on their phone.
-    if (isRecentDuplicate(db, groupId, me, payee.id, minor)) {
+    if (isRecentDuplicate(dataStore().group(groupId), me, payee.id, minor)) {
       Alert.alert('Already recorded?', `${money(minor)} to ${payee.name} was recorded in the last 2 days. Record again?`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Record anyway', onPress: save },
+        { text: 'Record anyway', onPress: () => void save() },
       ]);
       return;
     }
-    save();
+    void save();
   };
 
   const markFailed = () => {

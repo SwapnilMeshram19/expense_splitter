@@ -3,9 +3,9 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
-import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { recordSettlement } from '@/db/repositories/settlements';
+import { dataStore } from '@/data';
+import { runCommand } from '@/data/hooks';
+import { newId } from '@/lib/newId';
 import {
   formatMoney,
   minorDigits,
@@ -165,27 +165,29 @@ function RequestFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId
       setError('Enter the amount you received.');
       return;
     }
-    const save = () => {
+    const save = async () => {
       if (recorded.current) return;
-      const result = recordSettlement(appContext, {
+      recorded.current = true;
+      const result = await runCommand('settlement.add', {
         groupId,
+        id: newId(),
         fromMemberId: payer.id,
         toMemberId: me,
         amountPaise: amountMinor,
         method: shown?.value === 'upi' ? 'upi' : 'other',
         note: shown ? `Received via ${shown.label}` : 'Received',
-        actorMemberId: me,
+        settledAt: Date.now(),
       });
       if (!result.ok) {
+        recorded.current = false;
         setError(describeSettlementError(result.error, (id) => (id === payer.id ? payer.name : 'This person'), currency));
         return;
       }
-      recorded.current = true;
       router.back();
       celebrateIfSettled(groupId);
     };
 
-    const duplicate = isRecentDuplicate(db, groupId, payer.id, me, amountMinor);
+    const duplicate = isRecentDuplicate(dataStore().group(groupId), payer.id, me, amountMinor);
     Alert.alert(
       duplicate ? 'Already recorded?' : 'Mark as received?',
       duplicate
@@ -193,7 +195,7 @@ function RequestFlow({ setup, groupId, suggestedMinor }: { setup: Ready; groupId
         : `Only once ${money(amountMinor)} shows in your account.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: duplicate ? 'Record anyway' : 'Mark received', onPress: save },
+        { text: duplicate ? 'Record anyway' : 'Mark received', onPress: () => void save() },
       ],
     );
   };

@@ -3,14 +3,14 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
+import { runCommand } from '@/data/hooks';
 import { appContext } from '@/db/appContext';
-import { createGroup } from '@/db/repositories/groups';
-import { MAX_NAME_LENGTH } from '@/db/repositories/names';
-import { applyMyPayDetailsToGroup } from '@/db/repositories/memberPayDetails';
 import { getSetting, SELF_NAME_KEY, setSetting } from '@/db/repositories/profile';
-import { getDeviceUserId } from '@/db/session';
 import { type CurrencyCode } from '@/domain/currency';
+import { MAX_NAME_LENGTH } from '@/domain/names';
 import { describeGroupError } from '@/features/groups/messages';
+import { getMyPayDetails } from '@/features/payments/myPayDetails';
+import { newId } from '@/lib/newId';
 import { getRegionPreference } from '@/features/region/regionPreference';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
@@ -40,22 +40,30 @@ export default function NewGroupScreen() {
   const removePerson = (key: number) => setPeople((list) => list.filter((p) => p.key !== key));
   const addPerson = () => setPeople((list) => [...list, { key: nextKey.current++, name: '' }]);
 
-  const submit = () => {
-    const result = createGroup(appContext, {
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    if (saving) return;
+    const groupId = newId();
+    // Your saved payment details (Account) go into the new group, so friends can pay you back.
+    const mine = getMyPayDetails(appContext);
+    setSaving(true);
+    const result = await runCommand('group.create', {
+      id: groupId,
       name: groupName,
-      selfName,
-      otherMemberNames: people.map((p) => p.name).filter((n) => n.trim() !== ''),
-      deviceUserId: getDeviceUserId(),
+      myMemberId: newId(),
+      myName: selfName,
+      members: people.filter((p) => p.name.trim() !== '').map((p) => ({ id: newId(), name: p.name })),
       currency,
+      myUpiVpa: mine?.vpa ?? null,
+      myPayMethods: mine?.methods ?? [],
     });
+    setSaving(false);
     if (!result.ok) {
       setError(describeGroupError(result.error));
       return;
     }
     setSetting(appContext, SELF_NAME_KEY, selfName.trim());
-    // Your saved payment details (Account) go into the new group, so friends can pay you back.
-    applyMyPayDetailsToGroup(appContext, getDeviceUserId(), result.value.groupId);
-    router.replace({ pathname: '/groups/[groupId]', params: { groupId: result.value.groupId } });
+    router.replace({ pathname: '/groups/[groupId]', params: { groupId } });
   };
 
   return (
@@ -142,7 +150,7 @@ export default function NewGroupScreen() {
           </AppText>
         ) : null}
 
-        <Button label="Create group" icon="check" size="lg" onPress={submit} style={styles.submit} />
+        <Button label="Create group" icon="check" size="lg" onPress={() => void submit()} busy={saving} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>

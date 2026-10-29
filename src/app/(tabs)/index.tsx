@@ -5,23 +5,17 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 
+import { dataStore } from '@/data';
+import { useData, useDataStatus } from '@/data/hooks';
+import { useRefreshControl } from '@/data/useRefreshControl';
 import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { getDeviceUserId } from '@/db/session';
 import { formatMoney, type CurrencyCode } from '@/domain/currency';
 import { AdSlot } from '@/features/ads/AdSlot';
 import { shouldShowHomeAd } from '@/features/ads/adPolicy';
 import { useApprox } from '@/features/fx/useApprox';
 import { shouldShowGuide } from '@/features/onboarding/guide';
-import {
-  loadOverview,
-  OVERVIEW_TABLES,
-  type GroupSummary,
-  type Overview,
-} from '@/features/overview/loadOverview';
+import { loadOverview, type GroupSummary, type Overview } from '@/features/overview/loadOverview';
 import { useRegionPreference } from '@/features/region/regionPreference';
-import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { AppText } from '@/ui/AppText';
 import { BudgetBar } from '@/ui/BudgetBar';
 import { Button } from '@/ui/Button';
@@ -35,7 +29,10 @@ import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { Greeting, TabHeader } from '@/ui/TabHeader';
 import { useTheme, type Theme } from '@/ui/theme';
 
-const loadHome = () => loadOverview(db, getDeviceUserId());
+const loadHome = () => {
+  const store = dataStore();
+  return loadOverview(store.groups(), store.planningUserId());
+};
 
 type HomeRow = GroupSummary | { heading: 'Settled up' };
 
@@ -44,8 +41,9 @@ type Approx = (minor: number, from: CurrencyCode) => string | null;
 
 export default function HomeScreen() {
   const theme = useTheme();
-  const overview = useLiveData(OVERVIEW_TABLES, loadHome);
-  const refreshControl = useSyncRefreshControl();
+  const overview = useData(loadHome);
+  const status = useDataStatus();
+  const refreshControl = useRefreshControl();
   const tabBarSpace = useTabBarSpace();
   const { homeCurrency } = useRegionPreference();
   // Rates are only fetched when some balance is in a currency other than the home one.
@@ -53,15 +51,19 @@ export default function HomeScreen() {
     overview.groups.some((g) => g.myBalance !== 0 && g.group.currency !== homeCurrency),
   );
 
-  // First launch on a phone with no groups: the short guide, once (Account → How it works reopens it).
+  // First launch with no groups (once the server has answered): the short guide, once
+  // (Account → How it works reopens it).
+  const groupCount = overview.groups.length;
   useEffect(() => {
-    if (shouldShowGuide(appContext)) router.push('/welcome');
-  }, []);
+    if (status.loadedFromServer && shouldShowGuide(appContext, groupCount)) router.push('/welcome');
+    // Only when the first answer arrives, not on every group change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.loadedFromServer]);
 
   // Groups where you owe or are owed first; settled ones below their own heading, so what needs
   // doing is always at the top. (Read-only groups stay where they are: they need attention too.)
-  const open = overview.groups.filter((g) => g.myBalance !== 0 || g.lost);
-  const done = overview.groups.filter((g) => g.myBalance === 0 && !g.lost);
+  const open = overview.groups.filter((g) => g.myBalance !== 0);
+  const done = overview.groups.filter((g) => g.myBalance === 0);
   const rows: HomeRow[] = [
     ...open,
     ...(done.length > 0 && open.length > 0 ? [{ heading: 'Settled up' as const }] : []),
@@ -312,7 +314,9 @@ function GroupRow({
   theme: Theme;
   approx: Approx;
 }) {
-  const { group, myBalance, lost, me, activeMemberCount } = summary;
+  const { group, myBalance, me, activeMemberCount } = summary;
+  // Made offline, waiting to upload.
+  const queued = dataStore().pendingStatus(group.id) === 'queued';
   const amount = formatMoney(Math.abs(myBalance), group.currency);
   const approxAmount = approx(Math.abs(myBalance), group.currency);
   const balanceLabel = myBalance > 0 ? 'you’re owed' : myBalance < 0 ? 'you owe' : null;
@@ -323,12 +327,12 @@ function GroupRow({
     <PressableScale
       onPress={() => router.push({ pathname: '/groups/[groupId]', params: { groupId: group.id } })}
       accessibilityRole="button"
-      accessibilityLabel={`${group.name}, ${balanceLabel ? `${balanceLabel} ${amount}` : 'settled up'}${lost ? ', read-only' : ''}`}
+      accessibilityLabel={`${group.name}, ${balanceLabel ? `${balanceLabel} ${amount}` : 'settled up'}${me ? '' : ', read-only'}${queued ? ', not sent yet' : ''}`}
     >
       <Card
         style={[
           styles.groupCard,
-          lost && { backgroundColor: theme.surfaceAlt, borderStyle: 'dashed' },
+          queued && { backgroundColor: theme.surfaceAlt, borderStyle: 'dashed' },
         ]}
       >
         <GroupTile groupId={group.id} name={group.name} />
@@ -336,10 +340,10 @@ function GroupRow({
           <AppText variant="amount" numberOfLines={1}>
             {group.name}
           </AppText>
-          {lost ? (
+          {queued ? (
             <View style={[styles.chip, { backgroundColor: theme.warningSoft }]}>
               <AppText variant="caption" color={theme.warning} style={styles.chipText}>
-                Read-only · no longer shared
+                Not sent yet · uploads when you’re online
               </AppText>
             </View>
           ) : (

@@ -1,19 +1,14 @@
-import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { router } from 'expo-router';
 import { Alert, AppState, Platform } from 'react-native';
 import { useSyncExternalStore } from 'react';
 
+import { dataStore } from '@/data';
 import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { getGroup } from '@/db/repositories/groups';
 import { getSetting, setSetting } from '@/db/repositories/profile';
-import { members } from '@/db/schema';
-import { getDeviceUserId } from '@/db/session';
 import { usesIndianGroupingForInr } from '@/domain/currency';
 import { onBeforeSignOut } from '@/features/auth/authStore';
 import { loadOverview } from '@/features/overview/loadOverview';
 import { getSupabase } from '@/lib/supabase';
-import { onSyncSucceeded, syncNow } from '@/sync/syncService';
 
 import { loadNotifications, notificationsInstalled } from './native';
 import {
@@ -208,7 +203,8 @@ export async function refreshWeeklyReminder(): Promise<void> {
     const n = await N;
     await n.cancelScheduledNotificationAsync(WEEKLY_ID).catch(() => undefined);
     if (!getNotificationPrefs(appContext).weekly || permission !== 'granted') return;
-    const text = weeklyReminderText(loadOverview(db, getDeviceUserId()).totals);
+    const store = dataStore();
+    const text = weeklyReminderText(loadOverview(store.groups(), store.planningUserId()).totals);
     if (!text) return;
     await n.scheduleNotificationAsync({
       identifier: WEEKLY_ID,
@@ -230,29 +226,15 @@ export async function refreshWeeklyReminder(): Promise<void> {
 
 /** True when I share a group with someone who has an account (only then can anyone notify me). */
 function hasSharedGroup(): boolean {
-  const me = getDeviceUserId();
-  const mine = db
-    .select({ groupId: members.groupId })
-    .from(members)
-    .where(and(eq(members.userId, me), isNull(members.deletedAt)))
-    .all()
-    .map((m) => m.groupId);
-  if (mine.length === 0) return false;
-  return mine.some(
-    (groupId) =>
-      db
-        .select({ id: members.id })
-        .from(members)
-        .where(
-          and(
-            eq(members.groupId, groupId),
-            isNotNull(members.userId),
-            ne(members.userId, me),
-            isNull(members.deletedAt),
-          ),
-        )
-        .get() !== undefined,
-  );
+  const store = dataStore();
+  const me = store.planningUserId();
+  return store
+    .groups()
+    .some(
+      (s) =>
+        s.members.some((m) => m.userId === me && m.deletedAt === null) &&
+        s.members.some((m) => m.userId !== null && m.userId !== me && m.deletedAt === null),
+    );
 }
 
 let asking = false;
@@ -304,10 +286,9 @@ async function openFromNotification(id: string, data: unknown): Promise<void> {
   if (d.type !== 'group' || typeof d.groupId !== 'string' || !UUID.test(d.groupId)) return;
   const groupId = d.groupId.toLowerCase();
   // A push can arrive before this phone has the group or the expense: fetch first (max 5 s).
-  if (!getGroup(db, groupId) || typeof d.expenseId === 'string') {
-    await Promise.race([syncNow(), new Promise((resolve) => setTimeout(resolve, 5000))]);
-  }
-  if (!getGroup(db, groupId)) return;
+  const store = dataStore();
+  await Promise.race([store.refreshGroup(groupId), new Promise((resolve) => setTimeout(resolve, 5000))]);
+  if (!store.group(groupId)) return;
   router.push({ pathname: '/groups/[groupId]', params: { groupId } });
 }
 
@@ -380,7 +361,7 @@ export function startNotifications(): () => void {
   });
 
   cleanups.push(
-    onSyncSucceeded(() => {
+    dataStore().onRefreshed(() => {
       void syncPushRegistration();
       void refreshWeeklyReminder();
       void maybeAskOnce();

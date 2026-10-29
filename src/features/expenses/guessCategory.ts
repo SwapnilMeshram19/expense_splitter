@@ -1,4 +1,4 @@
-import type { ExpenseCategory } from '@/db/schema';
+import type { ExpenseCategory } from '@/domain/model';
 
 /**
  * Built-in category for a description, from common Indian merchants and words ("Swiggy",

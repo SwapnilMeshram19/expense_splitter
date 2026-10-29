@@ -2,9 +2,9 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
-import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { deleteExpense, updateExpense } from '@/db/repositories/expenses';
+import { dataStore } from '@/data';
+import { runCommand } from '@/data/hooks';
+import { expenseDetailOf } from '@/data/selectors';
 import { ExpenseForm } from '@/features/expenses/ExpenseForm';
 import type { DraftParts } from '@/features/expenses/formState';
 import { loadFormSetup } from '@/features/expenses/loadFormSetup';
@@ -34,15 +34,20 @@ export default function EditExpenseScreen() {
 
   const nameOf = (id: string) => setup.members.find((m) => m.id === id)?.name ?? 'Someone';
 
-  const save = (draft: DraftParts): string | null => {
-    const { stagedReceipt, ...fields } = draft;
-    const result = saveWithReceipt(stagedReceipt, (newReceipt) =>
-      updateExpense(appContext, expenseId, {
-        ...fields,
-        groupId,
-        actorMemberId: setup.me,
-        newReceipt,
-      }),
+  const save = async (draft: DraftParts): Promise<string | null> => {
+    const { stagedReceipt, repeat: _repeat, ...fields } = draft;
+    const before = expenseDetailOf(dataStore().group(groupId)!, expenseId)?.expense.receiptId ?? null;
+    const result = await saveWithReceipt(
+      stagedReceipt,
+      { groupId, expenseId, previousReceiptId: before, nextReceiptId: fields.receiptId },
+      (receiptId) =>
+        runCommand('expense.update', {
+          ...fields,
+          groupId,
+          expenseId,
+          expectedVersion: setup.expectedVersion,
+          receiptId: receiptId ?? fields.receiptId,
+        }),
     );
     if (!result.ok) {
       if ('fileError' in result) return result.fileError;
@@ -62,8 +67,8 @@ export default function EditExpenseScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          const result = deleteExpense(appContext, expenseId, setup.me);
+        onPress: async () => {
+          const result = await runCommand('expense.delete', { groupId, expenseId, expectedVersion: setup.expectedVersion });
           if (result.ok) router.back();
           else
             Alert.alert(
@@ -99,7 +104,7 @@ export default function EditExpenseScreen() {
                 label="Share this expense"
                 onPress={() => {
                   // Shares the saved expense, not unsaved edits in the form.
-                  const text = expenseShareText(db, expenseId);
+                  const text = expenseShareText(dataStore().group(groupId), expenseId);
                   if (text) share.open({ title: 'Share expense', getText: () => text });
                 }}
               />

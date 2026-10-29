@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useMyProfile } from '@/features/auth/useMyProfile';
 import { formatDayLine, greetingFor } from '@/lib/dates';
-import { SyncIndicator } from '@/sync/SyncIndicator';
+import { DataStatusIcon } from '@/features/data/DataStatusIcon';
 
 import { AppText } from './AppText';
 import { Avatar } from './Avatar';
@@ -28,7 +28,7 @@ export function TabHeader({ title, hideAvatar = false, right }: TabHeaderProps) 
     <Pressable
       onPress={() => router.navigate('/account')}
       accessibilityRole="button"
-      accessibilityLabel={me.signedIn ? 'Open account' : 'Sign in or open account'}
+      accessibilityLabel="Open account"
       hitSlop={4}
     >
       <Avatar seed={me.id} name={me.name ?? '?'} photoUrl={me.photoUrl} size={44} />
@@ -50,7 +50,7 @@ export function TabHeader({ title, hideAvatar = false, right }: TabHeaderProps) 
         </View>
       )}
       {right}
-      <SyncIndicator />
+      <DataStatusIcon />
       {avatar}
     </View>
   );

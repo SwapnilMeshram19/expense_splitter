@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import type { ExpenseCategory } from '@/db/schema';
+import type { ExpenseCategory } from '@/domain/model';
 import { CATEGORY_NAMES } from '@/features/expenses/categoryNames';
 
 import { AVATAR_SWATCHES } from './avatarColors';

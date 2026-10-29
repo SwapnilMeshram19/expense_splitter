@@ -1,4 +1,5 @@
-import type { ExpenseError } from '@/db/repositories/expenses';
+import type { CommandError } from '@/domain/commands';
+import { describeCommonFailure } from '@/features/data/messages';
 import { MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
 import {
   DEFAULT_CURRENCY,
@@ -62,11 +63,12 @@ function describeForeignError(error: ForeignError, currencies: ErrorCurrencies):
 }
 
 export function describeExpenseError(
-  error: ExpenseError,
+  failure: CommandError<'expense.add'> | { code: string },
   nameOf: NameOf,
   currencies: ErrorCurrencies = INR,
 ): string {
   const entry = (minor: number) => formatMoney(minor, currencies.entry);
+  const error = failure as CommandError<'expense.add'>;
   switch (error.code) {
     case 'DESCRIPTION_REQUIRED':
       return 'Enter a description.';
@@ -90,10 +92,8 @@ export function describeExpenseError(
       return 'The converted total doesn’t match the rate. Re-enter the rate and try again.';
     case 'NOT_FOUND':
       return 'This expense no longer exists.';
-    case 'GROUP_MISMATCH':
-      return 'This expense belongs to a different group.';
-    case 'NOT_A_MEMBER':
-      return 'You’re not a member of this group.';
+    case 'INVALID_CATEGORY':
+      return 'Pick a category.';
     case 'CATEGORY_LABEL_TOO_LONG':
       return `Keep the category name under ${MAX_CATEGORY_LABEL_LENGTH} characters.`;
     case 'NOTE_TOO_LONG':
@@ -101,4 +101,5 @@ export function describeExpenseError(
     case 'INVALID_RECEIPT':
       return 'The receipt photo couldn’t be saved. Attach it again.';
   }
+  return describeCommonFailure(failure) ?? 'Couldn’t save the expense. Please try again.';
 }

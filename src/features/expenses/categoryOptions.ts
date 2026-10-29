@@ -1,4 +1,4 @@
-import { EXPENSE_CATEGORIES, type ExpenseCategory } from '@/db/schema';
+import { EXPENSE_CATEGORIES, type ExpenseCategory } from '@/domain/model';
 import { categoryLabelKey, MAX_CATEGORY_LABEL_LENGTH, normalizeCategoryLabel } from '@/domain/categoryLabel';
 
 import { CATEGORY_NAMES } from './categoryNames';

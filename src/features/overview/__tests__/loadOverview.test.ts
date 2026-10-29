@@ -1,56 +1,47 @@
-import { createTestContext, type TestContext } from '@/db/__tests__/testDb';
-import { createExpense } from '@/db/repositories/expenses';
-import { createGroup } from '@/db/repositories/groups';
-import { activeMembersQuery } from '@/db/repositories/members';
-import { getOrCreateDeviceUserId, setSetting } from '@/db/repositories/profile';
-import { recordSettlement } from '@/db/repositories/settlements';
+import type { GroupSnapshot } from '@/domain/model';
 import { loadRecentActivity } from '@/features/activity/loadRecentActivity';
-import { SYNC_LOST_GROUPS_KEY } from '@/sync/engine';
+import { otherUserId, testGroup, type TestGroup } from '@/test-utils/groupBuilder';
 
 import { loadOverview } from '../loadOverview';
 import { addExpenseTarget, editableGroups } from '../openAddExpense';
 
-let t: TestContext;
 let deviceUserId: string;
+let groups: TestGroup[];
+let clock: number;
 
 beforeEach(() => {
-  t = createTestContext();
-  deviceUserId = getOrCreateDeviceUserId(t.ctx);
+  deviceUserId = otherUserId();
+  groups = [];
+  clock = Date.UTC(2026, 9, 1, 12);
 });
 
-afterEach(() => t.close());
+/** Newest group first, like the store lists them (most recently updated first). */
+const snapshots = (): GroupSnapshot[] =>
+  [...groups].sort((a, b) => b.snapshot().group.updatedAt - a.snapshot().group.updatedAt).map((g) => g.snapshot());
 
 function group(name: string, others: string[], currency?: string) {
-  const created = createGroup(t.ctx, {
-    name,
-    selfName: 'Asha',
-    otherMemberNames: others,
-    deviceUserId,
-    currency,
-  });
-  if (!created.ok) throw new Error('createGroup failed');
-  t.advance(1000);
-  const ids = new Map(activeMembersQuery(t.ctx.db, created.value.groupId).all().map((m) => [m.displayName, m.id]));
-  return { groupId: created.value.groupId, me: created.value.selfMemberId, id: (n: string) => ids.get(n)! };
+  clock += 1000;
+  const g = testGroup({ name, me: 'Asha', others, currency, userId: deviceUserId, now: clock });
+  groups.push(g);
+  return { groupId: g.groupId, me: g.me, id: (n: string) => g.member(n), g };
 }
 
-function expense(groupId: string, actor: string, payer: string, amountPaise: number, memberIds: string[]) {
-  const result = createExpense(t.ctx, {
-    groupId,
+function expense(groupId: string, _actor: string, payer: string, amountPaise: number, memberIds: string[]) {
+  const g = groups.find((x) => x.groupId === groupId)!;
+  g.run('expense.add', {
+    id: g.newId(),
     description: 'Expense',
     amountPaise,
     expenseDate: '2026-10-01',
     payers: [{ memberId: payer, amountPaise }],
     splitInput: { type: 'equal', memberIds },
-    actorMemberId: actor,
   });
-  if (!result.ok) throw new Error('createExpense failed');
-  t.advance(1000);
+  g.advance(1000);
 }
 
 describe('loadOverview', () => {
   it('is empty without groups', () => {
-    expect(loadOverview(t.ctx.db, deviceUserId)).toEqual({ groups: [], totals: [], transfers: [] });
+    expect(loadOverview(snapshots(), deviceUserId)).toEqual({ groups: [], totals: [], transfers: [] });
   });
 
   it('nets per group, sums across groups and lists my transfers', () => {
@@ -62,7 +53,7 @@ describe('loadOverview', () => {
     // Amit paid ₹1,001 for two → I owe ₹500.50 (paise split is the domain's job; total stays exact).
     expense(flat.groupId, flat.me, flat.id('Amit'), 100100, [flat.me, flat.id('Amit')]);
 
-    const overview = loadOverview(t.ctx.db, deviceUserId);
+    const overview = loadOverview(snapshots(), deviceUserId);
     const myFlatDebt = -overview.groups.find((g) => g.group.id === flat.groupId)!.myBalance;
 
     expect(overview.totals).toEqual([
@@ -87,31 +78,20 @@ describe('loadOverview', () => {
   it('drops settled-up debts after a settlement', () => {
     const goa = group('Goa', ['Rahul']);
     expense(goa.groupId, goa.me, goa.me, 60000, [goa.me, goa.id('Rahul')]);
-    const settled = recordSettlement(t.ctx, {
-      groupId: goa.groupId,
-      fromMemberId: goa.id('Rahul'),
-      toMemberId: goa.me,
-      amountPaise: 30000,
-      method: 'cash',
-      actorMemberId: goa.me,
-    });
-    expect(settled.ok).toBe(true);
+    goa.g.run('settlement.add', { id: goa.g.newId(), fromMemberId: goa.id('Rahul'), toMemberId: goa.me, amountPaise: 30000, method: 'cash' });
 
-    const overview = loadOverview(t.ctx.db, deviceUserId);
+    const overview = loadOverview(snapshots(), deviceUserId);
     expect(overview.transfers).toEqual([]);
     expect(overview.totals).toEqual([]);
     expect(overview.groups[0]!.myBalance).toBe(0);
   });
 
-  it('marks lost groups read-only but still counts their balances', () => {
+  it('marks groups I left read-only but still counts their balances', () => {
     const goa = group('Goa', ['Rahul']);
     expense(goa.groupId, goa.me, goa.me, 60000, [goa.me, goa.id('Rahul')]);
-    setSetting(t.ctx, SYNC_LOST_GROUPS_KEY, JSON.stringify([goa.groupId]));
-
-    const overview = loadOverview(t.ctx.db, deviceUserId);
-    expect(overview.groups[0]).toEqual(expect.objectContaining({ lost: true, canEdit: false }));
-    expect(overview.transfers[0]).toEqual(expect.objectContaining({ canEdit: false, amountPaise: 30000 }));
-    expect(overview.totals[0]!.owedToMe).toBe(30000);
+    const overview = loadOverview(snapshots(), otherUserId());
+    expect(overview.groups[0]).toEqual(expect.objectContaining({ me: null, canEdit: false }));
+    expect(overview.transfers).toEqual([]);
   });
 
   it('keeps totals per currency and never adds amounts across currencies', () => {
@@ -123,7 +103,7 @@ describe('loadOverview', () => {
     const tokyo = group('Tokyo', ['Amit'], 'JPY');
     expense(tokyo.groupId, tokyo.me, tokyo.me, 3001, [tokyo.me, tokyo.id('Amit')]); // ¥3,001 for two
 
-    const overview = loadOverview(t.ctx.db, deviceUserId);
+    const overview = loadOverview(snapshots(), deviceUserId);
     const amitOwes = overview.transfers.find((x) => x.currency === 'JPY')!.amountPaise;
     expect([1500, 1501]).toContain(amitOwes); // ¥ has no minor unit: whole yen only
     expect(overview.totals).toEqual([
@@ -144,16 +124,14 @@ describe('add expense target', () => {
   it('creates a group first, opens the only group, or asks', () => {
     expect(addExpenseTarget([])).toEqual({ kind: 'createGroup' });
     const goa = group('Goa', ['Rahul']);
-    expect(addExpenseTarget(editableGroups(t.ctx.db, deviceUserId))).toEqual({ kind: 'group', groupId: goa.groupId });
+    expect(addExpenseTarget(editableGroups(snapshots(), deviceUserId))).toEqual({ kind: 'group', groupId: goa.groupId });
     group('Flat', ['Amit']);
-    expect(addExpenseTarget(editableGroups(t.ctx.db, deviceUserId))).toEqual({ kind: 'pick' });
+    expect(addExpenseTarget(editableGroups(snapshots(), deviceUserId))).toEqual({ kind: 'pick' });
   });
 
-  it('never offers a group this phone lost access to', () => {
-    const goa = group('Goa', ['Rahul']);
-    const flat = group('Flat', ['Amit']);
-    setSetting(t.ctx, SYNC_LOST_GROUPS_KEY, JSON.stringify([goa.groupId]));
-    expect(editableGroups(t.ctx.db, deviceUserId).map((g) => g.id)).toEqual([flat.groupId]);
+  it('never offers a group I am not a member of', () => {
+    group('Goa', ['Rahul']);
+    expect(editableGroups(snapshots(), otherUserId())).toEqual([]);
   });
 });
 
@@ -164,11 +142,12 @@ describe('loadRecentActivity', () => {
     expense(goa.groupId, goa.me, goa.me, 1000, [goa.me, goa.id('Rahul')]);
     expense(flat.groupId, flat.me, flat.me, 2000, [flat.me, flat.id('Amit')]);
 
-    const items = loadRecentActivity(t.ctx.db, deviceUserId);
+    const entries = groups.flatMap((g) => g.activity()).sort((a, b) => b.createdAt - a.createdAt);
+    const items = loadRecentActivity(entries, snapshots(), deviceUserId);
     expect(items.length).toBeGreaterThanOrEqual(2);
     expect(items[0]!.groupName).toBe('Flat');
-    expect(items.map((i) => i.createdAt)).toEqual([...items.map((i) => i.createdAt)].sort((a, b) => b - a));
     expect(items[0]!.title.startsWith('You')).toBe(true);
-    expect(loadRecentActivity(t.ctx.db, deviceUserId, 1)).toHaveLength(1);
+    // A group I'm no longer in drops out.
+    expect(loadRecentActivity(entries, [flat.g.snapshot()], deviceUserId).every((i) => i.groupName === 'Flat')).toBe(true);
   });
 });

@@ -5,12 +5,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
+import { dataStore } from '@/data';
 import { appContext } from '@/db/appContext';
-import { getMyPayDetails } from '@/db/repositories/memberPayDetails';
 import { methodTitle } from '@/domain/payMethods';
 import {
+  saveWithGoogle,
   sendEmailCode,
-  signInWithGoogle,
   signOut,
   useAuth,
   verifyEmailCode,
@@ -30,7 +30,7 @@ import { NotificationsCard } from '@/features/notifications/NotificationsCard';
 import { chooseHomeCurrency } from '@/features/region/deviceLocales';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { getAppVariant } from '@/lib/appVariant';
-import { SyncPanel } from '@/sync/SyncPanel';
+import { getMyPayDetails } from '@/features/payments/myPayDetails';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { setHapticsEnabled, useHapticsEnabled } from '@/ui/haptics';
@@ -79,7 +79,7 @@ export default function AccountTab() {
         ) : auth.status === 'signedIn' ? (
           <ProfileCard />
         ) : (
-          <SignInCard notice={auth.notice} />
+          <SaveAccountCard notice={auth.notice} offline={auth.status === 'offline'} />
         )}
         <PaymentDetailsCard />
         <NotificationsCard signedIn={auth.status === 'signedIn'} />
@@ -114,7 +114,6 @@ function ProfileCard() {
           ) : null}
         </View>
       </View>
-      <SyncPanel compact />
     </Card>
   );
 }
@@ -264,10 +263,18 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
   // Only where the law requires it (EEA/UK): reopen the ad consent form.
   const { privacyOptionsRequired } = useAdsState();
 
-  const confirmSignOut = () =>
+  const confirmSignOut = () => {
+    const waiting = dataStore().getStatus().queued;
+    if (waiting > 0) {
+      Alert.alert(
+        'Changes not sent yet',
+        `${waiting === 1 ? '1 change hasn’t' : `${waiting} changes haven’t`} reached the server. Connect to the internet first, or they’re lost.`,
+      );
+      return;
+    }
     Alert.alert(
       'Sign out?',
-      'Your groups stay on this phone.',
+      'Your groups stay in your account. Sign in again to see them.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -282,6 +289,7 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
         },
       ],
     );
+  };
 
   return (
     <Card style={listCardStyle}>
@@ -310,7 +318,7 @@ function LinksCard({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-function SignInCard({ notice }: { notice: string | null }) {
+function SaveAccountCard({ notice, offline }: { notice: string | null; offline: boolean }) {
   const theme = useTheme();
   const [email, setEmail] = useState('');
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -328,7 +336,7 @@ function SignInCard({ notice }: { notice: string | null }) {
   const google = async () => {
     setBusy(true);
     setError(null);
-    const result = await signInWithGoogle();
+    const result = await saveWithGoogle();
     setBusy(false);
     // error === null means the user dismissed the chooser: not worth a message.
     if (!result.ok && result.error) setError(result.error);
@@ -394,10 +402,12 @@ function SignInCard({ notice }: { notice: string | null }) {
       {sentTo === null ? (
         <>
           <AppText variant="heading" accessibilityRole="header">
-            Sign in to share groups
+            Save your account
           </AppText>
           <AppText variant="label" color={theme.muted}>
-            Optional. Sync with friends and keep a backup.
+            {offline
+              ? 'You’re offline. Your groups are saved once you connect.'
+              : 'Keep your groups if you change or reset your phone. Already have an account? Sign in to it: your groups here move across.'}
           </AppText>
 
           {isGoogleSignInAvailable ? (

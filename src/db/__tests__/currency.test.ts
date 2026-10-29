@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm';
 
-import { applyPull, collectPushBatch, applyPushResult } from '@/sync/engine';
+import { applyPull, collectPushBatch, applyPushResult } from '@/legacy/sync/engine';
 import {
   expenseToWire,
   sameContent,
   type Incoming,
   type PullResult,
   type WireExpense,
-} from '@/sync/wire';
+} from '@/legacy/sync/wire';
 
 import { loadGroupLedger } from '../repositories/ledger';
 import {

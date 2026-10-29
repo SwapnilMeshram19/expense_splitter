@@ -8,7 +8,7 @@ import type { AppDb, RepoContext } from '../context';
 import { activityLog, groups, members } from '../schema';
 import { isGroupLost } from './access';
 import { loadGroupLedger } from './ledger';
-import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
+import { findDuplicateName, normalizeName, validateName, type NameError } from '@/domain/names';
 
 export type MemberError =
   | NameError

@@ -1,10 +1,9 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 
+import { dataStore } from '@/data';
 import { appContext } from '@/db/appContext';
 import { formatMoney } from '@/domain/currency';
-import { getGroup } from '@/db/repositories/groups';
-import { db } from '@/db/client';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 
@@ -28,7 +27,7 @@ export function PendingUpiBanner({ groupId, nameOf }: { groupId: string; nameOf:
       tone="warning"
       icon="pending"
       title={`Did your ${pending.via ?? 'UPI'} payment go through?`}
-      body={`${formatMoney(pending.amountPaise, getGroup(db, groupId)?.currency ?? 'INR')} to ${nameOf(pending.toMemberId)}`}
+      body={`${formatMoney(pending.amountPaise, dataStore().group(groupId)?.group.currency ?? 'INR')} to ${nameOf(pending.toMemberId)}`}
     >
       <Button
         label="Confirm"

@@ -8,8 +8,9 @@
  * a rate. The draft carries the bill as entered plus the converted group-currency total; the
  * repository converts shares and payers with the same domain code the server re-runs.
  */
-import { expenseForeign, type ExpenseDetail } from '@/db/repositories/expenses';
-import type { ExpenseCategory, StoredSplitInput } from '@/db/schema';
+import type { ExpenseDetail } from '@/data/selectors';
+import { expenseForeign } from '@/domain/commands';
+import type { ExpenseCategory, StoredSplitInput } from '@/domain/model';
 import type { PayerLine } from '@/domain/balances';
 import { MAX_CATEGORY_LABEL_LENGTH, normalizeCategoryLabel } from '@/domain/categoryLabel';
 import {

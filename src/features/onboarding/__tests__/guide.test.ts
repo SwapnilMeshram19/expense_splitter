@@ -1,55 +1,33 @@
 import { createTestContext, type TestContext } from '@/db/__tests__/testDb';
-import { createGroup, deleteGroup } from '@/db/repositories/groups';
-import { getOrCreateDeviceUserId, getSetting, setSetting } from '@/db/repositories/profile';
-import { SAMPLE_GROUP_IDS_KEY } from '@/db/repositories/sampleIds';
+import { createGroup } from '@/db/repositories/groups';
+import { getOrCreateDeviceUserId, getSetting } from '@/db/repositories/profile';
 
 import { GUIDE_SEEN_KEY, markGuideSeen, shouldShowGuide } from '../guide';
 import { GUIDE_PAGES } from '../guidePages';
 
 let t: TestContext;
-let me: string;
 
 beforeEach(() => {
   t = createTestContext();
-  me = getOrCreateDeviceUserId(t.ctx);
 });
 afterEach(() => t.close());
 
-function makeGroup(name = 'Flat') {
-  const r = createGroup(t.ctx, {
-    name,
-    selfName: 'Asha',
-    otherMemberNames: ['Ravi'],
-    deviceUserId: me,
-  });
-  if (!r.ok) throw new Error('group');
-  return r.value;
-}
-
 describe('shouldShowGuide', () => {
   it('shows on a fresh install until it has been seen', () => {
-    expect(shouldShowGuide(t.ctx)).toBe(true);
-    expect(shouldShowGuide(t.ctx)).toBe(true);
+    expect(shouldShowGuide(t.ctx, 0)).toBe(true);
+    expect(shouldShowGuide(t.ctx, 0)).toBe(true);
     markGuideSeen(t.ctx);
-    expect(shouldShowGuide(t.ctx)).toBe(false);
+    expect(shouldShowGuide(t.ctx, 0)).toBe(false);
   });
 
   it('never shows to someone who already has a group, and remembers that', () => {
-    makeGroup();
-    expect(shouldShowGuide(t.ctx)).toBe(false);
+    expect(shouldShowGuide(t.ctx, 1)).toBe(false);
     expect(getSetting(t.ctx, GUIDE_SEEN_KEY)).toBe('1');
   });
 
-  it('counts deleted groups as history too', () => {
-    const g = makeGroup();
-    deleteGroup(t.ctx, { groupId: g.groupId, actorMemberId: g.selfMemberId });
-    expect(shouldShowGuide(t.ctx)).toBe(false);
-  });
-
-  it('ignores a leftover example group from an old build', () => {
-    const g = makeGroup('Old example');
-    setSetting(t.ctx, SAMPLE_GROUP_IDS_KEY, JSON.stringify([g.groupId]));
-    expect(shouldShowGuide(t.ctx)).toBe(true);
+  it('counts groups still in the pre-1.1 tables (an update, before the hand-over)', () => {
+    createGroup(t.ctx, { name: 'Flat', selfName: 'Asha', otherMemberNames: [], deviceUserId: getOrCreateDeviceUserId(t.ctx) });
+    expect(shouldShowGuide(t.ctx, 0)).toBe(false);
   });
 });
 

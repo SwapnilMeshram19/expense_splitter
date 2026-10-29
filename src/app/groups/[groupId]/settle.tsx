@@ -3,9 +3,10 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
-import { appContext } from '@/db/appContext';
-import { MAX_NOTE_LENGTH, recordSettlement } from '@/db/repositories/settlements';
-import { SETTLEMENT_METHODS, type SettlementMethod } from '@/db/schema';
+import { runCommand } from '@/data/hooks';
+import { newId } from '@/lib/newId';
+
+import { SETTLEMENT_METHODS, type SettlementMethod } from '@/domain/model';
 import {
   formatMoney,
   minorToInputString,
@@ -24,6 +25,8 @@ import { MemberPicker } from '@/ui/MemberPicker';
 import { Card } from '@/ui/Card';
 import { haptic } from '@/ui/haptics';
 import { useTheme } from '@/ui/theme';
+
+const MAX_NOTE_LENGTH = 100;
 
 type ReadySetup = Extract<SettleSetup, { ok: true }>;
 
@@ -106,20 +109,25 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
     setError(null);
   };
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
     if (!parsed.ok) {
       setError('Enter a valid amount.');
       return;
     }
-    const result = recordSettlement(appContext, {
+    if (saving) return;
+    setSaving(true);
+    const result = await runCommand('settlement.add', {
       groupId: params.groupId,
+      id: newId(),
       fromMemberId: fromId,
       toMemberId: toId,
       amountPaise: parsed.minor,
       method,
       note,
-      actorMemberId: setup.me,
+      settledAt: Date.now(),
     });
+    setSaving(false);
     if (!result.ok) {
       setError(describeSettlementError(result.error, nameOf, currency));
       return;
@@ -206,7 +214,7 @@ function SettleForm({ setup, params }: { setup: ReadySetup; params: SettleParams
           </AppText>
         ) : null}
 
-        <Button label="Record payment" icon="check" size="lg" onPress={save} style={styles.submit} />
+        <Button label="Record payment" icon="check" size="lg" onPress={() => void save()} busy={saving} style={styles.submit} />
       </KeyboardAwareScrollView>
       <KeyboardToolbar />
     </>

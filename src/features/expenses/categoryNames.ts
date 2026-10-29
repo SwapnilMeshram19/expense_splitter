@@ -1,4 +1,4 @@
-import type { ExpenseCategory } from '@/db/schema';
+import type { ExpenseCategory } from '@/domain/model';
 
 /** Display names of the built-in categories. Plain data, so exports and tests can use it. */
 export const CATEGORY_NAMES: Record<ExpenseCategory, string> = {

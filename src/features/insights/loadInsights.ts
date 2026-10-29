@@ -1,10 +1,5 @@
-import type { AppDb } from '@/db/context';
-import { groupExpensesQuery } from '@/db/repositories/expenses';
-import { getGroup, groupBudgetStatus } from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import { findSelfMemberId, groupMembersQuery } from '@/db/repositories/members';
-import { groupSettlementsQuery } from '@/db/repositories/settlements';
-import type { Group } from '@/db/schema';
+import { budgetStatusOf, findSelfMemberId } from '@/data/selectors';
+import { ledgerOf, type Group, type GroupSnapshot } from '@/domain/model';
 import { computeBalances, isValidExpense } from '@/domain/balances';
 import type { BudgetStatus } from '@/domain/budget';
 import { toLocalIsoDate } from '@/lib/dates';
@@ -32,21 +27,20 @@ export interface InsightsSource {
  * keeping it in TypeScript means the screen, CSV and PDF can't disagree with each other.
  */
 export function loadInsightsSource(
-  db: AppDb,
-  groupId: string,
-  deviceUserId: string,
+  snapshot: GroupSnapshot | null,
+  userId: string,
   today: string,
 ): InsightsSource | null {
-  const group = getGroup(db, groupId);
-  if (!group) return null;
+  if (!snapshot) return null;
+  const group = snapshot.group;
 
-  const ledger = loadGroupLedger(db, groupId);
+  const ledger = ledgerOf(snapshot);
   const { balances } = computeBalances(ledger.expenses, ledger.settlements);
   const lines = new Map(ledger.expenses.map((e) => [e.id, e]));
 
   let invalidCount = 0;
   const expenses: InsightExpense[] = [];
-  for (const row of groupExpensesQuery(db, groupId).all()) {
+  for (const row of snapshot.expenses) {
     const line = lines.get(row.id) ?? { id: row.id, payers: [], shares: [] };
     if (!isValidExpense(line)) {
       invalidCount += 1;
@@ -70,8 +64,7 @@ export function loadInsightsSource(
   // The query is newest first; reports and charts read oldest first.
   expenses.reverse();
 
-  const settlements: InsightSettlement[] = groupSettlementsQuery(db, groupId)
-    .all()
+  const settlements: InsightSettlement[] = snapshot.settlements
     .map((s) => ({
       id: s.id,
       date: toLocalIsoDate(new Date(s.settledAt)),
@@ -86,23 +79,12 @@ export function loadInsightsSource(
 
   return {
     group,
-    me: findSelfMemberId(db, groupId, deviceUserId),
-    members: groupMembersQuery(db, groupId)
-      .all()
-      .map((m) => ({ id: m.id, name: m.displayName, active: m.deletedAt === null })),
+    me: findSelfMemberId(snapshot, userId),
+    members: snapshot.members.map((m) => ({ id: m.id, name: m.displayName, active: m.deletedAt === null })),
     expenses,
     settlements,
     balances,
-    budget: groupBudgetStatus(db, group, today),
+    budget: budgetStatusOf(snapshot, today),
     invalidCount,
   };
 }
-
-export const INSIGHTS_TABLES = [
-  'groups',
-  'members',
-  'expenses',
-  'expense_payers',
-  'expense_shares',
-  'settlements',
-] as const;

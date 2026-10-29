@@ -1,12 +1,10 @@
-import { eq } from 'drizzle-orm';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { groups } from '@/db/schema';
-import { useAuth } from '@/features/auth/authStore';
+import { dataStore } from '@/data';
+import { useData } from '@/data/hooks';
+import { hasAccount, useAuth } from '@/features/auth/authStore';
 import { createInvite, revokeAllInvites, type CreatedInvite } from '@/features/invites/inviteApi';
 import {
   buildShareMessage,
@@ -17,14 +15,12 @@ import {
 import { copyText } from '@/features/share/copyText';
 import { ShareButtons } from '@/features/share/ShareButtons';
 import { QrCode } from '@/features/upi/QrCode';
-import { syncNow } from '@/sync/syncService';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
 
-const readGroup = (groupId: string) => db.select().from(groups).where(eq(groups.id, groupId)).get() ?? null;
 
 function expiryLabel(iso: string): string {
   const date = new Date(iso);
@@ -37,7 +33,8 @@ export default function InviteScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const theme = useTheme();
   const auth = useAuth();
-  const group = useLiveData(['groups'], useCallback(() => readGroup(groupId), [groupId]));
+  const group = useData(() => dataStore().group(groupId)?.group ?? null, [groupId]);
+  const notSentYet = useData(() => dataStore().pendingStatus(groupId) !== null, [groupId]);
   const [invite, setInvite] = useState<CreatedInvite | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -51,21 +48,20 @@ export default function InviteScreen() {
     );
   }
 
-  if (auth.status !== 'signedIn') {
+  if (!hasAccount(auth) || notSentYet) {
     return (
       <ScrollView contentContainerStyle={styles.container}>
         <Stack.Screen options={{ title: 'Invite' }} />
         <Card style={styles.hero}>
           <View style={[styles.heroIcon, { backgroundColor: theme.primarySoft }]}>
-            <Icon name="lock" color={theme.onPrimarySoft} size={28} />
+            <Icon name="cloudOff" color={theme.onPrimarySoft} size={28} />
           </View>
           <AppText variant="heading" style={styles.centerText}>
-            Sign in to invite
+            Connect to invite
           </AppText>
           <AppText color={theme.muted} style={styles.centerText}>
-            Shared groups need an account.
+            This group uploads as soon as you’re online. Then you can invite people.
           </AppText>
-          <Button label="Sign in" icon="login" size="lg" onPress={() => router.push('/account')} style={styles.stretch} />
         </Card>
       </ScrollView>
     );
@@ -74,15 +70,6 @@ export default function InviteScreen() {
   const create = async () => {
     setBusy(true);
     setMessage(null);
-    // The server only knows groups that have synced at least once.
-    if (group.version === 0) {
-      await syncNow();
-      if ((readGroup(groupId)?.version ?? 0) === 0) {
-        setBusy(false);
-        setMessage('Not uploaded yet. Check your internet and try again.');
-        return;
-      }
-    }
     const result = await createInvite(groupId);
     setBusy(false);
     if (result.ok) setInvite(result.value);

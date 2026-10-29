@@ -9,7 +9,7 @@ import type { AppDb, RepoContext } from '../context';
 import { activityLog, expenses, groups, members, recurringRules, settlements, type Group } from '../schema';
 import { loadGroupLedger } from './ledger';
 import { activeMemberIds } from './members';
-import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
+import { findDuplicateName, normalizeName, validateName, type NameError } from '@/domain/names';
 
 export interface CreateGroupInput {
   name: string;

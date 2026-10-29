@@ -1,17 +1,28 @@
 import type { RepoContext } from '@/db/context';
 import {
   deleteReceiptFileRow,
-  receiptExpense,
   receiptFilesInState,
   recordReceiptFailure,
-  referencedReceiptIds,
   setReceiptState,
 } from '@/db/repositories/receipts';
 import type { ReceiptFile } from '@/db/schema';
 import { receiptObjectPath } from '@/domain/note';
 
-/** What the queue needs from storage and the file system (real ones in receiptStorage.ts). */
+/** An expense as the server holds it, from the data store. */
+export interface ServerExpenseRef {
+  receiptId: string | null;
+  /** A change to it hasn't reached the server yet: wait. */
+  pending: boolean;
+}
+
+/** What the queue needs from storage, the file system and the data store (real ones in receiptStorage.ts). */
 export interface ReceiptQueueDeps {
+  /** The expense, if it's in one of my groups (null: gone or never reached the server). */
+  expense(expenseId: string): ServerExpenseRef | null;
+  /** Receipt ids that some expense in my groups still points at. */
+  referenced(receiptIds: readonly string[]): Set<string>;
+  /** The expense hasn't reached the server yet but waits in the offline queue. */
+  isQueued?(expenseId: string): boolean;
   /** Upload this phone's copy of the photo. */
   upload(path: string, receiptId: string): Promise<UploadOutcome>;
   /** Delete the server copy. Succeeds when there is nothing to delete. */
@@ -44,13 +55,12 @@ const retryDue = (row: ReceiptFile, now: number) =>
 const pathOf = (row: ReceiptFile) => receiptObjectPath(row.groupId, row.expenseId, row.receiptId);
 
 /**
- * One pass over the photos this phone has to upload or clean up. Runs after a successful sync, so
- * the expense rows on the server are as fresh as they get. Order matters for safety:
- * - Upload only once the expense that points at the photo has been pushed (the server's storage
- *   rule checks exactly that).
+ * One pass over the photos this phone has to upload or clean up. Runs after a save and after each
+ * refresh, so the server's expenses are as fresh as they get. Order matters for safety:
+ * - Upload only once the expense that points at the photo is on the server (the storage rule
+ *   checks exactly that).
  * - Delete a replaced photo only once the server no longer points at it (also enforced by the
- *   storage rule), and never while any local expense still does (a conflict review may have
- *   brought the old version back).
+ *   storage rule), and never while any expense still does.
  */
 export async function runReceiptQueue(
   ctx: RepoContext,
@@ -61,17 +71,17 @@ export async function runReceiptQueue(
 
   // Clean-ups first: a photo that's back in use goes straight into this pass's uploads.
   const discards = receiptFilesInState(ctx.db, 'discard');
-  const stillUsed = referencedReceiptIds(ctx.db, discards.map((r) => r.receiptId));
+  const stillUsed = deps.referenced(discards.map((r) => r.receiptId));
   for (const row of discards) {
     if (stillUsed.has(row.receiptId)) {
-      // Back in use (conflict review kept the old version): upload again if this phone has it.
+      // Back in use: upload again if this phone has it.
       if (deps.hasLocal(row.receiptId)) setReceiptState(ctx.db, row.receiptId, 'upload', now());
       else deleteReceiptFileRow(ctx.db, row.receiptId);
       continue;
     }
-    const expense = receiptExpense(ctx.db, row.expenseId);
+    const expense = deps.expense(row.expenseId);
     // The change that dropped the photo must reach the server first, or the delete is refused.
-    if (expense && (expense.version === 0 || expense.dirty)) continue;
+    if (expense?.pending) continue;
     if (!retryDue(row, now())) continue;
 
     const outcome = await deps.remove(pathOf(row));
@@ -86,18 +96,21 @@ export async function runReceiptQueue(
   }
 
   for (const row of receiptFilesInState(ctx.db, 'upload')) {
-    const expense = receiptExpense(ctx.db, row.expenseId);
+    const expense = deps.expense(row.expenseId);
     if (!expense) {
-      // The expense left this phone (group deleted here): nothing will ever point at the photo.
+      // Not on the server (yet): a queued expense keeps its photo until it's sent.
+      if (deps.isQueued?.(row.expenseId)) continue;
+      // Gone (deleted, or its group left): nothing will ever point at the photo.
       deps.deleteLocal(row.receiptId);
       deleteReceiptFileRow(ctx.db, row.receiptId);
       continue;
     }
     if (expense.receiptId !== row.receiptId) {
+      if (expense.pending) continue; // the change that points at it is still on its way
       setReceiptState(ctx.db, row.receiptId, 'discard', now());
       continue;
     }
-    if (expense.version === 0 || expense.dirty || !retryDue(row, now())) continue;
+    if (expense.pending || !retryDue(row, now())) continue;
 
     const outcome = await deps.upload(pathOf(row), row.receiptId);
     if (outcome === 'ok') {
@@ -113,7 +126,7 @@ export async function runReceiptQueue(
 
   // Photos no expense points at any more (replaced on another phone, then synced here): free the space.
   const synced = receiptFilesInState(ctx.db, 'synced');
-  const used = referencedReceiptIds(ctx.db, synced.map((r) => r.receiptId));
+  const used = deps.referenced(synced.map((r) => r.receiptId));
   for (const row of synced) {
     if (used.has(row.receiptId)) continue;
     deps.deleteLocal(row.receiptId);

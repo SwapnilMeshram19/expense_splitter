@@ -1,10 +1,10 @@
 import { File } from 'expo-file-system';
 
+import { dataStore } from '@/data';
 import { appContext } from '@/db/appContext';
 import { recordDownloadedReceipt } from '@/db/repositories/receipts';
 import { receiptObjectPath } from '@/domain/note';
 import { getSupabase } from '@/lib/supabase';
-import { onSyncSucceeded } from '@/sync/syncService';
 
 import {
   deleteLocalReceipt,
@@ -22,7 +22,26 @@ function describeStorageError(error: { message?: string; status?: number; status
   return `${error.statusCode ?? error.status ?? ''} ${error.message ?? 'error'}`.trim().slice(0, 200);
 }
 
-export const supabaseReceiptDeps: ReceiptQueueDeps = {
+/** Expenses as shown now (server data plus changes on their way), indexed once per pass. */
+function storeLookup(): Pick<ReceiptQueueDeps, 'expense' | 'referenced' | 'isQueued'> {
+  const store = dataStore();
+  const byId = new Map<string, { receiptId: string | null }>();
+  for (const s of store.groups()) for (const e of s.expenses) byId.set(e.id, { receiptId: e.receiptId });
+  const used = new Set([...byId.values()].flatMap((e) => (e.receiptId ? [e.receiptId] : [])));
+  const queued = new Set(
+    store.pendingOps().flatMap((o) => (o.cmd.op === 'expense.add' && o.status !== 'failed' ? [o.cmd.input.id.toLowerCase()] : [])),
+  );
+  return {
+    expense(expenseId) {
+      const e = byId.get(expenseId);
+      return e ? { receiptId: e.receiptId, pending: store.pendingStatus(expenseId) !== null } : null;
+    },
+    referenced: (ids) => new Set(ids.filter((id) => used.has(id))),
+    isQueued: (expenseId) => queued.has(expenseId),
+  };
+}
+
+export const supabaseReceiptDeps: Omit<ReceiptQueueDeps, 'expense' | 'referenced' | 'isQueued'> = {
   async upload(path, receiptId): Promise<UploadOutcome> {
     const file = ownReceiptFile(receiptId);
     if (!file.exists) return 'missingFile';
@@ -48,7 +67,7 @@ let running: Promise<unknown> | null = null;
 
 /** Upload/clean up receipt photos. Calls during a run share it. Never throws. */
 export function processReceiptQueue(): Promise<unknown> {
-  running ??= runReceiptQueue(appContext, supabaseReceiptDeps)
+  running ??= runReceiptQueue(appContext, { ...supabaseReceiptDeps, ...storeLookup() })
     .catch((e) => {
       if (__DEV__) console.log('[receipt] queue failed', (e as Error | null)?.message);
     })
@@ -58,14 +77,14 @@ export function processReceiptQueue(): Promise<unknown> {
   return running;
 }
 
-/** After every successful sync: the expenses are on the server, so their photos can follow. */
+/** After every refresh: the expenses are on the server, so their photos can follow. */
 export function startReceiptQueue(): () => void {
-  return onSyncSucceeded(() => void processReceiptQueue());
+  return dataStore().onRefreshed(() => void processReceiptQueue());
 }
 
 export type ReceiptLoad =
   | { ok: true; uri: string }
-  | { ok: false; reason: 'SIGNED_OUT' | 'NOT_UPLOADED' | 'OFFLINE' };
+  | { ok: false; reason: 'NOT_UPLOADED' | 'OFFLINE' };
 
 /**
  * The photo for an expense: the local copy, or download it now (only ever on a tap, so a group
@@ -80,7 +99,7 @@ export async function loadReceipt(ref: {
   if (local) return { ok: true, uri: local };
 
   const { data: session } = await getSupabase().auth.getSession();
-  if (!session.session) return { ok: false, reason: 'SIGNED_OUT' };
+  if (!session.session) return { ok: false, reason: 'OFFLINE' };
 
   const path = receiptObjectPath(ref.groupId, ref.expenseId, ref.receiptId);
   let signed: string;
@@ -106,8 +125,6 @@ export async function loadReceipt(ref: {
 
 export function describeReceiptLoadError(reason: Exclude<ReceiptLoad, { ok: true }>['reason']): string {
   switch (reason) {
-    case 'SIGNED_OUT':
-      return 'Sign in to see receipt photos shared in this group.';
     case 'NOT_UPLOADED':
       return 'Not uploaded yet. It appears once the phone that took it is back online.';
     case 'OFFLINE':

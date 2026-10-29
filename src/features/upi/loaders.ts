@@ -1,14 +1,7 @@
-import { and, eq } from 'drizzle-orm';
-
-import { db } from '@/db/client';
-import { isGroupLost, LOST_ACCESS_MESSAGE } from '@/db/repositories/access';
-import { getGroup } from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import { findSelfMemberId } from '@/db/repositories/members';
-import { canEditMemberUpi } from '@/db/repositories/memberUpi';
-import { members } from '@/db/schema';
-import { getDeviceUserId } from '@/db/session';
-import { computeBalances } from '@/domain/balances';
+import { dataStore } from '@/data';
+import { balancesOf, findSelfMemberId, memberOf } from '@/data/selectors';
+import { canEditPayDetails } from '@/domain/commands';
+import type { GroupSnapshot } from '@/domain/model';
 import type { CurrencyCode } from '@/domain/currency';
 import { parsePayMethods, type PayMethod } from '@/domain/payMethods';
 import { isValidVpa } from '@/domain/upi';
@@ -17,19 +10,14 @@ type Fail = { ok: false; message: string };
 const fail = (message: string): Fail => ({ ok: false, message });
 
 
-function loadMember(groupId: string, memberId: string | undefined) {
-  if (!memberId) return null;
-  const row = db
-    .select()
-    .from(members)
-    .where(and(eq(members.id, memberId), eq(members.groupId, groupId)))
-    .get();
-  return row && row.deletedAt === null ? row : null;
-}
-
-function balancesOf(groupId: string): Map<string, number> {
-  const ledger = loadGroupLedger(db, groupId);
-  return computeBalances(ledger.expenses, ledger.settlements).balances;
+/** The group and my member in it, or why the screen can't open. */
+function open(groupId: string): { snapshot: GroupSnapshot; me: string } | Fail {
+  const store = dataStore();
+  const snapshot = store.group(groupId);
+  if (!snapshot) return fail('This group no longer exists.');
+  const me = findSelfMemberId(snapshot, store.planningUserId());
+  if (!me) return fail('You’re not a member of this group.');
+  return { snapshot, me };
 }
 
 // ── Pay screen (you pay someone) ───────────────────────────────────────────
@@ -52,16 +40,15 @@ export type PaySetup =
   | Fail;
 
 export function loadPaySetup(groupId: string, toMemberId: string | undefined): PaySetup {
-  const group = getGroup(db, groupId);
-  if (!group) return fail('This group no longer exists.');
-  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
-  const me = findSelfMemberId(db, groupId, getDeviceUserId());
-  if (!me) return fail('You’re not a member of this group.');
+  const opened = open(groupId);
+  if ('ok' in opened) return opened;
+  const { snapshot, me } = opened;
+  const group = snapshot.group;
   if (!toMemberId || toMemberId === me) return fail('Choose who to pay.');
-  const row = loadMember(groupId, toMemberId);
+  const row = memberOf(snapshot, toMemberId);
   if (!row) return fail('This person is no longer in the group.');
 
-  const myBalance = balancesOf(groupId).get(me) ?? 0;
+  const myBalance = balancesOf(snapshot).get(me) ?? 0;
 
   return {
     ok: true,
@@ -74,7 +61,7 @@ export function loadPaySetup(groupId: string, toMemberId: string | undefined): P
       vpa: isValidVpa(row.upiVpa) ? row.upiVpa : null,
       storedVpaInvalid: row.upiVpa !== null && !isValidVpa(row.upiVpa),
       methods: parsePayMethods(row.payMethods),
-      canEditVpa: canEditMemberUpi(row, me),
+      canEditVpa: canEditPayDetails(row, me),
       isPlaceholder: row.userId === null,
     },
     myDebtPaise: Math.max(0, -myBalance),
@@ -98,18 +85,17 @@ export type RequestSetup =
   | Fail;
 
 export function loadRequestSetup(groupId: string, fromMemberId: string | undefined): RequestSetup {
-  const group = getGroup(db, groupId);
-  if (!group) return fail('This group no longer exists.');
-  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
-  const me = findSelfMemberId(db, groupId, getDeviceUserId());
-  if (!me) return fail('You’re not a member of this group.');
+  const opened = open(groupId);
+  if ('ok' in opened) return opened;
+  const { snapshot, me } = opened;
+  const group = snapshot.group;
   if (!fromMemberId || fromMemberId === me) return fail('Choose who is paying you.');
-  const payerRow = loadMember(groupId, fromMemberId);
+  const payerRow = memberOf(snapshot, fromMemberId);
   if (!payerRow) return fail('This person is no longer in the group.');
-  const meRow = loadMember(groupId, me);
+  const meRow = memberOf(snapshot, me);
   if (!meRow) return fail('You’re not a member of this group.');
 
-  const payerBalance = balancesOf(groupId).get(payerRow.id) ?? 0;
+  const payerBalance = balancesOf(snapshot).get(payerRow.id) ?? 0;
 
   return {
     ok: true,
@@ -140,16 +126,17 @@ export type MemberUpiSetup =
         isPlaceholder: boolean;
       };
       canEdit: boolean;
+      /** The version an edit is made on. */
+      expectedVersion: number;
     }
   | Fail;
 
 export function loadMemberUpiSetup(groupId: string, memberId: string | undefined): MemberUpiSetup {
-  const group = getGroup(db, groupId);
-  if (!group) return fail('This group no longer exists.');
-  if (isGroupLost(db, groupId)) return fail(LOST_ACCESS_MESSAGE);
-  const me = findSelfMemberId(db, groupId, getDeviceUserId());
-  if (!me) return fail('You’re not a member of this group.');
-  const row = loadMember(groupId, memberId);
+  const opened = open(groupId);
+  if ('ok' in opened) return opened;
+  const { snapshot, me } = opened;
+  const group = snapshot.group;
+  const row = memberOf(snapshot, memberId);
   if (!row) return fail('This person is no longer in the group.');
 
   return {
@@ -164,6 +151,7 @@ export function loadMemberUpiSetup(groupId: string, memberId: string | undefined
       isMe: row.id === me,
       isPlaceholder: row.userId === null,
     },
-    canEdit: canEditMemberUpi(row, me),
+    canEdit: canEditPayDetails(row, me),
+    expectedVersion: row.version,
   };
 }

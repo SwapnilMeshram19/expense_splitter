@@ -2,8 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-import { appContext } from '@/db/appContext';
-import { setMemberPayDetails } from '@/db/repositories/memberPayDetails';
+import { runCommand } from '@/data/hooks';
 import { methodSummary, methodTitle } from '@/domain/payMethods';
 import { describePayDetailsError, iconForKind } from '@/features/payments/messages';
 import { PayDetailsEditor } from '@/features/payments/PayDetailsEditor';
@@ -66,12 +65,13 @@ export default function MemberPaymentScreen() {
         }
         footnote={`Visible to members of “${setup.groupName}”.`}
         saveLabel="Save"
-        onSave={(vpaText, methods) => {
-          const result = setMemberPayDetails(appContext, {
+        onSave={async (vpaText, methods) => {
+          const result = await runCommand('member.update', {
+            groupId,
             memberId: member.id,
-            vpaInput: vpaText,
-            methods,
-            actorMemberId: setup.me,
+            expectedVersion: setup.expectedVersion,
+            upiVpa: vpaText,
+            payMethods: methods,
           });
           if (!result.ok) return describePayDetailsError(result.error, member.name);
           router.back();

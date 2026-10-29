@@ -71,7 +71,8 @@ interface ExpenseFormProps {
   /** Rule mode: an occurrence exists, so the frequency and start date can't change. */
   scheduleLocked?: boolean;
   /** Save the draft. Return an error message to show, or null on success. */
-  onSubmit: (draft: DraftParts) => string | null;
+  /** Resolves to an error message, or null once saved (the screen then closes). */
+  onSubmit: (draft: DraftParts) => Promise<string | null> | string | null;
 }
 
 const SPLIT_MODES: readonly { value: SplitMode; label: string }[] = [
@@ -213,13 +214,20 @@ export function ExpenseForm({
     }
   };
 
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    if (saving) return;
     if (!analysis.draft) {
       setError(analysis.problems[0] ?? 'Check the form.');
       return;
     }
-    const message = onSubmit(analysis.draft);
-    if (message) setError(message);
+    setSaving(true);
+    try {
+      const message = await onSubmit(analysis.draft);
+      if (message) setError(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const setCurrency = (currency: CurrencyCode) => {
@@ -610,7 +618,8 @@ export function ExpenseForm({
         <Button
           label={submitLabel}
           size="lg"
-          onPress={submit}
+          onPress={() => void submit()}
+          busy={saving}
           style={styles.submit}
           accessibilityLabel={
             state.singlePayerId && state.payerMode === 'single'

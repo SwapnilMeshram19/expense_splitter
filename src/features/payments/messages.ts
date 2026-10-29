@@ -1,4 +1,5 @@
-import type { PayDetailsError } from '@/db/repositories/memberPayDetails';
+import type { PayDetailsError } from '@/domain/commands';
+import { describeCommonFailure } from '@/features/data/messages';
 import type { PayMethodError, PayMethodKind } from '@/domain/payMethods';
 import { describeMemberUpiError } from '@/features/upi/messages';
 
@@ -35,10 +36,12 @@ export function describePayMethodError(error: PayMethodError): string {
   }
 }
 
-export function describePayDetailsError(error: PayDetailsError, memberName: string): string {
+export function describePayDetailsError(failure: PayDetailsError | { code: string }, memberName: string): string {
+  const error = failure as PayDetailsError;
   if (error.code === 'TOO_MANY_METHODS') return `Up to ${error.max} ways to get paid.`;
   if (error.code === 'NOT_ALLOWED') return `Only ${memberName} can change their payment details.`;
-  return describeMemberUpiError(error, memberName);
+  if (error.code === 'INVALID_PAY_METHOD') return 'One of the payment details isn’t valid. Check it and try again.';
+  return describeMemberUpiError(error, memberName) ?? describeCommonFailure(failure) ?? 'Couldn’t save that. Please try again.';
 }
 
 /** The "Add a way to get paid" choices, in the order most people need them. */

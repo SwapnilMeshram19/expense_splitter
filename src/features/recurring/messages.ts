@@ -1,4 +1,4 @@
-import type { RuleError } from '@/db/repositories/recurring';
+import type { CommandError } from '@/domain/commands';
 import type { ScheduleError } from '@/domain/recurrence';
 import { describeExpenseError } from '@/features/expenses/messages';
 
@@ -10,10 +10,11 @@ const SCHEDULE: Record<ScheduleError, string> = {
 };
 
 export function describeRuleError(
-  error: RuleError,
+  failure: CommandError<'recurring.create'> | { code: string },
   nameOf: (memberId: string) => string,
   currency: string,
 ): string {
+  const error = failure as CommandError<'recurring.create'>;
   switch (error.code) {
     case 'SCHEDULE':
       return SCHEDULE[error.error];
@@ -21,6 +22,8 @@ export function describeRuleError(
       return 'The schedule is fixed once started. Stop it and add a new one.';
     case 'INVALID_TIME_ZONE':
       return 'Your phone’s time zone isn’t recognised. Check the date and time settings.';
+    case 'NOT_FOUND':
+      return 'This repeating expense no longer exists.';
     default:
       return describeExpenseError(error, nameOf, { entry: currency, group: currency });
   }

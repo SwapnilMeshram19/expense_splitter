@@ -1,4 +1,4 @@
-import type { Expense } from '@/db/schema';
+import type { Expense } from '@/domain/model';
 
 import {
   analyzeForm,
@@ -40,7 +40,8 @@ const expenseRow = (patch: Partial<Expense>): Expense => ({
   updatedAt: 0,
   deletedAt: null,
   version: 0,
-  dirty: true,
+  payers: [],
+  shares: [],
   ...patch,
 });
 

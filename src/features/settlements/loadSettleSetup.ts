@@ -1,9 +1,5 @@
-import { db } from '@/db/client';
-import { getGroup } from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import { activeMembersQuery, findSelfMemberId } from '@/db/repositories/members';
-import { getDeviceUserId } from '@/db/session';
-import { computeBalances } from '@/domain/balances';
+import { dataStore } from '@/data';
+import { activeMembersOf, balancesOf, findSelfMemberId } from '@/data/selectors';
 import type { CurrencyCode } from '@/domain/currency';
 
 export interface SettleMember {
@@ -25,19 +21,16 @@ export type SettleSetup =
 
 /** Members and current balances for the settle-up screen, read once when it opens. */
 export function loadSettleSetup(groupId: string): SettleSetup {
-  const group = getGroup(db, groupId);
-  if (!group) return { ok: false, message: 'This group no longer exists.' };
+  const store = dataStore();
+  const snapshot = store.group(groupId);
+  if (!snapshot) return { ok: false, message: 'This group no longer exists.' };
 
-  const me = findSelfMemberId(db, groupId, getDeviceUserId());
+  const me = findSelfMemberId(snapshot, store.planningUserId());
   if (!me) return { ok: false, message: 'You’re not a member of this group.' };
 
-  const members = activeMembersQuery(db, groupId)
-    .all()
+  const members = activeMembersOf(snapshot)
     .map((m) => ({ id: m.id, name: m.id === me ? 'You' : m.displayName }))
     .sort((a, b) => Number(b.id === me) - Number(a.id === me)); // "You" first
 
-  const ledger = loadGroupLedger(db, groupId);
-  const { balances } = computeBalances(ledger.expenses, ledger.settlements);
-
-  return { ok: true, me, members, balances, currency: group.currency };
+  return { ok: true, me, members, balances: balancesOf(snapshot), currency: snapshot.group.currency };
 }

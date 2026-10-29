@@ -68,7 +68,8 @@ export function PayDetailsEditor({
   footnote: string;
   saveLabel: string;
   /** Returns an error message, or null when saved. */
-  onSave: (vpaText: string, methods: PayMethod[]) => string | null;
+  /** Resolves to an error message, or null once saved. */
+  onSave: (vpaText: string, methods: PayMethod[]) => Promise<string | null> | string | null;
   /** Under the footnote (e.g. "Edit for all groups"). */
   extra?: ReactNode;
 }) {
@@ -109,12 +110,19 @@ export function PayDetailsEditor({
     setError(null);
   };
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
     if (draft) {
       setError('Finish or cancel the method you’re adding first.');
       return;
     }
-    setError(onSave(vpa, methods));
+    if (saving) return;
+    setSaving(true);
+    try {
+      setError(await onSave(vpa, methods));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -216,7 +224,7 @@ export function PayDetailsEditor({
           </AppText>
         ) : null}
 
-        <Button label={saveLabel} icon="check" size="lg" onPress={save} />
+        <Button label={saveLabel} icon="check" size="lg" onPress={() => void save()} busy={saving} />
         <AppText variant="caption" color={theme.muted} style={styles.centerText}>
           {footnote}
         </AppText>

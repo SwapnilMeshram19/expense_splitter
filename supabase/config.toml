@@ -176,9 +176,9 @@ refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
-enable_anonymous_sign_ins = false
+enable_anonymous_sign_ins = true
 # Allow/disallow testing manual linking of accounts
-enable_manual_linking = false
+enable_manual_linking = true
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
 minimum_password_length = 6
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
@@ -414,7 +414,12 @@ enabled = true
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
 
+[functions.api]
+# The function verifies the user itself (auth.getUser), which works with any JWT signing key type.
+verify_jwt = false
+
 [functions.sync-push]
+# Legacy: kept for one release so old installs (and the one-time hand-over) can still push.
 # The function verifies the user itself (auth.getUser), which works with any JWT signing key type.
 verify_jwt = false
 

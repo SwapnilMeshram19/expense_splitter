@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { appContext } from '@/db/appContext';
-import { groupBudget, setGroupBudget } from '@/db/repositories/groups';
-import type { Group } from '@/db/schema';
-import type { BudgetPeriod } from '@/domain/budget';
+import { runCommand } from '@/data/hooks';
+import { parseBudget, type Budget, type BudgetPeriod } from '@/domain/budget';
+import type { Group } from '@/domain/model';
+import { describeGroupUpdateError } from '@/features/groups/messages';
 import {
-  formatMoney,
   minorToInputString,
   parseAmount,
   sanitizeMoneyInput,
@@ -23,9 +22,10 @@ const PERIODS: readonly { value: BudgetPeriod; label: string }[] = [
 ];
 
 /** Set, change or remove the group's budget (group currency). Everyone in the group sees it. */
-export function BudgetEditor({ group, me }: { group: Group; me: string }) {
+export function BudgetEditor({ group }: { group: Group; me?: string }) {
   const theme = useTheme();
-  const saved = groupBudget(group);
+  const saved = parseBudget(group.budgetPaise, group.budgetPeriod);
+  const [busy, setBusy] = useState(false);
   const [amountText, setAmountText] = useState(
     saved ? minorToInputString(saved.limit, group.currency) : '',
   );
@@ -35,35 +35,26 @@ export function BudgetEditor({ group, me }: { group: Group; me: string }) {
   const parsed = amountText.trim() === '' ? null : parseAmount(amountText, group.currency);
   const changed = parsed?.ok ? parsed.minor !== saved?.limit || period !== saved?.period : false;
 
+  const send = async (budget: Budget | null) => {
+    setBusy(true);
+    const result = await runCommand('group.update', { groupId: group.id, expectedVersion: group.version, budget });
+    setBusy(false);
+    setMessage(result.ok ? null : describeGroupUpdateError(result.error, group.currency));
+    return result.ok;
+  };
+
   const save = () => {
     if (!parsed?.ok) {
       setMessage('Enter the budget amount.');
       return;
     }
-    const result = setGroupBudget(appContext, {
-      groupId: group.id,
-      budget: { limit: parsed.minor, period },
-      actorMemberId: me,
-    });
-    setMessage(
-      result.ok
-        ? null
-        : result.error.code === 'INVALID_BUDGET'
-          ? `Enter a budget up to ${formatMoney(result.error.max, group.currency)}.`
-          : 'You can’t change this group.',
-    );
+    void send({ limit: parsed.minor, period });
   };
 
-  const remove = () => {
-    const result = setGroupBudget(appContext, {
-      groupId: group.id,
-      budget: null,
-      actorMemberId: me,
-    });
-    if (result.ok) {
+  const remove = async () => {
+    if (await send(null)) {
       setAmountText('');
       setPeriod('total');
-      setMessage(null);
     }
   };
 
@@ -99,12 +90,13 @@ export function BudgetEditor({ group, me }: { group: Group; me: string }) {
           <Button
             label={saved ? 'Save budget' : 'Set budget'}
             onPress={save}
+            busy={busy}
             disabled={!parsed?.ok}
             style={styles.grow}
           />
         ) : null}
         {saved ? (
-          <Button label="Remove" icon="delete" variant="danger" onPress={remove} style={styles.grow} />
+          <Button label="Remove" icon="delete" variant="danger" onPress={() => void remove()} busy={busy} style={styles.grow} />
         ) : null}
       </View>
     </View>

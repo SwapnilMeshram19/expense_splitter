@@ -1,11 +1,10 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { getDeviceUserId } from '@/db/session';
+import { dataStore } from '@/data';
+import { useData } from '@/data/hooks';
 import { formatMoney } from '@/domain/currency';
 import {
   addMonths,
@@ -19,7 +18,7 @@ import {
 } from '@/features/insights/compute';
 import { exportModulesInstalled, ExportUnavailableError } from '@/features/insights/exportSupport';
 import type { ExportFormat } from '@/features/insights/fileNames';
-import { INSIGHTS_TABLES, loadInsightsSource } from '@/features/insights/loadInsights';
+import { loadInsightsSource } from '@/features/insights/loadInsights';
 import { MonthChart } from '@/features/insights/MonthChart';
 import { spendingMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
@@ -45,11 +44,10 @@ export default function InsightsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const today = todayIsoDate();
-  const compute = useCallback(
-    () => loadInsightsSource(db, groupId, getDeviceUserId(), todayIsoDate()),
-    [groupId],
-  );
-  const source = useLiveData(INSIGHTS_TABLES, compute);
+  const source = useData(() => {
+    const store = dataStore();
+    return loadInsightsSource(store.group(groupId), store.planningUserId(), todayIsoDate());
+  }, [groupId]);
 
   const [scopeChoice, setScope] = useState<InsightScope>('group');
   const [period, setPeriod] = useState<Period>(null);

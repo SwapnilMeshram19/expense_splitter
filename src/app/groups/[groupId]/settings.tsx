@@ -1,34 +1,16 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
 import { KeyboardAwareScrollView, KeyboardToolbar } from 'react-native-keyboard-controller';
 
-import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import {
-  deleteGroup,
-  getGroup,
-  isCurrencyLocked,
-  renameGroup,
-  setGroupCurrency,
-  setSimplifyDebts,
-} from '@/db/repositories/groups';
-import { loadGroupLedger } from '@/db/repositories/ledger';
-import {
-  activeMembersQuery,
-  addMember,
-  findSelfMemberId,
-  removeMember,
-  renameMember,
-} from '@/db/repositories/members';
-import { MAX_NAME_LENGTH } from '@/db/repositories/names';
-import type { Group } from '@/db/schema';
-import { getDeviceUserId } from '@/db/session';
-import { computeBalances } from '@/domain/balances';
+import { dataStore } from '@/data';
+import { runCommand, useData } from '@/data/hooks';
+import { activeMembersOf, balancesOf, findSelfMemberId } from '@/data/selectors';
+import { MAX_NAME_LENGTH } from '@/domain/names';
+import type { Group } from '@/domain/model';
+import { newId } from '@/lib/newId';
 import { formatMoney, type CurrencyCode } from '@/domain/currency';
 import {
-  describeGroupCurrencyError,
   describeGroupDeleteError,
   describeGroupUpdateError,
   describeMemberError,
@@ -37,8 +19,6 @@ import { getRegionPreference } from '@/features/region/regionPreference';
 import { methodTitle, parsePayMethods } from '@/domain/payMethods';
 import { isValidVpa } from '@/domain/upi';
 import { BudgetEditor } from '@/features/groups/BudgetEditor';
-import { isGroupLost } from '@/db/repositories/access';
-import { LostAccessBanner } from '@/features/groups/LostAccessBanner';
 import { AppText } from '@/ui/AppText';
 import { Avatar } from '@/ui/Avatar';
 import { Button } from '@/ui/Button';
@@ -49,11 +29,10 @@ import { Icon, type IconName } from '@/ui/Icon';
 import { ListRow, listCardStyle } from '@/ui/ListRow';
 import { useTheme } from '@/ui/theme';
 
-const TABLES = ['groups', 'members', 'expenses', 'expense_payers', 'expense_shares', 'settlements'];
-
 interface MemberRow {
   id: string;
   displayName: string;
+  version: number;
   balance: number;
   /** "UPI · PayPal", or null when nothing is added. */
   payWith: string | null;
@@ -65,29 +44,22 @@ function payWithSummary(m: { upiVpa: string | null; payMethods: string | null })
 }
 
 function loadSettingsView(groupId: string) {
-  const group = getGroup(db, groupId);
-  if (!group) return null;
-  const me = findSelfMemberId(db, groupId, getDeviceUserId());
-  const ledger = loadGroupLedger(db, groupId);
-  const { balances } = computeBalances(ledger.expenses, ledger.settlements);
-  const members: MemberRow[] = activeMembersQuery(db, groupId)
-    .all()
-    .map((m) => ({
-      id: m.id,
-      displayName: m.displayName,
-      balance: balances.get(m.id) ?? 0,
-      payWith: payWithSummary(m),
-    }));
-  return {
-    group,
-    me,
-    members,
-    lost: isGroupLost(db, groupId),
-    currencyLocked: isCurrencyLocked(db, groupId),
-  };
+  const store = dataStore();
+  const snapshot = store.group(groupId);
+  if (!snapshot) return null;
+  const me = findSelfMemberId(snapshot, store.planningUserId());
+  const balances = balancesOf(snapshot);
+  const members: MemberRow[] = activeMembersOf(snapshot).map((m) => ({
+    id: m.id,
+    displayName: m.displayName,
+    version: m.version,
+    balance: balances.get(m.id) ?? 0,
+    payWith: payWithSummary(m),
+  }));
+  return { group: snapshot.group, me, members, currencyLocked: snapshot.currencyLocked };
 }
 
-function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
+function confirmDeleteGroup(group: Group) {
   Alert.alert(
     `Delete “${group.name}”?`,
     'It’s removed for everyone in the group.',
@@ -96,8 +68,8 @@ function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => {
-          const result = deleteGroup(appContext, { groupId: group.id, actorMemberId });
+        onPress: async () => {
+          const result = await runCommand('group.delete', { groupId: group.id, expectedVersion: group.version });
           if (result.ok) router.dismissTo('/');
           else Alert.alert('Can’t delete yet', describeGroupDeleteError(result.error));
         },
@@ -109,8 +81,7 @@ function confirmDeleteGroup(group: Group, actorMemberId: string | null) {
 export default function GroupSettingsScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const theme = useTheme();
-  const compute = useCallback(() => loadSettingsView(groupId), [groupId]);
-  const view = useLiveData(TABLES, compute);
+  const view = useData(() => loadSettingsView(groupId), [groupId]);
 
   if (!view) {
     return (
@@ -121,23 +92,13 @@ export default function GroupSettingsScreen() {
     );
   }
 
-  if (view.lost) {
-    return (
-      <View style={styles.padded}>
-        <Stack.Screen options={{ title: 'Group settings' }} />
-        <LostAccessBanner groupId={groupId} groupName={view.group.name} />
-      </View>
-    );
-  }
-
   if (!view.me) {
     return (
       <View style={styles.padded}>
         <Stack.Screen options={{ title: 'Group settings' }} />
         <Card style={styles.card}>
           <AppText variant="heading">You’re not in “{view.group.name}”</AppText>
-          <AppText color={theme.muted}>So you can’t change it. You can delete it from this phone.</AppText>
-          <Button label="Delete group" icon="delete" variant="danger" onPress={() => confirmDeleteGroup(view.group, null)} />
+          <AppText color={theme.muted}>So you can’t change it.</AppText>
         </Card>
       </View>
     );
@@ -193,26 +154,24 @@ function SettingsForm({
   const open = (pathname: '/groups/[groupId]/invite' | '/groups/[groupId]/recurring') =>
     router.push({ pathname, params: { groupId: group.id } });
 
-  const saveGroupName = () => {
-    const result = renameGroup(appContext, { groupId: group.id, name: groupName, actorMemberId: me });
+  const [busy, setBusy] = useState(false);
+  const update = async (at: ErrorAt, patch: { name?: string; simplifyDebts?: boolean; currency?: CurrencyCode }) => {
+    setBusy(true);
+    const result = await runCommand('group.update', { groupId: group.id, expectedVersion: group.version, ...patch });
+    setBusy(false);
     if (result.ok) setError(null);
-    else fail('group', describeGroupUpdateError(result.error));
+    else fail(at, describeGroupUpdateError(result.error, currency));
   };
 
-  const toggleSimplify = (value: boolean) => {
-    const result = setSimplifyDebts(appContext, { groupId: group.id, simplifyDebts: value, actorMemberId: me });
-    if (!result.ok) fail('simplify', describeGroupUpdateError(result.error));
-  };
+  const saveGroupName = () => void update('group', { name: groupName });
+  const toggleSimplify = (value: boolean) => void update('simplify', { simplifyDebts: value });
+  const changeCurrency = (next: CurrencyCode) => void update('group', { currency: next });
 
-  const changeCurrency = (next: CurrencyCode) => {
-    const result = setGroupCurrency(appContext, { groupId: group.id, currency: next, actorMemberId: me });
-    if (result.ok) setError(null);
-    else fail('group', describeGroupCurrencyError(result.error));
-  };
-
-  const add = () => {
+  const add = async () => {
     if (newMemberName.trim() === '') return;
-    const result = addMember(appContext, { groupId: group.id, displayName: newMemberName, actorMemberId: me });
+    setBusy(true);
+    const result = await runCommand('member.add', { groupId: group.id, id: newId(), displayName: newMemberName });
+    setBusy(false);
     if (!result.ok) {
       fail('people', describeMemberError(result.error, currency));
       return;
@@ -227,9 +186,17 @@ function SettingsForm({
     setError(null);
   };
 
-  const saveRename = () => {
-    if (!editingId) return;
-    const result = renameMember(appContext, { memberId: editingId, displayName: editName, actorMemberId: me });
+  const saveRename = async () => {
+    const member = members.find((m) => m.id === editingId);
+    if (!member) return;
+    setBusy(true);
+    const result = await runCommand('member.update', {
+      groupId: group.id,
+      memberId: member.id,
+      expectedVersion: member.version,
+      displayName: editName,
+    });
+    setBusy(false);
     if (!result.ok) {
       fail('people', describeMemberError(result.error, currency));
       return;
@@ -251,8 +218,12 @@ function SettingsForm({
       {
         text: 'Remove',
         style: 'destructive',
-        onPress: () => {
-          const result = removeMember(appContext, { memberId: member.id, actorMemberId: me });
+        onPress: async () => {
+          const result = await runCommand('member.remove', {
+            groupId: group.id,
+            memberId: member.id,
+            expectedVersion: member.version,
+          });
           if (!result.ok) Alert.alert('Could not remove', describeMemberError(result.error, currency));
         },
       },
@@ -304,7 +275,7 @@ function SettingsForm({
               onSubmitEditing={() => nameChanged && saveGroupName()}
               style={styles.grow}
             />
-            {nameChanged ? <Button label="Save" size="md" onPress={saveGroupName} /> : null}
+            {nameChanged ? <Button label="Save" size="md" onPress={saveGroupName} busy={busy} /> : null}
           </View>
 
           <FieldLabel>Currency</FieldLabel>
@@ -369,11 +340,11 @@ function SettingsForm({
                     maxLength={MAX_NAME_LENGTH}
                     accessibilityLabel={`New name for ${member.displayName}`}
                     returnKeyType="done"
-                    onSubmitEditing={saveRename}
+                    onSubmitEditing={() => void saveRename()}
                     style={styles.grow}
                     autoFocus
                   />
-                  <IconButton icon="check" label="Save name" color={theme.primary} onPress={saveRename} />
+                  <IconButton icon="check" label="Save name" color={theme.primary} onPress={() => void saveRename()} />
                   <IconButton icon="close" label="Cancel" color={theme.muted} onPress={() => setEditingId(null)} />
                 </View>
               );
@@ -431,11 +402,11 @@ function SettingsForm({
               placeholder="Add a person"
               maxLength={MAX_NAME_LENGTH}
               accessibilityLabel="New person’s name"
-              onSubmitEditing={add}
+              onSubmitEditing={() => void add()}
               returnKeyType="done"
               style={styles.grow}
             />
-            <Button label="Add" icon="add" variant="soft" onPress={add} disabled={newMemberName.trim() === ''} />
+            <Button label="Add" icon="add" variant="soft" onPress={() => void add()} busy={busy} disabled={newMemberName.trim() === ''} />
           </View>
           {errorFor('people')}
         </Card>
@@ -444,7 +415,7 @@ function SettingsForm({
           label="Delete group"
           icon="delete"
           variant="danger"
-          onPress={() => confirmDeleteGroup(group, me)}
+          onPress={() => confirmDeleteGroup(group)}
         />
         <AppText variant="caption" color={theme.muted} style={styles.centerText}>
           Everyone must be settled up first.

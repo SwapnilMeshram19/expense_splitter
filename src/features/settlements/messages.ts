@@ -1,5 +1,6 @@
-import type { SettlementError } from '@/db/repositories/settlements';
-import type { SettlementMethod } from '@/db/schema';
+import type { CommandError } from '@/domain/commands';
+import { describeCommonFailure } from '@/features/data/messages';
+import type { SettlementMethod } from '@/domain/model';
 import {
   DEFAULT_CURRENCY,
   formatMoney,
@@ -23,10 +24,11 @@ function amountRange(currency: CurrencyCode): string {
 }
 
 export function describeSettlementError(
-  error: SettlementError,
+  failure: CommandError<'settlement.add'> | { code: string },
   nameOf: (memberId: string) => string,
   currency: CurrencyCode = DEFAULT_CURRENCY,
 ): string {
+  const error = failure as CommandError<'settlement.add'>;
   switch (error.code) {
     case 'INVALID_AMOUNT':
       return `Enter an amount between ${amountRange(currency)}.`;
@@ -40,5 +42,10 @@ export function describeSettlementError(
       return `Keep the note under ${error.max} characters.`;
     case 'NOT_FOUND':
       return 'This payment no longer exists.';
+    case 'INVALID_METHOD':
+      return 'Choose how it was paid.';
+    case 'INVALID_TIME':
+      return 'Check the date and time on your phone, then try again.';
   }
+  return describeCommonFailure(failure) ?? 'Couldn’t record the payment. Please try again.';
 }

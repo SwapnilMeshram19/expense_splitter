@@ -1,19 +1,29 @@
-import type { Result } from '@/lib/result';
+import { appContext } from '@/db/appContext';
+import { markReceiptDiscarded, registerOwnReceipt } from '@/db/repositories/receipts';
 
 import { commitStagedReceipt, deleteLocalReceipt, type StagedReceipt } from './receiptFiles';
+import { processReceiptQueue } from './receiptStorage';
 
-type NewReceipt = { receiptId: string; bytes: number } | null;
+interface ReceiptTarget {
+  groupId: string;
+  expenseId: string;
+  /** The photo the expense pointed at before this save (edits), or null. */
+  previousReceiptId?: string | null;
+  /** The photo it points at after this save, or null. */
+  nextReceiptId: string | null;
+}
 
 /**
  * Save an expense together with a newly picked photo: move the photo into the durable folder,
- * write the expense (which records the photo for upload in the same transaction), and undo the
- * move if the write fails. Returns the write's result, or an error message for the file step.
+ * send the expense, then record the photo for upload (it uploads once the expense is on the
+ * server). A failed save moves nothing. Returns the save's result, or a message for the file step.
  */
-export function saveWithReceipt<T, E>(
+export async function saveWithReceipt<R extends { ok: boolean }>(
   staged: StagedReceipt | undefined,
-  write: (newReceipt: NewReceipt) => Result<T, E>,
-): Result<T, E> | { ok: false; fileError: string } {
-  let committed: NewReceipt = null;
+  target: ReceiptTarget,
+  write: (newReceiptId: string | null) => Promise<R>,
+): Promise<R | { ok: false; fileError: string }> {
+  let committed: { receiptId: string; bytes: number } | null = null;
   if (staged) {
     try {
       committed = commitStagedReceipt(staged);
@@ -24,7 +34,19 @@ export function saveWithReceipt<T, E>(
       };
     }
   }
-  const result = write(committed);
-  if (!result.ok && committed) deleteLocalReceipt(committed.receiptId);
+  const result = await write(committed?.receiptId ?? null);
+  if (!result.ok) {
+    if (committed) deleteLocalReceipt(committed.receiptId);
+    return result;
+  }
+
+  const now = Date.now();
+  const ref = { groupId: target.groupId, expenseId: target.expenseId };
+  if (committed) registerOwnReceipt(appContext.db, { ...ref, receiptId: committed.receiptId, bytes: committed.bytes }, now);
+  const next = committed?.receiptId ?? target.nextReceiptId;
+  if (target.previousReceiptId && target.previousReceiptId !== next) {
+    markReceiptDiscarded(appContext.db, { ...ref, receiptId: target.previousReceiptId }, now);
+  }
+  void processReceiptQueue();
   return result;
 }

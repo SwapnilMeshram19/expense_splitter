@@ -2,11 +2,9 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
-import { appContext } from '@/db/appContext';
-import { deleteRule, updateRule } from '@/db/repositories/recurring';
+import { runCommand } from '@/data/hooks';
 import { ExpenseForm } from '@/features/expenses/ExpenseForm';
 import type { DraftParts } from '@/features/expenses/formState';
-import { deviceTimeZone } from '@/features/recurring/deviceTimeZone';
 import { loadRuleSetup } from '@/features/recurring/loadRuleSetup';
 import { describeRuleError } from '@/features/recurring/messages';
 import { HeaderIconButton } from '@/ui/HeaderIconButton';
@@ -30,10 +28,12 @@ export default function EditRuleScreen() {
 
   const nameOf = (id: string) => setup.members.find((m) => m.id === id)?.name ?? 'Someone';
 
-  const save = (draft: DraftParts): string | null => {
+  const save = async (draft: DraftParts): Promise<string | null> => {
     if (!draft.repeat) return 'Choose how often it repeats.';
-    const result = updateRule(appContext, ruleId, {
+    const result = await runCommand('recurring.update', {
       groupId,
+      ruleId,
+      expectedVersion: setup.expectedVersion,
       description: draft.description,
       amountPaise: draft.amountPaise,
       category: draft.category,
@@ -44,8 +44,8 @@ export default function EditRuleScreen() {
       frequency: draft.repeat.frequency,
       startDate: draft.expenseDate,
       endDate: draft.repeat.endDate,
-      timeZone: deviceTimeZone(), // ignored on update: the rule keeps the zone it was made in
-      actorMemberId: setup.me,
+      // The rule keeps the zone it was made in (the server ignores a different one).
+      timeZone: setup.timeZone,
     });
     if (!result.ok) return describeRuleError(result.error, nameOf, setup.groupCurrency);
     router.back();
@@ -61,8 +61,8 @@ export default function EditRuleScreen() {
         {
           text: 'Stop',
           style: 'destructive',
-          onPress: () => {
-            const result = deleteRule(appContext, ruleId, setup.me);
+          onPress: async () => {
+            const result = await runCommand('recurring.delete', { groupId, ruleId, expectedVersion: setup.expectedVersion });
             if (result.ok) router.back();
             else
               Alert.alert(

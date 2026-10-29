@@ -1,8 +1,8 @@
 import { normalizeCategoryLabel } from '@/domain/categoryLabel';
 import { describeActivity } from '@/features/activity/describeActivity';
 import { analyzeForm, initialFormState } from '@/features/expenses/formState';
-import { applyPull, applyPushResult, collectPushBatch } from '@/sync/engine';
-import type { PullResult } from '@/sync/wire';
+import { applyPull, applyPushResult, collectPushBatch } from '@/legacy/sync/engine';
+import type { PullResult } from '@/legacy/sync/wire';
 import { filterMembers } from '@/ui/memberFilter';
 
 import { createExpense, getExpense, groupCategoryLabels, updateExpense } from '../repositories/expenses';

@@ -1,20 +1,16 @@
-import { eq } from 'drizzle-orm';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
+import { dataStore } from '@/data';
 import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { applyMyPayDetailsToGroup } from '@/db/repositories/memberPayDetails';
 import { getSetting, SELF_NAME_KEY } from '@/db/repositories/profile';
-import { getDeviceUserId } from '@/db/session';
-import { groups } from '@/db/schema';
-import { useAuth } from '@/features/auth/authStore';
+import { hasAccount, useAuth } from '@/features/auth/authStore';
 import { joinGroup, previewInvite, type InvitePreview } from '@/features/invites/inviteApi';
 import { describeInviteStatus, extractInviteCode, formatInviteCode } from '@/features/invites/messages';
-import { syncNow } from '@/sync/syncService';
+import { applyMyPayDetailsToGroup } from '@/features/payments/myPayDetails';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
@@ -29,16 +25,13 @@ type Phase =
   | { kind: 'finishing' }
   | { kind: 'error'; message: string };
 
-const groupIsLocal = (groupId: string) =>
-  db.select({ id: groups.id }).from(groups).where(eq(groups.id, groupId)).get() !== undefined;
-
-/** Sync (which full-fetches the newly visible group), then open it. */
+/** Fetch the newly joined group, then open it. */
 async function openJoinedGroup(groupId: string): Promise<boolean> {
-  await syncNow();
-  if (!groupIsLocal(groupId)) return false;
-  // Your saved payment details (Account) go into the group you just joined; the next sync sends them.
-  applyMyPayDetailsToGroup(appContext, getDeviceUserId(), groupId);
-  void syncNow();
+  const store = dataStore();
+  await store.refreshGroup(groupId);
+  if (!store.group(groupId)) return false;
+  // Your saved payment details (Account) go into the group you just joined.
+  void applyMyPayDetailsToGroup(appContext, groupId);
   router.replace({ pathname: '/groups/[groupId]', params: { groupId } });
   return true;
 }
@@ -52,18 +45,10 @@ export default function JoinScreen() {
   const [code, setCode] = useState<string | null>(() => extractInviteCode(params.code ?? ''));
   const [phase, setPhase] = useState<Phase>({ kind: 'enter' });
   const [reload, setReload] = useState(0);
-  const awaitingSignIn = useRef(false);
-
-  // Back from the Account screen once sign-in succeeds; the preview then loads automatically.
-  useEffect(() => {
-    if (auth.status === 'signedIn' && awaitingSignIn.current) {
-      awaitingSignIn.current = false;
-      router.back();
-    }
-  }, [auth.status]);
+  const ready = hasAccount(auth);
 
   useEffect(() => {
-    if (!code || auth.status !== 'signedIn') return;
+    if (!code || !ready) return;
     let cancelled = false;
     void (async () => {
       const result = await previewInvite(code);
@@ -82,7 +67,7 @@ export default function JoinScreen() {
     return () => {
       cancelled = true;
     };
-  }, [code, auth.status, reload]);
+  }, [code, ready, reload]);
 
   const finish = async (groupId: string) => {
     setPhase({ kind: 'finishing' });
@@ -98,28 +83,19 @@ export default function JoinScreen() {
   let body: React.ReactNode;
   if (auth.status === 'loading') {
     body = <Busy label="Loading…" />;
-  } else if (auth.status === 'signedOut') {
+  } else if (auth.status === 'offline') {
     body = (
       <Card style={styles.card}>
-        <Hero icon="lock" />
+        <Hero icon="cloudOff" />
         <AppText variant="heading" style={styles.centerText}>
-          Sign in to join
+          Connect to join
         </AppText>
         {code ? (
           <AppText style={[styles.code, { borderColor: theme.border }]}>{formatInviteCode(code)}</AppText>
         ) : null}
         <AppText color={theme.muted} style={styles.centerText}>
-          Your groups on this phone stay as they are.
+          You’re offline. Joining needs the internet.
         </AppText>
-        <Button
-          label="Sign in"
-          icon="login"
-          size="lg"
-          onPress={() => {
-            awaitingSignIn.current = true;
-            router.push('/account');
-          }}
-        />
       </Card>
     );
   } else if (!code) {
@@ -163,7 +139,7 @@ export default function JoinScreen() {
   );
 }
 
-function Hero({ icon, tone = 'accent' }: { icon: 'lock' | 'warning' | 'groupAdd'; tone?: 'accent' | 'warning' }) {
+function Hero({ icon, tone = 'accent' }: { icon: 'cloudOff' | 'warning' | 'groupAdd'; tone?: 'accent' | 'warning' }) {
   const theme = useTheme();
   return (
     <View

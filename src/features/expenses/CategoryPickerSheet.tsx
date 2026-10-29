@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type TextInput as RNTextInput } from 'react-native';
 
-import type { ExpenseCategory } from '@/db/schema';
+import type { ExpenseCategory } from '@/domain/model';
 import { categoryLabelKey, MAX_CATEGORY_LABEL_LENGTH } from '@/domain/categoryLabel';
 import { AppText } from '@/ui/AppText';
 import { BottomSheet } from '@/ui/BottomSheet';

@@ -1,52 +1,29 @@
-import { createTestContext, type TestContext } from '@/db/__tests__/testDb';
-import { createExpense, deleteExpense } from '@/db/repositories/expenses';
-import { createGroup, setGroupBudget } from '@/db/repositories/groups';
-import { activeMembersQuery } from '@/db/repositories/members';
-import { getOrCreateDeviceUserId } from '@/db/repositories/profile';
-import { recordSettlement } from '@/db/repositories/settlements';
-import { expenseShares } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import type { GroupSnapshot } from '@/domain/model';
+import { testGroup } from '@/test-utils/groupBuilder';
 
 import { computeInsights } from '../compute';
 import { buildExpensesCsv } from '../csv';
 import { loadInsightsSource } from '../loadInsights';
 
 describe('loadInsightsSource', () => {
-  let t: TestContext;
-  beforeEach(() => {
-    t = createTestContext();
-  });
-  afterEach(() => t.close());
-
   function setup() {
-    const deviceUserId = getOrCreateDeviceUserId(t.ctx);
-    const created = createGroup(t.ctx, {
-      name: 'Flat 302',
-      selfName: 'Asha',
-      otherMemberNames: ['Rahul'],
-      deviceUserId,
-    });
-    if (!created.ok) throw new Error('createGroup failed');
-    const { groupId, selfMemberId: me } = created.value;
-    const rahul = activeMembersQuery(t.ctx.db, groupId)
-      .all()
-      .find((m) => m.displayName === 'Rahul')!.id;
+    const t = testGroup({ name: 'Flat 302', me: 'Asha', others: ['Rahul'] });
+    const me = t.me;
+    const rahul = t.member('Rahul');
     const add = (date: string, amount: number, category: 'food' | 'stay' = 'food') => {
-      const result = createExpense(t.ctx, {
-        groupId,
+      const id = t.run('expense.add', {
+        id: t.newId(),
         description: `${category} ${date}`,
         amountPaise: amount,
         category,
         expenseDate: date,
         payers: [{ memberId: me, amountPaise: amount }],
         splitInput: { type: 'equal', memberIds: [me, rahul] },
-        actorMemberId: me,
       });
-      if (!result.ok) throw new Error(JSON.stringify(result.error));
       t.advance(1000);
-      return result.value.expenseId;
+      return id;
     };
-    return { deviceUserId, groupId, me, rahul, add };
+    return { t, userId: t.userId, groupId: t.groupId, me, rahul, add };
   }
 
   it('reads expenses oldest first, payments, balances and budget', () => {
@@ -54,26 +31,20 @@ describe('loadInsightsSource', () => {
     g.add('2026-09-10', 300000, 'stay');
     g.add('2026-10-02', 40000);
     const removed = g.add('2026-10-03', 99900);
-    expect(deleteExpense(t.ctx, removed, g.me).ok).toBe(true);
-    expect(
-      recordSettlement(t.ctx, {
-        groupId: g.groupId,
-        fromMemberId: g.rahul,
-        toMemberId: g.me,
-        amountPaise: 20000,
-        method: 'cash',
-        actorMemberId: g.me,
-      }).ok,
-    ).toBe(true);
-    expect(
-      setGroupBudget(t.ctx, {
-        groupId: g.groupId,
-        budget: { limit: 50000, period: 'monthly' },
-        actorMemberId: g.me,
-      }).ok,
-    ).toBe(true);
+    g.t.run('expense.delete', { expenseId: removed, expectedVersion: g.t.versionOf(removed) });
+    g.t.run('settlement.add', {
+      id: g.t.newId(),
+      fromMemberId: g.rahul,
+      toMemberId: g.me,
+      amountPaise: 20000,
+      method: 'cash',
+    });
+    g.t.run('group.update', {
+      expectedVersion: g.t.versionOf(g.groupId),
+      budget: { limit: 50000, period: 'monthly' },
+    });
 
-    const source = loadInsightsSource(t.ctx.db, g.groupId, g.deviceUserId, '2026-10-11')!;
+    const source = loadInsightsSource(g.t.snapshot(), g.userId, '2026-10-11')!;
     expect(source.me).toBe(g.me);
     expect(source.expenses.map((e) => e.date)).toEqual(['2026-09-10', '2026-10-02']);
     expect(source.expenses[0]!.shares.map((s) => s.amountPaise)).toEqual([150000, 150000]);
@@ -108,14 +79,19 @@ describe('loadInsightsSource', () => {
     const g = setup();
     const bad = g.add('2026-10-02', 40000);
     g.add('2026-10-03', 1000);
-    t.ctx.db.delete(expenseShares).where(eq(expenseShares.expenseId, bad)).run();
+    const snapshot = g.t.snapshot();
+    // A row that arrived broken (its shares are missing): never trusted, never charted.
+    const broken: GroupSnapshot = {
+      ...snapshot,
+      expenses: snapshot.expenses.map((e) => (e.id === bad ? { ...e, shares: [] } : e)),
+    };
 
-    const source = loadInsightsSource(t.ctx.db, g.groupId, g.deviceUserId, '2026-10-11')!;
+    const source = loadInsightsSource(broken, g.userId, '2026-10-11')!;
     expect(source.invalidCount).toBe(1);
     expect(source.expenses).toHaveLength(1);
   });
 
   it('returns null for a missing group', () => {
-    expect(loadInsightsSource(t.ctx.db, 'nope', 'device', '2026-10-11')).toBeNull();
+    expect(loadInsightsSource(null, 'user', '2026-10-11')).toBeNull();
   });
 });

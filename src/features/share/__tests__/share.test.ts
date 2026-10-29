@@ -1,9 +1,5 @@
-import { createTestContext, type TestContext } from '@/db/__tests__/testDb';
-import { createExpense, deleteExpense } from '@/db/repositories/expenses';
-import { createGroup } from '@/db/repositories/groups';
-import { activeMembersQuery } from '@/db/repositories/members';
-import { getOrCreateDeviceUserId } from '@/db/repositories/profile';
 import { loadGroupView } from '@/features/groups/loadGroupView';
+import { testGroup } from '@/test-utils/groupBuilder';
 
 import { expenseShareText } from '../loaders';
 import {
@@ -225,51 +221,35 @@ describe('whatsapp links', () => {
   });
 });
 
-describe('with the database', () => {
-  let t: TestContext;
-  beforeEach(() => {
-    t = createTestContext();
-  });
-  afterEach(() => t.close());
-
+describe('with group data', () => {
   it('builds the expense text from saved data and the group view carries total and UPI IDs', () => {
-    const deviceUserId = getOrCreateDeviceUserId(t.ctx);
-    const created = createGroup(t.ctx, {
-      name: 'Goa',
-      selfName: 'Asha',
-      otherMemberNames: ['Rahul'],
-      deviceUserId,
-    });
-    if (!created.ok) throw new Error('createGroup failed');
-    const { groupId, selfMemberId: me } = created.value;
-    const rahul = activeMembersQuery(t.ctx.db, groupId)
-      .all()
-      .find((m) => m.displayName === 'Rahul')!.id;
+    const g = testGroup({ name: 'Goa', me: 'Asha', others: ['Rahul'] });
+    const me = g.me;
+    const rahul = g.member('Rahul');
 
-    const result = createExpense(t.ctx, {
-      groupId,
+    const expenseId = g.run('expense.add', {
+      id: g.newId(),
       description: 'Scooty',
       amountPaise: 90000,
       category: 'transport',
       expenseDate: '2026-10-05',
       payers: [{ memberId: me, amountPaise: 90000 }],
       splitInput: { type: 'equal', memberIds: [me, rahul] },
-      actorMemberId: me,
     });
-    if (!result.ok) throw new Error('createExpense failed');
 
-    const text = expenseShareText(t.ctx.db, result.value.expenseId)!;
+    const text = expenseShareText(g.snapshot(), expenseId)!;
     expect(text).toContain('*Scooty*: *₹900*');
     expect(text).toContain('Goa · Transport · 5 Oct 2026');
     expect(text).toContain('• Asha: ₹450');
 
-    const view = loadGroupView(t.ctx.db, groupId, deviceUserId, '2026-10-10')!;
+    const view = loadGroupView(g.snapshot(), g.userId, '2026-10-10', g.activity())!;
     expect(view.totalSpent).toBe(90000);
     expect(view.upiIds.size).toBe(0);
 
-    expect(deleteExpense(t.ctx, result.value.expenseId, me).ok).toBe(true);
-    expect(expenseShareText(t.ctx.db, result.value.expenseId)).toBeNull();
-    expect(expenseShareText(t.ctx.db, 'missing')).toBeNull();
+    g.run('expense.delete', { expenseId, expectedVersion: g.versionOf(expenseId) });
+    expect(expenseShareText(g.snapshot(), expenseId)).toBeNull();
+    expect(expenseShareText(g.snapshot(), 'missing')).toBeNull();
+    expect(expenseShareText(null, expenseId)).toBeNull();
   });
 });
 

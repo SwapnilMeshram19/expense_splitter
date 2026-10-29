@@ -2,19 +2,13 @@ import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { ACTIVITY_PAGE_SIZE } from '@/db/repositories/activity';
-import { getDeviceUserId } from '@/db/session';
-import {
-  loadRecentActivity,
-  RECENT_ACTIVITY_TABLES,
-  type RecentActivityItem,
-} from '@/features/activity/loadRecentActivity';
+import { dataStore } from '@/data';
+import { useActivity, useData } from '@/data/hooks';
+import { useRefreshControl } from '@/data/useRefreshControl';
+import { loadRecentActivity, type RecentActivityItem } from '@/features/activity/loadRecentActivity';
 import { AdSlot } from '@/features/ads/AdSlot';
 import { isAdRow, withActivityAd } from '@/features/ads/adPolicy';
 import { useAdsState } from '@/features/ads/adsRuntime';
-import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { AppText } from '@/ui/AppText';
@@ -23,13 +17,15 @@ import { GroupTile } from '@/ui/GroupTile';
 import { TabHeader } from '@/ui/TabHeader';
 import { useTheme } from '@/ui/theme';
 
-const load = () => loadRecentActivity(db, getDeviceUserId());
-
 export default function ActivityTab() {
   const theme = useTheme();
   const tabBarSpace = useTabBarSpace();
-  const items = useLiveData(RECENT_ACTIVITY_TABLES, load);
-  const refreshControl = useSyncRefreshControl();
+  const activity = useActivity(null);
+  const items = useData(() => {
+    const store = dataStore();
+    return loadRecentActivity(activity.entries, store.groups(), store.planningUserId());
+  }, [activity.entries]);
+  const refreshControl = useRefreshControl();
   // At most one ad, after the 8th entry, and only in long lists.
   const { ready: adsReady } = useAdsState();
   const rows = withActivityAd(items, adsReady);
@@ -45,17 +41,22 @@ export default function ActivityTab() {
         getItemType={(row) => (isAdRow(row) ? 'ad' : 'activity')}
         contentContainerStyle={{ ...styles.list, paddingBottom: tabBarSpace }}
         ListEmptyComponent={
-          <Card style={styles.empty}>
-            <AppText variant="heading">Nothing here yet</AppText>
-            <AppText color={theme.muted}>
-              Changes from all your groups show up here.
-            </AppText>
-          </Card>
+          activity.loading ? null : (
+            <Card style={styles.empty}>
+              <AppText variant="heading">{activity.error ? 'Couldn’t load activity' : 'Nothing here yet'}</AppText>
+              <AppText color={theme.muted}>
+                {activity.error ? 'Check your connection and pull down to try again.' : 'Changes from all your groups show up here.'}
+              </AppText>
+            </Card>
+          )
         }
+        // Older history loads as you scroll.
+        onEndReached={activity.more ? activity.loadMore : undefined}
+        onEndReachedThreshold={0.5}
         ListFooterComponent={
-          items.length >= ACTIVITY_PAGE_SIZE ? (
+          activity.loading ? (
             <AppText variant="caption" color={theme.muted} style={styles.footer}>
-              Latest {ACTIVITY_PAGE_SIZE}. Open a group for more.
+              Loading…
             </AppText>
           ) : null
         }

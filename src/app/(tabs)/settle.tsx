@@ -2,18 +2,16 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { dataStore } from '@/data';
+import { useData } from '@/data/hooks';
+import { useRefreshControl } from '@/data/useRefreshControl';
 import { appContext } from '@/db/appContext';
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { groupMembersQuery } from '@/db/repositories/members';
-import { getDeviceUserId } from '@/db/session';
 import { formatMoney } from '@/domain/currency';
 import { useApprox } from '@/features/fx/useApprox';
-import { loadOverview, OVERVIEW_TABLES, type MyTransfer } from '@/features/overview/loadOverview';
+import { loadOverview, type MyTransfer } from '@/features/overview/loadOverview';
 import { getPendingUpiPayment } from '@/features/upi/pendingUpiPayment';
 import { useRegionPreference } from '@/features/region/regionPreference';
 import { PendingUpiBanner } from '@/features/upi/PendingUpiBanner';
-import { useSyncRefreshControl } from '@/sync/useSyncRefreshControl';
 import { ScreenGlow } from '@/ui/ScreenGlow';
 import { useTabBarSpace } from '@/ui/tabBarSpace';
 import { AppText } from '@/ui/AppText';
@@ -24,7 +22,10 @@ import { Icon } from '@/ui/Icon';
 import { TabHeader } from '@/ui/TabHeader';
 import { useTheme } from '@/ui/theme';
 
-const load = () => loadOverview(db, getDeviceUserId());
+const load = () => {
+  const store = dataStore();
+  return loadOverview(store.groups(), store.planningUserId());
+};
 
 interface PendingContext {
   groupId: string;
@@ -34,13 +35,13 @@ interface PendingContext {
 export default function SettleTab() {
   const theme = useTheme();
   const tabBarSpace = useTabBarSpace();
-  const overview = useLiveData(OVERVIEW_TABLES, load);
-  const refreshControl = useSyncRefreshControl();
+  const overview = useData(load);
+  const refreshControl = useRefreshControl();
   const [pending, setPending] = useState<PendingContext | null>(null);
   const { homeCurrency } = useRegionPreference();
   const approx = useApprox(overview.transfers.some((t) => t.currency !== homeCurrency));
 
-  // The pending UPI payment lives in settings, which useLiveData doesn't watch: re-read on focus
+  // The pending UPI payment lives in local settings, which the data store doesn't watch: re-read on focus
   // (same approach as the group screen's banner, which this renders).
   useFocusEffect(
     useCallback(() => {
@@ -49,7 +50,7 @@ export default function SettleTab() {
         p
           ? {
               groupId: p.groupId,
-              names: new Map(groupMembersQuery(db, p.groupId).all().map((m) => [m.id, m.displayName])),
+              names: new Map((dataStore().group(p.groupId)?.members ?? []).map((m) => [m.id, m.displayName])),
             }
           : null,
       );

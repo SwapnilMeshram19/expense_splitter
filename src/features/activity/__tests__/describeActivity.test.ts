@@ -1,4 +1,4 @@
-import type { ActivityLogEntry } from '@/db/schema';
+import type { ActivityEntry as ActivityLogEntry } from '@/domain/model';
 
 import { describeActivity, formatTimestamp, type ActivityContext } from '../describeActivity';
 
@@ -15,7 +15,6 @@ const entry = (patch: Partial<ActivityLogEntry>): ActivityLogEntry => ({
   before: null,
   after: null,
   createdAt: 0,
-  dirty: true,
   ...patch,
 });
 

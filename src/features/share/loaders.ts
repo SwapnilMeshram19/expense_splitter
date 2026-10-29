@@ -1,24 +1,18 @@
-import type { AppDb } from '@/db/context';
-import { getExpense } from '@/db/repositories/expenses';
-import { getGroup } from '@/db/repositories/groups';
-import { groupMembersQuery } from '@/db/repositories/members';
+import { expenseDetailOf } from '@/data/selectors';
+import type { GroupSnapshot } from '@/domain/model';
 import { categoryDisplayName } from '@/features/expenses/categoryNames';
 
 import { expenseMessage } from './messages';
 
-/** The WhatsApp text for one expense, read fresh at tap time; null if it's gone. */
-export function expenseShareText(db: AppDb, expenseId: string): string | null {
-  const detail = getExpense(db, expenseId);
-  if (!detail || detail.expense.deletedAt !== null) return null;
+/** The WhatsApp text for one expense, from the group as shown now; null if it's gone. */
+export function expenseShareText(snapshot: GroupSnapshot | null, expenseId: string): string | null {
+  if (!snapshot) return null;
+  const detail = expenseDetailOf(snapshot, expenseId);
+  if (!detail) return null;
   const { expense } = detail;
-  const group = getGroup(db, expense.groupId);
-  if (!group) return null;
+  const group = snapshot.group;
 
-  const names = new Map(
-    groupMembersQuery(db, group.id)
-      .all()
-      .map((m) => [m.id, m.displayName]),
-  );
+  const names = new Map(snapshot.members.map((m) => [m.id, m.displayName]));
   const name = (id: string) => names.get(id) ?? 'Someone';
 
   return expenseMessage({

@@ -13,7 +13,7 @@
 set -euo pipefail
 
 REF="cudmaszrwrbgwsoizajd"
-FUNCTIONS=(sync-push fx-refresh push-send)
+FUNCTIONS=(api sync-push fx-refresh push-send)
 
 die() { echo "error: $*" >&2; exit 1; }
 

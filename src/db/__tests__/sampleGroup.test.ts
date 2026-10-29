@@ -1,7 +1,5 @@
-import { loadOverview } from '@/features/overview/loadOverview';
-import { addExpenseGroups } from '@/features/overview/openAddExpense';
-import { collectPushBatch } from '@/sync/engine';
-import { countPendingChanges } from '@/sync/issueActions';
+import { collectPushBatch } from '@/legacy/sync/engine';
+import { countPendingChanges } from '@/legacy/sync/issueActions';
 
 import { createExpense } from '../repositories/expenses';
 import { activeGroupsQuery, createGroup } from '../repositories/groups';
@@ -96,15 +94,6 @@ describe('a leftover example, if cleanup never ran', () => {
     );
     expect(rowGroupIds).not.toContain(sampleId);
     expect(countPendingChanges(t.ctx)).toBe(batch.groups.length + batch.members.length + batch.activity.length);
-  });
-
-  it('is hidden from Home, Settle and "+"', () => {
-    legacySample();
-    expect(loadOverview(t.ctx.db, me, '2026-10-18')).toEqual({ groups: [], totals: [], transfers: [] });
-    const real = makeGroup('Flat');
-    expect(loadOverview(t.ctx.db, me, '2026-10-18').groups.map((g) => g.group.id)).toEqual([real.groupId]);
-    const all = activeGroupsQuery(t.ctx.db).all();
-    expect(addExpenseGroups(all, sampleGroupIds(t.ctx.db)).map((g) => g.id)).toEqual([real.groupId]);
   });
 
   it('keeps the id list in the local settings table only', () => {

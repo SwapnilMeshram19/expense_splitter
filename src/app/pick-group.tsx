@@ -3,25 +3,25 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { getDeviceUserId } from '@/db/session';
-import { sampleGroupIds } from '@/db/repositories/sampleIds';
-import { addExpenseGroups, editableGroups } from '@/features/overview/openAddExpense';
+import { dataStore } from '@/data';
+import { useData } from '@/data/hooks';
+import { editableGroups } from '@/features/overview/openAddExpense';
 import { AppText } from '@/ui/AppText';
 import { Button } from '@/ui/Button';
 import { GroupTile } from '@/ui/GroupTile';
 import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
 
-const TABLES = ['groups', 'members', 'settings'];
-const load = () => addExpenseGroups(editableGroups(db, getDeviceUserId()), sampleGroupIds(db));
+const load = () => {
+  const store = dataStore();
+  return editableGroups(store.groups(), store.planningUserId());
+};
 
 /** Opened by the centre "+" when there are several groups. Read-only groups aren't offered. */
 export default function PickGroupScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const groups = useLiveData(TABLES, load);
+  const groups = useData(load);
 
   return (
     <View style={styles.container}>

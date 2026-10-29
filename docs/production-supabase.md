@@ -47,8 +47,11 @@ automatically the first time FCM rejects them.
 | ------------------------------- | ----------------------------------------------------------------------- |
 | Emails → SMTP Settings          | Custom SMTP on (Brevo). Without it, real users never get a sign-in code |
 | Emails → Templates → Magic Link | Body from `supabase/templates/email-otp.html`                           |
+| Emails → Templates → Change Email | Body from `supabase/templates/email-change-otp.html` (must show `{{ .Token }}`) |
+| Sign In / Providers → Anonymous | **On** (everyone starts with an anonymous account: `docs/server-first.md`) |
+| Sign In / Providers → Manual linking | **On** (saving an anonymous account to Google)                     |
 | Sign In / Providers → Email     | OTP length 6, expiry 600 s (the app says 10 min)                        |
-| Rate Limits                     | Emails per hour: 60                                                     |
+| Rate Limits                     | Emails per hour: 60; anonymous sign-ins per hour per IP: 30             |
 | URL Configuration               | Site URL `https://split.ssoftapp.in`                                    |
 | Sign In / Providers → Google    | Enabled, the **Web** client ID + secret, "Skip nonce checks" off        |
 
@@ -67,7 +70,7 @@ reads the same two. Add one more:
 
 ```bash
 npm run db:push                          # migrations
-npm run functions:deploy                 # all three Edge Functions
+npm run functions:deploy                 # all Edge Functions (api, sync-push, fx-refresh, push-send)
 npm run functions:deploy -- push-send    # just one
 ```
 
@@ -87,5 +90,6 @@ keeps the last few dumps as private artifacts.
 | Pauses after 7 days without requests | covered by keep-alive (Mon & Thu)                      | —                                      |
 | 500 MB database                      | text rows are small; thousands of active groups fit    | archive old activity                   |
 | 1 GB file storage                    | receipt photos (≤ 1 MB, usually ~150–300 KB): ~4,000+  | delete receipts of long-settled groups |
-| 5 GB egress / month                  | sync is small; receipt downloads are the main use      | download receipts only when opened     |
+| 5 GB egress / month                  | a refresh sends only groups whose `rev` changed; receipts are the main use | download receipts only when opened     |
+| 50,000 monthly active users (Auth)   | anonymous accounts count; ones in no group and idle 30 days are deleted nightly | — (far above expected use)             |
 | Brevo 300 emails/day                 | one email per email sign-in; Google sign-in sends none | second free Brevo account              |

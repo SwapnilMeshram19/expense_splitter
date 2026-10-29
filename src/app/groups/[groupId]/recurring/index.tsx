@@ -1,11 +1,9 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { db } from '@/db/client';
-import { useLiveData } from '@/db/hooks/useLiveData';
-import { getGroup } from '@/db/repositories/groups';
-import { groupRulesQuery, ruleProblem } from '@/db/repositories/recurring';
+import { dataStore } from '@/data';
+import { useData } from '@/data/hooks';
+import { ruleProblem } from '@/data/selectors';
 import { formatMoney } from '@/domain/currency';
 import { describeSchedule, nextOccurrence } from '@/domain/recurrence';
 import { formatIsoDate, todayIsoDate } from '@/lib/dates';
@@ -15,22 +13,18 @@ import { CategoryTile } from '@/ui/CategoryTile';
 import { Icon } from '@/ui/Icon';
 import { useTheme } from '@/ui/theme';
 
-const TABLES = ['recurring_rules', 'members', 'groups'] as const;
-
 function loadRules(groupId: string) {
-  const group = getGroup(db, groupId);
-  if (!group) return null;
+  const snapshot = dataStore().group(groupId);
+  if (!snapshot) return null;
   const today = todayIsoDate();
   return {
-    currency: group.currency,
-    rules: groupRulesQuery(db, groupId)
-      .all()
-      .map((rule) => ({
-        rule,
-        schedule: describeSchedule(rule.frequency, rule.startDate),
-        next: nextOccurrence(rule, today),
-        problem: ruleProblem(db, rule),
-      })),
+    currency: snapshot.group.currency,
+    rules: snapshot.rules.map((rule) => ({
+      rule,
+      schedule: describeSchedule(rule.frequency, rule.startDate),
+      next: nextOccurrence(rule, today),
+      problem: ruleProblem(snapshot, rule),
+    })),
   };
 }
 
@@ -38,8 +32,7 @@ function loadRules(groupId: string) {
 export default function RecurringListScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const theme = useTheme();
-  const compute = useCallback(() => loadRules(groupId), [groupId]);
-  const view = useLiveData(TABLES, compute);
+  const view = useData(() => loadRules(groupId), [groupId]);
 
   return (
     <>
