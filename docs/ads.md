@@ -29,7 +29,7 @@ Never put real unit IDs in a dev build: clicks on your own live ads get the acco
 2. **Ad units → Banner**, two units: `Home banner` and `Activity banner`. Copy both unit IDs
    (`ca-app-pub-…/…`).
 3. **Privacy & messaging → European regulations (GDPR)**: create a message for the app (default
-   options; add the privacy policy URL `https://split.ssoftapp.in/privacy`) and publish it. Without
+   options; add the privacy policy URL `https://expense-splitter.ssoftapp.in/privacy`) and publish it. Without
    it, EEA/UK users get no ads at all.
 4. **app-ads.txt**: AdMob shows a line like
    `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`. Serve it at

@@ -180,12 +180,12 @@ export function buildConfig(variant: AppVariant, options: BuildOptions = {}): Ex
       },
       ...(options.googleServicesFile ? { googleServicesFile: options.googleServicesFile } : {}),
       // Same filter in both variants so invite links can be tested on the dev app. Verification
-      // (autoVerify) only succeeds for packages listed in split.ssoftapp.in/.well-known/assetlinks.json.
+      // (autoVerify) only succeeds for packages listed in expense-splitter.ssoftapp.in/.well-known/assetlinks.json.
       intentFilters: [
         {
           action: 'VIEW',
           autoVerify: true,
-          data: [{ scheme: 'https', host: 'split.ssoftapp.in', pathPrefix: '/join' }],
+          data: [{ scheme: 'https', host: 'expense-splitter.ssoftapp.in', pathPrefix: '/join' }],
           category: ['BROWSABLE', 'DEFAULT'],
         },
       ],

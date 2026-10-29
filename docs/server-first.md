@@ -88,7 +88,7 @@ ESLint (`no-restricted-imports`) stops screens from importing the old repositori
 3. Edge Function secret for the web app (comma-separated, no trailing slash needed):
 
    ```bash
-   npx supabase secrets set WEB_ORIGINS="https://split.ssoftapp.in,http://localhost:5173" --project-ref cudmaszrwrbgwsoizajd
+   npx supabase secrets set WEB_ORIGINS="https://expense-splitter.ssoftapp.in,http://localhost:5173" --project-ref cudmaszrwrbgwsoizajd
    ```
 
    Without it the API sends no CORS headers: the mobile app works, browsers are refused. The web

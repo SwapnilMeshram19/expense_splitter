@@ -1,5 +1,5 @@
 /**
- * Invite links land here: https://split.ssoftapp.in/join/?code=ABCD-EFGH (what the app shares)
+ * Invite links land here: https://expense-splitter.ssoftapp.in/join/?code=ABCD-EFGH (what the app shares)
  * or /join/ABCD-EFGH.
  *
  * With the app installed and the domain verified (assetlinks.json), Android opens the app before
@@ -34,7 +34,7 @@ const playStoreUrl = (): string =>
 /** Android Chrome: open the app on this link if installed, else the Play Store. */
 function appIntentUrl(code: string): string {
   const fallback = encodeURIComponent(playStoreUrl());
-  return `intent://split.ssoftapp.in/join/?code=${formatInviteCode(code)}#Intent;scheme=https;package=${APP_PACKAGE};S.browser_fallback_url=${fallback};end`;
+  return `intent://expense-splitter.ssoftapp.in/join/?code=${formatInviteCode(code)}#Intent;scheme=https;package=${APP_PACKAGE};S.browser_fallback_url=${fallback};end`;
 }
 
 const isAndroid = () => /Android/i.test(navigator.userAgent);

@@ -49,7 +49,7 @@ import { setAccent, setThemeMode, useThemePreference, type ThemeMode } from '@/u
 
 import { isGoogleSignInAvailable } from '../../../modules/google-credential';
 
-const PRIVACY_URL = 'https://split.ssoftapp.in/privacy/';
+const PRIVACY_URL = 'https://expense-splitter.ssoftapp.in/privacy/';
 const SUPPORT_EMAIL = 'support@ssoftapp.in';
 
 const THEME_OPTIONS: readonly { value: ThemeMode; label: string }[] = [

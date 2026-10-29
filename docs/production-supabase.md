@@ -52,7 +52,7 @@ automatically the first time FCM rejects them.
 | Sign In / Providers → Manual linking | **On** (saving an anonymous account to Google)                     |
 | Sign In / Providers → Email     | OTP length 6, expiry 600 s (the app says 10 min)                        |
 | Rate Limits                     | Emails per hour: 60; anonymous sign-ins per hour per IP: 30             |
-| URL Configuration               | Site URL `https://split.ssoftapp.in`                                    |
+| URL Configuration               | Site URL `https://expense-splitter.ssoftapp.in`                                    |
 | Sign In / Providers → Google    | Enabled, the **Web** client ID + secret, "Skip nonce checks" off        |
 
 The Play build needs one more Google **Android** OAuth client (package `in.ssoftapp.split`, Play app

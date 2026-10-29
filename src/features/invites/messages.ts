@@ -1,7 +1,7 @@
 /** Invite codes: 8 characters from an alphabet without 0/O, 1/I/L, U. Shown as ABCD-EFGH. */
 const CODE_RE = /^[2-9A-HJKMNP-TV-Z]{8}$/;
 
-export const INVITE_BASE_URL = 'https://split.ssoftapp.in/join/';
+export const INVITE_BASE_URL = 'https://expense-splitter.ssoftapp.in/join/';
 
 export const normalizeInviteCode = (raw: string): string => raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
 

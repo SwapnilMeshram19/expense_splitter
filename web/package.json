@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Expense Splitter in the browser (split.ssoftapp.in). Reuses src/domain, src/api and src/data from the app.",
+  "description": "Expense Splitter in the browser (expense-splitter.ssoftapp.in). Reuses src/domain, src/api and src/data from the app.",
   "engines": {
     "node": ">=22.12"
   },

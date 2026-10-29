@@ -32,8 +32,8 @@ Everything below is free.
    repo secret with it. The dev build stops with a clear error if the secret lacks the dev package.
 3. **Env file in the Codespace.** `mv .env.local .env.development.local` (same values). Restart with
    `npx expo start -c`.
-4. **Invite links (optional).** `https://split.ssoftapp.in/join/…` opens the app without a chooser
-   only for packages listed in `https://split.ssoftapp.in/.well-known/assetlinks.json`. Add an entry
+4. **Invite links (optional).** `https://expense-splitter.ssoftapp.in/join/…` opens the app without a chooser
+   only for packages listed in `https://expense-splitter.ssoftapp.in/.well-known/assetlinks.json`. Add an entry
    for `in.ssoftapp.split.dev` with the dev SHA-256 if you want that on the dev app too; otherwise
    enable it under Android Settings → Apps → Split Dev → Open by default.
 

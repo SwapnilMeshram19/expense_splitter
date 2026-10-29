@@ -93,7 +93,7 @@ migrations, run the readiness check, clear test data, add `GOOGLE_WEB_CLIENT_ID`
 7. AdMob → your app → **Link to app store** once Play shows the listing; this starts AdMob's review.
    Until it's approved, expect few or no live ads. Register your phone under **AdMob → Settings →
    Test devices** first, so you see test ads and never click your own live ones.
-8. `assetlinks.json` at `https://split.ssoftapp.in/.well-known/assetlinks.json` with the app signing
+8. `assetlinks.json` at `https://expense-splitter.ssoftapp.in/.well-known/assetlinks.json` with the app signing
    SHA-256, so invite links open the app directly.
 
 Play asks for the store listing, content rating, Data safety, Ads declaration and target audience

@@ -1,4 +1,4 @@
-# Web app (split.ssoftapp.in)
+# Web app (expense-splitter.ssoftapp.in)
 
 The browser version of Expense Splitter. Invite links open it when the app isn't installed, and
 anyone can use it without installing anything.
@@ -79,7 +79,7 @@ Paste commands one at a time.
 ### 1. Allow the web origins in the `api` function
 
 ```bash
-npx supabase secrets set WEB_ORIGINS="https://split.ssoftapp.in,http://localhost:5173" --project-ref cudmaszrwrbgwsoizajd
+npx supabase secrets set WEB_ORIGINS="https://expense-splitter.ssoftapp.in,http://localhost:5173" --project-ref cudmaszrwrbgwsoizajd
 ```
 
 Testing from a browser-based Codespace (an `https://…-5173.app.github.dev` address)? Add that origin
@@ -91,7 +91,7 @@ forwarded port is plain `http://localhost:5173`.
 1. Google Cloud console → **APIs & Services** → **Credentials**.
 2. Open the **Web client** (the same one as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`).
 3. Under **Authorized JavaScript origins**, click **Add URI** for each of these:
-   - `https://split.ssoftapp.in`
+   - `https://expense-splitter.ssoftapp.in`
    - `http://localhost:5173`
    - `http://localhost`
 4. Click **Save**. Changes can take a few minutes to apply.
@@ -115,16 +115,29 @@ tokens.
 5. Project → **Settings** → **Build** → **Build watch paths** → **Include paths**: `web/*`, `src/*`.
    This stops app-only commits from using builds (free plan: 500 builds a month).
 
-### 4. Move split.ssoftapp.in from GitHub Pages
+### 4. Put the site on expense-splitter.ssoftapp.in
 
 1. Pages project → **Custom domains** → **Set up a custom domain**.
-2. Enter `split.ssoftapp.in` and click **Continue**. Cloudflare offers to replace the existing DNS
-   record (the CNAME to GitHub Pages). Click **Activate domain**.
-3. In the GitHub repository that served the old invite page: **Settings** → **Pages** → remove the
-   custom domain, so GitHub stops claiming it.
-4. Check:
-   - `https://split.ssoftapp.in/join/?code=ABCD-EFGH` shows "That code doesn't work".
-   - `https://split.ssoftapp.in/privacy/` loads.
+2. Enter `expense-splitter.ssoftapp.in` → **Continue** → **Activate domain**. The DNS is already on
+   Cloudflare, so it adds the CNAME itself.
+
+   Not `expensesplitter.ssoftapp.in` (no hyphen): that name holds the Brevo email records, and a
+   CNAME can't share a name with other records. Email keeps sending from
+   `noreply@expensesplitter.ssoftapp.in` unchanged.
+3. Check:
+   - `https://expense-splitter.ssoftapp.in/join/?code=ABCD-EFGH` shows "That code doesn't work".
+   - `https://expense-splitter.ssoftapp.in/privacy/` loads.
+4. The old `split.ssoftapp.in` (GitHub Pages): invite links made before this change point there.
+   They expire after 7 days and the app isn't public yet, so you can simply retire it:
+   - in the GitHub repository that served it: **Settings** → **Pages** → remove the custom domain;
+   - Cloudflare → `ssoftapp.in` → **DNS** → delete the `split` record.
+
+   Or, to keep old links working, make it a redirect instead of deleting it (free):
+   - keep the `split` DNS record but set it to **Proxied** (orange cloud);
+   - **Rules** → **Redirect Rules** → **Create rule**:
+     - When: hostname equals `split.ssoftapp.in`
+     - Then: **Dynamic**, expression `concat("https://expense-splitter.ssoftapp.in", http.request.uri.path)`,
+       status 301, **Preserve query string** on.
 
 ### 5. Android App Links (after Play App Signing is set up)
 

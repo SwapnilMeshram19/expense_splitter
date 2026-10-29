@@ -5,7 +5,7 @@
  * domain and no client secret.
  *
  * Needs, in Google Cloud → Credentials → the Web client → Authorized JavaScript origins:
- * https://split.ssoftapp.in and http://localhost:5173 (and http://localhost).
+ * https://expense-splitter.ssoftapp.in and http://localhost:5173 (and http://localhost).
  *
  * The script is loaded only when the Account screen shows the button, so other pages make no
  * request to Google.
