@@ -149,6 +149,14 @@ tokens.
 Until it exists, invite links open the web page. On Android, its **Open in the app** button opens the
 app if installed, or the Play Store otherwise.
 
+## Troubleshooting
+
+| What you see | Cause | Fix |
+| ------------ | ----- | --- |
+| Red banner "Can’t reach the server" while online | Usually CORS: the page's origin isn't in `WEB_ORIGINS`. In dev the console names the origin to add. | Add the exact origin (scheme + host + port) to the secret. |
+| Red banner about creating an account | Anonymous sign-ins are off, or the 30/h per-IP limit was hit | Supabase → Authentication → Sign In / Providers. |
+| "1 change waiting to send" that never clears | One of the two above: the change is kept and retried every 20 s | Fix the cause; it sends on its own, or tap **Retry now**. |
+
 ## Running it
 
 ```bash

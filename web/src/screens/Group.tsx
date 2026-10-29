@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Link } from 'wouter';
 
 import { dataStore } from '@/data';
@@ -6,7 +6,6 @@ import { runCommand, useData } from '@/data/hooks';
 import { formatMoney } from '@/domain/currency';
 import { MAX_NAME_LENGTH } from '@/domain/names';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
-import { categoryDisplayName } from '@/features/expenses/categoryNames';
 import { loadGroupView, type HistoryRow } from '@/features/groups/loadGroupView';
 import { describeMemberError } from '@/features/groups/messages';
 import { createInvite } from '@/features/invites/inviteApi';
@@ -22,7 +21,17 @@ import { newId } from '@/lib/newId';
 
 import { useAuth } from '../platform/auth';
 import { useScreenOpen } from '../ui/hooks';
-import { Avatar, Card, ErrorText, Icon, Message, Spinner } from '../ui/kit';
+import {
+  Avatar,
+  AvatarStack,
+  Card,
+  CardHead,
+  CategoryTile,
+  ErrorText,
+  Icon,
+  Message,
+  Spinner,
+} from '../ui/kit';
 
 type View = NonNullable<ReturnType<typeof loadGroupView>>;
 
@@ -60,16 +69,16 @@ function HistoryList({ rows, view, groupId }: { rows: HistoryRow[]; view: View; 
           const mine = describeMyExpenseShare(row.myNet, row.involved, currency);
           const content = (
             <>
+              <CategoryTile category={expense.category} />
               <div className="grow">
-                <div className="ellipsis">
-                  <strong>{expense.description}</strong> <PendingChip id={expense.id} />
+                <div className="row-title ellipsis">
+                  {expense.description} <PendingChip id={expense.id} />
                 </div>
-                <div className="small muted ellipsis">
-                  {paidBy} paid {formatMoney(expense.amountPaise, currency)} ·{' '}
-                  {categoryDisplayName(expense.category, expense.categoryLabel)}
+                <div className="row-sub ellipsis">
+                  {paidBy} paid {formatMoney(expense.amountPaise, currency)}
                 </div>
               </div>
-              <div className={`small ${mine.tone}`} style={{ textAlign: 'right' }}>
+              <div className={`row-end ${mine.tone}`}>
                 <div>{mine.lead}</div>
                 {mine.amount ? <div className="amount">{mine.amount}</div> : null}
               </div>
@@ -92,14 +101,17 @@ function HistoryList({ rows, view, groupId }: { rows: HistoryRow[]; view: View; 
         const s = row.settlement;
         return (
           <div key={row.key} className="list-row static">
+            <span className="tile sw-2" aria-hidden="true">
+              <Icon name="check" />
+            </span>
             <div className="grow">
-              <div className="ellipsis">
+              <div className="row-title ellipsis">
                 {nameOf(s.fromMemberId)} paid{' '}
                 {s.toMemberId === view.me ? 'you' : nameOf(s.toMemberId)} <PendingChip id={s.id} />
               </div>
-              <div className="small muted">{METHOD_LABELS[s.method]}</div>
+              <div className="row-sub">Payment by {METHOD_LABELS[s.method]}</div>
             </div>
-            <span className="amount">{formatMoney(s.amountPaise, currency)}</span>
+            <span className="row-end amount">{formatMoney(s.amountPaise, currency)}</span>
           </div>
         );
       })}
@@ -224,6 +236,24 @@ function Invite({ groupId, groupName }: { groupId: string; groupName: string }) 
   );
 }
 
+/**
+ * True once `ref` has scrolled out of view: the phone's floating "Add expense" appears only when
+ * the buttons under the bill are gone, so there's never two of them on screen.
+ */
+function useScrolledPast(ref: RefObject<HTMLElement | null>, ready: boolean): boolean {
+  const [past, setPast] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([entry]) =>
+      setPast(!entry!.isIntersecting && entry!.boundingClientRect.top < 0),
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, ready]);
+  return past;
+}
+
 export function GroupScreen({ groupId }: { groupId: string }) {
   const view = useData(
     () => loadGroupView(dataStore().group(groupId), dataStore().planningUserId(), todayIsoDate()),
@@ -233,6 +263,8 @@ export function GroupScreen({ groupId }: { groupId: string }) {
     () => !dataStore().getStatus().loadedFromServer && dataStore().getStatus().refreshing,
   );
   useScreenOpen(view?.group.name ?? 'Group');
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const showFab = useScrolledPast(actionsRef, !!view);
 
   if (!view) {
     if (loading) return <Spinner label="Loading the group…" />;
@@ -249,123 +281,174 @@ export function GroupScreen({ groupId }: { groupId: string }) {
   const balance = describeMyBalance(view.myBalance, view.group.currency);
   const nameOf = (id: string) => (id === view.me ? 'You' : (view.names.get(id) ?? 'Someone'));
   const currency = view.group.currency;
+  const people = view.activeMembers.map((m) => ({ id: m.id, name: m.name }));
+
+  const whoOwes =
+    view.transfers.length > 0 ? (
+      <Card flush>
+        <CardHead title="Who owes whom" />
+        {view.transfers.map((t) => {
+          const involvesMe = t.fromMemberId === view.me || t.toMemberId === view.me;
+          const from = nameOf(t.fromMemberId);
+          const to = t.toMemberId === view.me ? 'you' : nameOf(t.toMemberId);
+          return (
+            <div key={`${t.fromMemberId}-${t.toMemberId}`} className="list-row static">
+              <Avatar name={view.names.get(t.fromMemberId) ?? '?'} seed={t.fromMemberId} />
+              <div className="grow">
+                <div className="row-title ellipsis">
+                  {t.fromMemberId === view.me ? `You pay ${to}` : `${from} pays ${to}`}
+                </div>
+                <div className="row-sub amount">{formatMoney(t.amountPaise, currency)}</div>
+              </div>
+              {view.canEdit && involvesMe ? (
+                <Link
+                  href={`/groups/${groupId}/settle?from=${t.fromMemberId}&to=${t.toMemberId}&amount=${t.amountPaise}`}
+                  className="btn small secondary"
+                >
+                  {t.fromMemberId === view.me ? 'Pay' : 'Record'}
+                </Link>
+              ) : null}
+            </div>
+          );
+        })}
+      </Card>
+    ) : view.expenseCount > 0 ? (
+      <div className="banner info">
+        <Icon name="check" /> Everyone is settled up.
+      </div>
+    ) : null;
 
   return (
     <>
-      <div className="row">
+      <div className="page-head">
         <Link href="/" className="icon-btn" aria-label="Back to groups">
           <Icon name="back" />
         </Link>
         <div className="grow">
           <h1 className="ellipsis">{view.group.name}</h1>
           <p className="small muted ellipsis">
-            {view.activeMembers.map((m) => nameOf(m.id)).join(', ')}
+            {people.length} {people.length === 1 ? 'person' : 'people'}
           </p>
         </div>
       </div>
 
-      <div className="hero">
-        <span className="label">{capitalize(balance.lead)}</span>
-        <span className="big">{balance.amount ?? '✓'}</span>
-        <span className="label">Total spent {formatMoney(view.totalSpent, currency)}</span>
-      </div>
+      <div className="group-layout">
+        <div className="group-side">
+          <div className="bill">
+            <span className="bill-label">{capitalize(balance.lead)}</span>
+            <span className="bill-amount">{balance.amount ?? 'Nothing owed'}</span>
+            <hr className="perforation" />
+            <div className="bill-foot">
+              <AvatarStack people={people} />
+              <span>Spent {formatMoney(view.totalSpent, currency)}</span>
+            </div>
+          </div>
 
-      {view.canEdit ? (
-        <div className="row">
-          <Link href={`/groups/${groupId}/expenses/new`} className="btn grow">
-            Add expense
-          </Link>
-          <Link href={`/groups/${groupId}/settle`} className="btn secondary grow">
-            Settle up
-          </Link>
-        </div>
-      ) : (
-        <div className="banner warn">
-          You’re no longer a member of this group. You can look, but not change anything.
-        </div>
-      )}
+          {view.canEdit ? (
+            <div className="actions" ref={actionsRef}>
+              <Link href={`/groups/${groupId}/expenses/new`} className="btn">
+                <Icon name="plus" size={18} /> Add expense
+              </Link>
+              <Link href={`/groups/${groupId}/settle`} className="btn secondary">
+                <Icon name="swap" size={18} /> Settle up
+              </Link>
+            </div>
+          ) : (
+            <div className="banner warn">
+              You’re no longer in this group. You can look, but not change anything.
+            </div>
+          )}
 
-      {view.transfers.length > 0 ? (
-        <Card flush>
-          <h2 style={{ padding: '16px 16px 4px' }}>Who owes whom</h2>
-          {view.transfers.map((t) => {
-            const involvesMe = t.fromMemberId === view.me || t.toMemberId === view.me;
-            return (
-              <div key={`${t.fromMemberId}-${t.toMemberId}`} className="list-row static">
-                <div className="grow">
-                  {t.fromMemberId === view.me
-                    ? `You pay ${nameOf(t.toMemberId)}`
-                    : `${nameOf(t.fromMemberId)} pays ${t.toMemberId === view.me ? 'you' : nameOf(t.toMemberId)}`}
-                  <div className="amount">{formatMoney(t.amountPaise, currency)}</div>
-                </div>
-                {view.canEdit && involvesMe ? (
-                  <Link
-                    href={`/groups/${groupId}/settle?from=${t.fromMemberId}&to=${t.toMemberId}&amount=${t.amountPaise}`}
-                    className="btn small secondary"
-                  >
-                    {t.fromMemberId === view.me ? 'Pay' : 'Record'}
+          {whoOwes}
+
+          <Card className="hide-mobile">
+            <PeopleList view={view} nameOf={nameOf} groupId={groupId} />
+          </Card>
+        </div>
+
+        <div className="group-main">
+          <Card flush>
+            <CardHead title="Expenses" />
+            {view.history.length === 0 && !view.settled ? (
+              <div className="center">
+                <p className="muted">No expenses yet. Add the first one, like a cab or dinner.</p>
+                {view.canEdit ? (
+                  <Link href={`/groups/${groupId}/expenses/new`} className="btn small">
+                    Add expense
                   </Link>
                 ) : null}
               </div>
-            );
-          })}
-        </Card>
-      ) : view.expenseCount > 0 ? (
-        <div className="banner info">Everyone is settled up.</div>
-      ) : null}
+            ) : (
+              <HistoryList rows={view.history} view={view} groupId={groupId} />
+            )}
+            {view.settled ? (
+              <details className="settled">
+                <summary>
+                  Settled up through {view.settled.through}: {view.settled.expenseCount}{' '}
+                  {view.settled.expenseCount === 1 ? 'expense' : 'expenses'},{' '}
+                  {formatMoney(view.settled.total, currency)}
+                </summary>
+                <HistoryList rows={view.settled.history} view={view} groupId={groupId} />
+              </details>
+            ) : null}
+          </Card>
 
-      <Card flush>
-        <h2 style={{ padding: '16px 16px 4px' }}>Expenses</h2>
-        {view.history.length === 0 && !view.settled ? (
-          <p className="muted" style={{ padding: '8px 16px 16px' }}>
-            No expenses yet.
-          </p>
-        ) : (
-          <HistoryList rows={view.history} view={view} groupId={groupId} />
-        )}
-        {view.settled ? (
-          <details className="settled">
-            <summary>
-              Settled up through {view.settled.through}: {view.settled.expenseCount}{' '}
-              {view.settled.expenseCount === 1 ? 'expense' : 'expenses'},{' '}
-              {formatMoney(view.settled.total, currency)}
-            </summary>
-            <HistoryList rows={view.settled.history} view={view} groupId={groupId} />
-          </details>
-        ) : null}
-      </Card>
+          <Card className="show-mobile-only">
+            <PeopleList view={view} nameOf={nameOf} groupId={groupId} />
+          </Card>
 
-      <Card>
-        <h2>People</h2>
-        <div className="stack">
-          {view.memberBalances.map((m) => {
-            const amount = m.balance;
-            return (
-              <div key={m.id} className="row">
-                <Avatar name={view.names.get(m.id) ?? '?'} />
-                <span className="grow ellipsis">{nameOf(m.id)}</span>
-                <span
-                  className={`small amount ${amount > 0 ? 'positive' : amount < 0 ? 'negative' : 'muted'}`}
-                >
-                  {amount > 0
-                    ? `gets back ${formatMoney(amount, currency)}`
-                    : amount < 0
-                      ? `owes ${formatMoney(-amount, currency)}`
-                      : 'settled'}
-                </span>
-              </div>
-            );
-          })}
+          {view.canEdit ? (
+            <Card>
+              <CardHead title="Invite people" />
+              <Invite groupId={groupId} groupName={view.group.name} />
+            </Card>
+          ) : null}
         </div>
-        {view.canEdit ? <AddPerson groupId={groupId} currency={currency} /> : null}
-      </Card>
+      </div>
 
-      {view.canEdit ? (
-        <Card>
-          <h2>Invite</h2>
-          <Invite groupId={groupId} groupName={view.group.name} />
-        </Card>
+      {view.canEdit && showFab ? (
+        <Link href={`/groups/${groupId}/expenses/new`} className="btn fab">
+          <Icon name="plus" size={18} /> Add expense
+        </Link>
       ) : null}
+    </>
+  );
+}
+
+function PeopleList({
+  view,
+  nameOf,
+  groupId,
+}: {
+  view: View;
+  nameOf: (id: string) => string;
+  groupId: string;
+}) {
+  const currency = view.group.currency;
+  return (
+    <>
+      <CardHead title="People" />
+      <div className="stack">
+        {view.memberBalances.map((m) => {
+          const amount = m.balance;
+          return (
+            <div key={m.id} className="row">
+              <Avatar name={view.names.get(m.id) ?? '?'} seed={m.id} />
+              <span className="grow ellipsis">{nameOf(m.id)}</span>
+              <span
+                className={`small amount ${amount > 0 ? 'positive' : amount < 0 ? 'negative' : 'muted'}`}
+              >
+                {amount > 0
+                  ? `gets back ${formatMoney(amount, currency)}`
+                  : amount < 0
+                    ? `owes ${formatMoney(-amount, currency)}`
+                    : 'settled'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {view.canEdit ? <AddPerson groupId={groupId} currency={currency} /> : null}
     </>
   );
 }

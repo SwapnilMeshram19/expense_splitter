@@ -151,7 +151,7 @@ function SettleForm({
   };
 
   return (
-    <form className="stack" style={{ gap: 16 }} onSubmit={(e) => void submit(e)} noValidate>
+    <form className="narrow" onSubmit={(e) => void submit(e)} noValidate>
       <div className="row">
         <Link href={`/groups/${groupId}`} className="icon-btn" aria-label="Back to the group">
           <Icon name="back" />

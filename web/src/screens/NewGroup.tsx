@@ -68,7 +68,7 @@ export function NewGroupScreen() {
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} className="stack" style={{ gap: 16 }}>
+    <form onSubmit={(e) => void submit(e)} className="narrow">
       <h1>New group</h1>
       <Card>
         <Field label="Group name">

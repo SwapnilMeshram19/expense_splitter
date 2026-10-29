@@ -17,7 +17,10 @@ export function corsHeaders(req: Request): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-sync-origin',
+    // supabase-js's own list (retries, tracing) plus ours: a header missing here fails the
+    // preflight, which the browser reports as a network error.
+    'Access-Control-Allow-Headers':
+      'authorization, apikey, content-type, x-client-info, x-retry-count, traceparent, tracestate, baggage, x-sync-origin',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };

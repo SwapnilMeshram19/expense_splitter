@@ -89,7 +89,17 @@ export function ensureAccount(): Promise<void> {
       const { error } = await supabase.auth.signInAnonymously();
       if (error) {
         sessionArrived = null;
-        emit({ status: 'offline', notice: describeAuthError(error) });
+        // A server setting, not the visitor's problem: a plain message for them, the fix for us.
+        const disabled = error.code === 'anonymous_provider_disabled';
+        if (disabled && import.meta.env.DEV) {
+          console.warn(
+            '[web] Anonymous sign-ins are off: Supabase → Authentication → Sign In / Providers.',
+          );
+        }
+        const notice = disabled
+          ? 'New accounts can’t be created right now. Please try again later.'
+          : describeAuthError(error);
+        emit({ status: 'offline', notice });
         return;
       }
       await arrived;

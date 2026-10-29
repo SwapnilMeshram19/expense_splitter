@@ -4,8 +4,8 @@ import { Link, Route, Switch } from 'wouter';
 import { useDataStatus } from '@/data/hooks';
 import { describeDataStatus } from '@/features/data/describePending';
 
-import { useAuth } from './platform/auth';
-import { isOnline, subscribeConnection } from './platform/data';
+import { ensureAccount, useAuth } from './platform/auth';
+import { isOnline, isServerUnreachable, refreshNow, subscribeConnection } from './platform/data';
 import { GroupScreen } from './screens/Group';
 import { HomeScreen } from './screens/Home';
 import { JoinScreen } from './screens/Join';
@@ -32,6 +32,10 @@ function useOnline(): boolean {
   return useSyncExternalStore(subscribeConnection, isOnline);
 }
 
+function useServerUnreachable(): boolean {
+  return useSyncExternalStore(subscribeConnection, isServerUnreachable);
+}
+
 function TopBar() {
   const auth = useAuth();
   return (
@@ -54,23 +58,53 @@ function TopBar() {
   );
 }
 
+/**
+ * Why something isn't saved yet, most specific first:
+ * offline > account couldn't be made > server not answering > changes waiting or refused.
+ */
 function StatusBanners() {
   const online = useOnline();
-  const view = describeDataStatus(useDataStatus());
+  const unreachable = useServerUnreachable();
+  const auth = useAuth();
+  const status = useDataStatus();
+  const view = describeDataStatus(status);
+
+  if (!online) {
+    return (
+      <div className="banner warn" role="status">
+        <Icon name="cloud" />
+        <span>You’re offline. New expenses and payments wait here and send when you’re back.</span>
+      </div>
+    );
+  }
+  if (auth.status === 'offline') {
+    return (
+      <div className="banner bad" role="alert">
+        <Icon name="warning" />
+        <span>{auth.notice ?? 'Couldn’t start your account.'}</span>
+        <button type="button" className="btn small secondary" onClick={() => void ensureAccount()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+  if (unreachable) {
+    return (
+      <div className="banner bad" role="alert">
+        <Icon name="warning" />
+        <span>Can’t reach the server. Your changes are kept and retried every few seconds.</span>
+        <button type="button" className="btn small secondary" onClick={() => void refreshNow()}>
+          Retry now
+        </button>
+      </div>
+    );
+  }
+  if (!view) return null;
   return (
-    <>
-      {!online ? (
-        <div className="banner warn" role="status">
-          <Icon name="cloud" /> You’re offline. New expenses and payments are saved and sent later;
-          edits need the internet.
-        </div>
-      ) : null}
-      {view ? (
-        <Link href="/pending" className={`banner ${view.tone === 'warning' ? 'warn' : 'info'}`}>
-          {view.label}
-        </Link>
-      ) : null}
-    </>
+    <Link href="/pending" className={`banner ${view.tone === 'warning' ? 'warn' : 'info'}`}>
+      <Icon name={view.tone === 'warning' ? 'warning' : 'cloud'} />
+      <span>{view.label}</span>
+    </Link>
   );
 }
 
@@ -95,9 +129,23 @@ export function App() {
             </Route>
             <Route path="/groups/:groupId">{(p) => <GroupScreen groupId={p.groupId} />}</Route>
             {/* One route for /join and /join/<code>: dropping the code from the address keeps the screen. */}
-            <Route path="/join/:code?">{(p) => <JoinScreen pathCode={p.code} />}</Route>
-            <Route path="/account" component={AccountScreen} />
-            <Route path="/pending" component={PendingScreen} />
+            <Route path="/join/:code?">
+              {(p) => (
+                <div className="narrow">
+                  <JoinScreen pathCode={p.code} />
+                </div>
+              )}
+            </Route>
+            <Route path="/account">
+              <div className="narrow">
+                <AccountScreen />
+              </div>
+            </Route>
+            <Route path="/pending">
+              <div className="narrow">
+                <PendingScreen />
+              </div>
+            </Route>
             <Route>
               <Message title="Page not found">
                 <Link href="/" className="btn">
@@ -109,8 +157,8 @@ export function App() {
         </Suspense>
       </main>
       <footer className="footer">
-        <a href="/privacy/">Privacy</a> ·{' '}
-        <a href="mailto:support@ssoftapp.in">support@ssoftapp.in</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="mailto:support@ssoftapp.in">Contact support</a>
       </footer>
     </div>
   );
