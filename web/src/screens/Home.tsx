@@ -10,36 +10,7 @@ import { hasAccount, useAuth } from '../platform/auth';
 import { refreshNow } from '../platform/data';
 import { useScreenOpen } from '../ui/hooks';
 import { Avatar, Icon, Spinner } from '../ui/kit';
-
-/** First visit: what the product does, shown as the thing itself (a split bill). */
-function Welcome() {
-  return (
-    <div className="narrow">
-      <div className="bill" aria-hidden="true">
-        <span className="bill-label">Dinner at the beach shack</span>
-        <span className="bill-amount">₹2,400</span>
-        <hr className="perforation" />
-        <div className="bill-foot">
-          <span>You, Rahul, Priya, Anu</span>
-          <strong>₹600 each</strong>
-        </div>
-      </div>
-      <h1>Split group expenses and settle up with UPI</h1>
-      <p className="muted">
-        Add what everyone paid, split it equally or your way, and see who owes whom in the fewest
-        payments. No sign-up needed to start.
-      </p>
-      <div className="actions">
-        <Link href="/groups/new" className="btn">
-          Create a group
-        </Link>
-        <Link href="/join" className="btn secondary">
-          Join with a code
-        </Link>
-      </div>
-    </div>
-  );
-}
+import { Landing } from './Landing';
 
 export function HomeScreen() {
   useScreenOpen('');
@@ -52,7 +23,7 @@ export function HomeScreen() {
     if (hasAccount(auth) && !status.loadedFromServer && status.refreshing) {
       return <Spinner label="Loading your groups…" />;
     }
-    return <Welcome />;
+    return <Landing />;
   }
 
   const owedToMe = formatMoneyList(

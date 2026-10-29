@@ -199,7 +199,17 @@ export function Message({ title, children }: { title: string; children?: ReactNo
 }
 
 export type IconName =
-  'back' | 'refresh' | 'person' | 'plus' | 'cloud' | 'swap' | 'share' | 'warning' | 'check';
+  | 'back'
+  | 'refresh'
+  | 'person'
+  | 'plus'
+  | 'cloud'
+  | 'swap'
+  | 'share'
+  | 'warning'
+  | 'check'
+  | 'globe'
+  | 'pie';
 
 /** Tiny inline icons (no icon font download). */
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
@@ -213,6 +223,9 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
     share: 'M12 3v12M7 8l5-5 5 5M5 14v5h14v-5',
     warning: 'M12 4l9 16H3zM12 10v4M12 17h.01',
     check: 'M5 12l5 5 9-10',
+    globe:
+      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9',
+    pie: 'M12 3v9h9A9 9 0 1 1 12 3zM15 3.5A9 9 0 0 1 20.5 9H15z',
   };
   return (
     <svg
