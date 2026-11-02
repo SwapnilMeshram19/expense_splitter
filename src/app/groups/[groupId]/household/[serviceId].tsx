@@ -216,6 +216,12 @@ function PostBillSheet({
       defaults: defaultBillPeople(snapshot, posted, me),
     };
   }, [groupId, serviceId, month]);
+  // Versions as the sheet was opened: a bill someone else posts or edits meanwhile is refused
+  // (STALE), never silently overwritten with this person's payer and split.
+  const [base] = useState(() => ({
+    service: setup?.service.version ?? 0,
+    posted: setup?.posted?.version ?? null,
+  }));
   const [paidBy, setPaidBy] = useState(setup?.defaults.paidBy ?? '');
   const [memberIds, setMemberIds] = useState<string[]>(setup?.defaults.memberIds ?? []);
   const [busy, setBusy] = useState(false);
@@ -229,11 +235,11 @@ function PostBillSheet({
     const result = await runCommand('household.postBill', {
       groupId,
       serviceId,
-      expectedVersion: setup.service.version,
+      expectedVersion: base.service,
       month,
       upTo,
       expenseId: newId(),
-      expectedExpenseVersion: setup.posted?.version ?? null,
+      expectedExpenseVersion: base.posted,
       paidByMemberId: paidBy,
       memberIds,
     });

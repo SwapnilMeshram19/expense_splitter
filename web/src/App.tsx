@@ -24,6 +24,15 @@ const NewGroupScreen = lazy(() =>
 const PendingScreen = lazy(() =>
   import('./screens/Pending').then((m) => ({ default: m.PendingScreen })),
 );
+const HouseholdScreen = lazy(() =>
+  import('./screens/Household').then((m) => ({ default: m.HouseholdScreen })),
+);
+const ServiceScreen = lazy(() =>
+  import('./screens/Household').then((m) => ({ default: m.ServiceScreen })),
+);
+const HouseholdEditScreen = lazy(() =>
+  import('./screens/HouseholdEdit').then((m) => ({ default: m.HouseholdEditScreen })),
+);
 const SettleScreen = lazy(() =>
   import('./screens/Settle').then((m) => ({ default: m.SettleScreen })),
 );
@@ -126,6 +135,20 @@ export function App() {
             </Route>
             <Route path="/groups/:groupId/settle">
               {(p) => <SettleScreen groupId={p.groupId} />}
+            </Route>
+            <Route path="/groups/:groupId/home">
+              {(p) => <HouseholdScreen groupId={p.groupId} />}
+            </Route>
+            <Route path="/groups/:groupId/home/new">
+              {(p) => <HouseholdEditScreen groupId={p.groupId} serviceId={null} />}
+            </Route>
+            <Route path="/groups/:groupId/home/:serviceId/edit">
+              {(p) => <HouseholdEditScreen groupId={p.groupId} serviceId={p.serviceId} />}
+            </Route>
+            <Route path="/groups/:groupId/home/:serviceId">
+              {(p) => (
+                <ServiceScreen key={p.serviceId} groupId={p.groupId} serviceId={p.serviceId} />
+              )}
             </Route>
             <Route path="/groups/:groupId">{(p) => <GroupScreen groupId={p.groupId} />}</Route>
             {/* One route for /join and /join/<code>: dropping the code from the address keeps the screen. */}

@@ -8,6 +8,7 @@ import { MAX_NAME_LENGTH } from '@/domain/names';
 import { describeMyBalance, describeMyExpenseShare } from '@/features/balances/describe';
 import { loadGroupView, type HistoryRow } from '@/features/groups/loadGroupView';
 import { describeMemberError } from '@/features/groups/messages';
+import { loadHouseholdList } from '@/features/household/view';
 import { createInvite } from '@/features/invites/inviteApi';
 import {
   buildShareMessage,
@@ -361,6 +362,8 @@ export function GroupScreen({ groupId }: { groupId: string }) {
 
           {whoOwes}
 
+          <HomeServicesLink groupId={groupId} canEdit={view.canEdit} />
+
           <Card className="hide-mobile">
             <PeopleList view={view} nameOf={nameOf} groupId={groupId} />
           </Card>
@@ -450,5 +453,48 @@ function PeopleList({
       </div>
       {view.canEdit ? <AddPerson groupId={groupId} currency={currency} /> : null}
     </>
+  );
+}
+
+/**
+ * Home services: today's summary once the group has one ("Milk: 1 L as usual · Maid: Came today"),
+ * otherwise a quiet link to start, so trip groups don't get a new card.
+ */
+function HomeServicesLink({ groupId, canEdit }: { groupId: string; canEdit: boolean }) {
+  const today = todayIsoDate();
+  const summary = useData(() => {
+    const list = loadHouseholdList(dataStore().group(groupId), dataStore().planningUserId(), today);
+    if (!list || list.items.length === 0) return null;
+    const active = list.items.filter((i) => i.active);
+    return {
+      text: (active.length > 0 ? active : list.items)
+        .slice(0, 3)
+        .map((i) => `${i.service.name}: ${i.status}`)
+        .join(' · '),
+      changed: list.items.some((i) => i.billChanged),
+    };
+  }, [groupId, today]);
+
+  if (!summary) {
+    return canEdit ? (
+      <Link href={`/groups/${groupId}/home`} className="small muted">
+        Track milk, maid or newspaper in this group
+      </Link>
+    ) : null;
+  }
+  return (
+    <Card flush>
+      <Link href={`/groups/${groupId}/home`} className="list-row">
+        <span className="tile sw-2" aria-hidden="true">
+          <Icon name="home" />
+        </span>
+        <div className="grow">
+          <div className="row-title">Home services</div>
+          <div className="row-sub ellipsis">{summary.text}</div>
+          {summary.changed ? <div className="row-sub warning">A posted bill changed</div> : null}
+        </div>
+        <Icon name="forward" size={18} />
+      </Link>
+    </Card>
   );
 }

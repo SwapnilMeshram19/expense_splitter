@@ -1168,3 +1168,168 @@ details.settled > summary::-webkit-details-marker {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* ── Home services ────────────────────────────────────────────────── */
+
+/* Toggle pills (Came / Absent, units, templates): one choice or several. */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.pill[aria-pressed='true'] {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--on-primary-soft);
+}
+
+.pill.day {
+  width: 40px;
+  padding: 0;
+}
+
+/* − 1.5 L + */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--primary-soft);
+  color: var(--on-primary-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stepper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stepper output {
+  min-width: 72px;
+  text-align: center;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-controls {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px 14px;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Monday-first month grid. Plain buttons: keyboard and screen readers work as is. */
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendar .weekday {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.calendar .cal-day {
+  aspect-ratio: 1;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+.calendar .cal-day:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.calendar .cal-day small {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.calendar .usual {
+  background: var(--primary-soft);
+  color: var(--on-primary-soft);
+}
+
+.calendar .more {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.calendar .less {
+  background: var(--surface);
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.calendar .absent {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.calendar .today {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.calendar .selected {
+  box-shadow: 0 0 0 3px var(--primary);
+}
+
+.day-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.bill-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.big-amount {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

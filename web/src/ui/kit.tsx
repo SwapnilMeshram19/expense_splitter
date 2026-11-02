@@ -209,7 +209,11 @@ export type IconName =
   | 'warning'
   | 'check'
   | 'globe'
-  | 'pie';
+  | 'pie'
+  | 'home'
+  | 'forward'
+  | 'minus'
+  | 'edit';
 
 /** Tiny inline icons (no icon font download). */
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
@@ -226,6 +230,10 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
     globe:
       'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9M12 3c-2.5 2.5-3.5 5.5-3.5 9s1 6.5 3.5 9',
     pie: 'M12 3v9h9A9 9 0 1 1 12 3zM15 3.5A9 9 0 0 1 20.5 9H15z',
+    home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5',
+    forward: 'M9 6l6 6-6 6',
+    minus: 'M5 12h14',
+    edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
   };
   return (
     <svg

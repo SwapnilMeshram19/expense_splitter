@@ -10,7 +10,8 @@ group, with the month's bill posted to the group as an ordinary expense.
 | Rules: bill maths, schedules, validation, text | `src/domain/household.ts` (shared with the server) |
 | Commands | `household.create / update / delete / mark / postBill` in `src/domain/commands.ts` |
 | Tables, RLS, snapshot, apply layer | `supabase/migrations/20261102120000_household_services.sql` |
-| Screens | `src/app/groups/[groupId]/household/` (list, calendar + bill, add/edit) |
+| Screens (app) | `src/app/groups/[groupId]/household/` (list, calendar + bill, add/edit) |
+| Screens (web) | `web/src/screens/Household.tsx`, `HouseholdEdit.tsx`; routes `/groups/:id/home…` |
 | View models (testable, web-ready) | `src/features/household/view.ts`, `serviceForm.ts` |
 
 - **Only exceptions are stored.** A day without a mark is "as usual": the usual quantity on the
