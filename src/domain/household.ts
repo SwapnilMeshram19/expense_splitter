@@ -1,0 +1,564 @@
+/**
+ * Home services tracked inside a group: milk, newspaper, water cans (paid per unit) and a maid or
+ * cook (a monthly fee, cut for absences beyond the paid leaves).
+ *
+ * - Only exceptions are stored. A day without a mark is "as usual": the default quantity on a
+ *   scheduled weekday, nothing on other days. So a month of milk is usually 0–5 rows.
+ * - Quantities are hundredths of a unit (1.5 L = 150), so half litres stay integers.
+ * - Rates are minor units of the group currency, with history: a price change starts on a date and
+ *   never rewrites the days before it.
+ * - A bill is computed here, identically on the phone and on the server, and posted to the group
+ *   as an ordinary expense (one per service and month, updated in place when the month changes).
+ *
+ * Pure TypeScript, same-folder imports only: copied into the Edge Functions by sync-domain.mjs.
+ */
+import { formatMoney, type CurrencyCode } from './currency';
+import type { HouseholdMark, HouseholdService } from './model';
+import { findDuplicateName, normalizeName, validateName, type NameError } from './names';
+import { daysInMonth, isIsoDate } from './recurrence';
+import { uuidv5 } from './uuidv5';
+
+// ── Constants ──────────────────────────────────────────────────────────
+
+export const SERVICE_KINDS = ['per_unit', 'monthly'] as const;
+export type ServiceKind = (typeof SERVICE_KINDS)[number];
+export const isServiceKind = (v: unknown): v is ServiceKind =>
+  typeof v === 'string' && (SERVICE_KINDS as readonly string[]).includes(v);
+
+/** A fixed list (no free text): short, translatable later, and safe to show anywhere. */
+export const SERVICE_UNITS = ['L', 'kg', 'packet', 'can', 'paper', 'item'] as const;
+export type ServiceUnit = (typeof SERVICE_UNITS)[number];
+export const isServiceUnit = (v: unknown): v is ServiceUnit =>
+  typeof v === 'string' && (SERVICE_UNITS as readonly string[]).includes(v);
+
+const UNIT_WORDS: Record<ServiceUnit, readonly [string, string]> = {
+  L: ['L', 'L'],
+  kg: ['kg', 'kg'],
+  packet: ['packet', 'packets'],
+  can: ['can', 'cans'],
+  paper: ['paper', 'papers'],
+  item: ['item', 'items'],
+};
+
+/** Quantities are stored in hundredths of a unit. */
+export const QTY_SCALE = 100;
+/** Most anyone takes in a day (100 units). */
+export const MAX_DAY_QTY = 100 * QTY_SCALE;
+/** Highest price per unit (or per month): ₹1 crore. Keeps rate × quantity a safe integer. */
+export const MAX_RATE_MINOR = 1_000_000_000;
+export const MAX_RATES = 24;
+export const MAX_SERVICES_PER_GROUP = 20;
+export const MAX_SERVICE_NAME_LENGTH = 40;
+/** Every day of the week: bit d is weekday d, 0 = Sunday (Date#getUTCDay). */
+export const ALL_WEEKDAYS = 0b1111111;
+/** How far back a day can be changed and a bill posted. The server's snapshot keeps 400 days of marks. */
+export const MARK_PAST_DAYS = 366;
+/** Planned absences ("no milk next week, we're travelling"). */
+export const MARK_FUTURE_DAYS = 62;
+export const BILL_PAST_MONTHS = 12;
+
+/** Mark ids are derived from (service, date): two phones marking the same day write one row. */
+export const HOUSEHOLD_NAMESPACE = '3f6b2c1e-8d4a-4b7e-9c05-6a1d2e8f4b90';
+export const markId = (serviceId: string, date: string): string =>
+  uuidv5(HOUSEHOLD_NAMESPACE, `${serviceId.toLowerCase()}/${date}`);
+
+/** Litres and kilos go in halves (500 ml packets); everything else in whole units. */
+export const unitStep = (unit: ServiceUnit | null): number =>
+  unit === 'L' || unit === 'kg' ? QTY_SCALE / 2 : QTY_SCALE;
+
+export interface RatePeriod {
+  /** First day the rate applies, 'YYYY-MM-DD'. */
+  from: string;
+  /** Per unit ('per_unit') or per month ('monthly'), minor units of the group currency. */
+  ratePaise: number;
+}
+
+// ── Dates (UTC arithmetic on 'YYYY-MM-DD': no time zones involved) ─────
+
+const MONTH = /^(\d{4})-(\d{2})$/;
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+
+const toUtc = (date: string): Date => {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y!, m! - 1, d!));
+};
+const fromUtc = (t: Date): string =>
+  `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+
+export const addDays = (date: string, n: number): string => {
+  const t = toUtc(date);
+  t.setUTCDate(t.getUTCDate() + n);
+  return fromUtc(t);
+};
+export const weekdayOf = (date: string): number => toUtc(date).getUTCDay();
+export const utcDate = (epochMs: number): string => fromUtc(new Date(epochMs));
+export const monthOf = (date: string): string => date.slice(0, 7);
+
+export function isMonth(v: unknown): v is string {
+  if (typeof v !== 'string') return false;
+  const m = MONTH.exec(v);
+  return !!m && Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[1]) >= 2000;
+}
+
+export const monthStart = (month: string): string => `${month}-01`;
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return `${month}-${pad(daysInMonth(y!, m!))}`;
+}
+export function addMonths(month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const index = y! * 12 + (m! - 1) + n;
+  return `${pad(Math.floor(index / 12), 4)}-${pad((index % 12) + 1)}`;
+}
+/** '2026-10' → 'Oct 2026'. */
+export function monthLabel(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return `${MONTH_NAMES[m! - 1] ?? month} ${y}`;
+}
+/** Every date of the month, oldest first. */
+export function datesOfMonth(month: string): string[] {
+  const out: string[] = [];
+  for (let d = monthStart(month); d <= monthEnd(month); d = addDays(d, 1)) out.push(d);
+  return out;
+}
+
+// ── Schedule ───────────────────────────────────────────────────────────
+
+type Schedule = Pick<HouseholdService, 'startDate' | 'endDate' | 'weekdays'>;
+
+export const isActiveOn = (
+  s: Pick<HouseholdService, 'startDate' | 'endDate'>,
+  date: string,
+): boolean => date >= s.startDate && (s.endDate === null || date <= s.endDate);
+
+/** A normal delivery / working day: within the service's dates and on one of its weekdays. */
+export const isScheduled = (s: Schedule, date: string): boolean =>
+  isActiveOn(s, date) && (s.weekdays & (1 << weekdayOf(date))) !== 0;
+
+/** The rate on `date`, or null before the first one starts. */
+export function rateOn(rates: readonly RatePeriod[], date: string): number | null {
+  let rate: number | null = null;
+  for (const r of rates) {
+    if (r.from <= date) rate = r.ratePaise;
+    else break;
+  }
+  return rate;
+}
+
+/** The current rate (the latest that has started by `today`, else the first). */
+export const currentRate = (rates: readonly RatePeriod[], today: string): number =>
+  rateOn(rates, today) ?? rates[0]?.ratePaise ?? 0;
+
+/** What a day is without a mark. */
+export function usualQty(
+  s: Pick<HouseholdService, 'startDate' | 'endDate' | 'weekdays' | 'kind' | 'defaultQty'>,
+  date: string,
+): number {
+  if (!isScheduled(s, date)) return 0;
+  return s.kind === 'monthly' ? QTY_SCALE : s.defaultQty;
+}
+
+/** Marks of one service, by date. Rows that reset a day to "as usual" (qty null) are left out. */
+export function marksByDate(
+  marks: readonly HouseholdMark[],
+  serviceId: string,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const m of marks) if (m.serviceId === serviceId && m.qty !== null) out.set(m.date, m.qty);
+  return out;
+}
+
+export type DayState = 'off' | 'usual' | 'absent' | 'more' | 'less';
+
+/** How a day looks on the calendar. */
+export function dayState(s: HouseholdService, date: string, mark: number | undefined): DayState {
+  const usual = usualQty(s, date);
+  if (mark === undefined || mark === usual) return usual === 0 ? 'off' : 'usual';
+  if (mark === 0) return usual === 0 ? 'off' : 'absent';
+  return mark > usual ? 'more' : 'less';
+}
+
+/** The quantity that counts for a day. */
+export const dayQty = (s: HouseholdService, date: string, mark: number | undefined): number =>
+  !isActiveOn(s, date) ? 0 : (mark ?? usualQty(s, date));
+
+// ── Bills ──────────────────────────────────────────────────────────────
+
+/** Half-up integer division for non-negative numbers: one rounding per bill line. */
+const roundDiv = (a: number, b: number): number => Math.floor((2 * a + b) / (2 * b));
+
+export interface BillLine {
+  ratePaise: number;
+  /** per_unit: hundredths of a unit. monthly: paid days. */
+  quantity: number;
+  amountPaise: number;
+}
+
+export interface Bill {
+  month: string;
+  /** Last day counted ('YYYY-MM-DD'). Before the month's end = "till today". */
+  upTo: string;
+  complete: boolean;
+  kind: ServiceKind;
+  amountPaise: number;
+  /** One per rate that applied, oldest first. Line amounts add up to amountPaise exactly. */
+  lines: BillLine[];
+  /** Scheduled days (in range, up to upTo) that were marked absent. */
+  absentDays: number;
+  /** per_unit: days with a different quantity than usual (absences excluded). */
+  changedDays: number;
+  /** monthly: working days in the whole month (the fee is spread over these). */
+  workingDays: number;
+  /** monthly: absences covered by paid leaves / deducted. */
+  freeLeaves: number;
+  deductedDays: number;
+}
+
+/**
+ * The bill for `month`, counting days up to `upTo` (the month's last day once it is over).
+ *
+ * per_unit: Σ over rates of round(rate × quantity / 100).
+ * monthly:  the fee is spread over the month's working days (scheduled weekdays of the whole
+ *           month), so starting mid-month or a mid-month price change is pro-rata. The first
+ *           `paidLeaves` absences are free; later ones are deducted.
+ */
+export function computeBill(
+  s: HouseholdService,
+  marks: ReadonlyMap<string, number>,
+  month: string,
+  upTo?: string,
+): Bill {
+  const end = monthEnd(month);
+  const last = upTo !== undefined && upTo < end ? upTo : end;
+  const bill: Bill = {
+    month,
+    upTo: last,
+    complete: last === end,
+    kind: s.kind,
+    amountPaise: 0,
+    lines: [],
+    absentDays: 0,
+    changedDays: 0,
+    workingDays: 0,
+    freeLeaves: 0,
+    deductedDays: 0,
+  };
+  const perRate = new Map<number, number>();
+  const add = (rate: number, quantity: number) =>
+    perRate.set(rate, (perRate.get(rate) ?? 0) + quantity);
+
+  if (s.kind === 'monthly') {
+    bill.workingDays = datesOfMonth(month).filter(
+      (d) => (s.weekdays & (1 << weekdayOf(d))) !== 0,
+    ).length;
+    let leavesLeft = s.paidLeaves;
+    for (const d of datesOfMonth(month)) {
+      if (d > last) break;
+      if (!isScheduled(s, d)) continue;
+      const rate = rateOn(s.rates, d);
+      if (rate === null) continue;
+      if (marks.get(d) === 0) {
+        bill.absentDays++;
+        if (leavesLeft > 0) {
+          leavesLeft--;
+          bill.freeLeaves++;
+        } else {
+          bill.deductedDays++;
+          continue;
+        }
+      }
+      add(rate, 1);
+    }
+    if (bill.workingDays > 0) {
+      for (const [rate, days] of perRate)
+        bill.lines.push({
+          ratePaise: rate,
+          quantity: days,
+          amountPaise: roundDiv(rate * days, bill.workingDays),
+        });
+    }
+  } else {
+    for (const d of datesOfMonth(month)) {
+      if (d > last) break;
+      if (!isActiveOn(s, d)) continue;
+      const usual = usualQty(s, d);
+      const mark = marks.get(d);
+      const qty = mark ?? usual;
+      if (mark !== undefined && mark !== usual) {
+        if (mark === 0) bill.absentDays++;
+        else bill.changedDays++;
+      }
+      const rate = rateOn(s.rates, d);
+      if (qty > 0 && rate !== null) add(rate, qty);
+    }
+    for (const [rate, qty] of perRate)
+      bill.lines.push({
+        ratePaise: rate,
+        quantity: qty,
+        amountPaise: roundDiv(rate * qty, QTY_SCALE),
+      });
+  }
+  // Oldest rate first: rates only change forwards in time, but the same rate can come back.
+  bill.lines.sort((a, b) => firstUse(s.rates, a.ratePaise) - firstUse(s.rates, b.ratePaise));
+  bill.amountPaise = bill.lines.reduce((sum, l) => sum + l.amountPaise, 0);
+  return bill;
+}
+
+const firstUse = (rates: readonly RatePeriod[], rate: number): number => {
+  const i = rates.findIndex((r) => r.ratePaise === rate);
+  return i === -1 ? rates.length : i;
+};
+
+// ── Text ───────────────────────────────────────────────────────────────
+
+/** '1.5' from 150, '2' from 200. */
+export function formatQty(qty: number): string {
+  const whole = Math.floor(qty / QTY_SCALE);
+  const frac = qty % QTY_SCALE;
+  if (frac === 0) return String(whole);
+  return `${whole}.${String(frac).padStart(2, '0').replace(/0$/, '')}`;
+}
+
+/** '1.5 L', '2 packets', '1 can'. */
+export function formatQtyWithUnit(qty: number, unit: ServiceUnit | null): string {
+  const words = UNIT_WORDS[unit ?? 'item'];
+  return `${formatQty(qty)} ${qty === QTY_SCALE ? words[0] : words[1]}`;
+}
+
+export const unitWord = (unit: ServiceUnit | null): string => UNIT_WORDS[unit ?? 'item'][0];
+
+const days = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+
+/** The bill as a few short lines: the expense note and the WhatsApp text. */
+export function billLines(
+  s: Pick<HouseholdService, 'unit' | 'paidLeaves'>,
+  bill: Bill,
+  currency: CurrencyCode,
+): string[] {
+  const money = (minor: number) => formatMoney(minor, currency);
+  const out: string[] = [];
+  if (bill.kind === 'monthly') {
+    for (const l of bill.lines) {
+      out.push(
+        l.quantity === bill.workingDays
+          ? `${money(l.ratePaise)} a month = ${money(l.amountPaise)}`
+          : `${days(l.quantity)} of ${bill.workingDays} at ${money(l.ratePaise)} a month = ${money(l.amountPaise)}`,
+      );
+    }
+    if (bill.absentDays > 0) {
+      out.push(
+        bill.deductedDays > 0
+          ? `Absent ${days(bill.absentDays)}: ${bill.freeLeaves} paid leave${bill.freeLeaves === 1 ? '' : 's'}, ${days(bill.deductedDays)} cut`
+          : `Absent ${days(bill.absentDays)} (paid leave)`,
+      );
+    }
+  } else {
+    for (const l of bill.lines) {
+      out.push(
+        `${formatQtyWithUnit(l.quantity, s.unit)} × ${money(l.ratePaise)} = ${money(l.amountPaise)}`,
+      );
+    }
+    const notes = [
+      bill.absentDays > 0 ? `${days(bill.absentDays)} skipped` : null,
+      bill.changedDays > 0 ? `${days(bill.changedDays)} changed` : null,
+    ].filter(Boolean);
+    if (notes.length > 0) out.push(notes.join(', '));
+  }
+  if (!bill.complete) out.push(`Till ${Number(bill.upTo.slice(8))} ${monthLabel(bill.month)}`);
+  return out;
+}
+
+export const billDescription = (name: string, month: string): string =>
+  `${name} · ${monthLabel(month)}`;
+
+// ── Validation ─────────────────────────────────────────────────────────
+
+export interface ServiceFields {
+  name: string;
+  kind: ServiceKind;
+  /** per_unit only; null for monthly. */
+  unit: ServiceUnit | null;
+  /** per_unit: usual quantity a day (hundredths). Ignored for monthly. */
+  defaultQty: number;
+  /** Oldest first; the first must start on startDate. */
+  rates: RatePeriod[];
+  weekdays: number;
+  /** monthly only: absences a month that aren't deducted. */
+  paidLeaves: number;
+  startDate: string;
+  endDate: string | null;
+}
+
+export type ServiceError =
+  | NameError
+  | { code: 'INVALID_KIND' }
+  | { code: 'INVALID_UNIT' }
+  | { code: 'INVALID_QTY' }
+  | { code: 'INVALID_RATE'; max: number }
+  | { code: 'INVALID_RATES' }
+  | { code: 'NO_WEEKDAYS' }
+  | { code: 'INVALID_LEAVES' }
+  | { code: 'INVALID_DATES' }
+  | { code: 'TOO_MANY_SERVICES'; max: number };
+
+export type CheckedService = Pick<
+  HouseholdService,
+  | 'name'
+  | 'kind'
+  | 'unit'
+  | 'defaultQty'
+  | 'rates'
+  | 'weekdays'
+  | 'paidLeaves'
+  | 'startDate'
+  | 'endDate'
+>;
+
+const isInt = (v: unknown, min: number, max: number): v is number =>
+  Number.isSafeInteger(v) && (v as number) >= min && (v as number) <= max;
+
+/**
+ * Check a service as typed. `otherNames` = the group's other active services (names must differ).
+ * Untrusted input: every field is type-checked.
+ */
+export function checkService(
+  f: ServiceFields,
+  otherNames: readonly string[],
+  maxRate: number,
+): { ok: true; row: CheckedService } | { ok: false; error: ServiceError } {
+  const fail = (error: ServiceError) => ({ ok: false as const, error });
+  if (typeof f.name !== 'string') return fail({ code: 'NAME_REQUIRED' });
+  const name = normalizeName(f.name);
+  const nameError = validateName(name);
+  if (nameError) return fail(nameError);
+  if (name.length > MAX_SERVICE_NAME_LENGTH)
+    return fail({ code: 'NAME_TOO_LONG', max: MAX_SERVICE_NAME_LENGTH });
+  if (findDuplicateName([...otherNames, name])) return fail({ code: 'DUPLICATE_NAME', name });
+
+  if (!isServiceKind(f.kind)) return fail({ code: 'INVALID_KIND' });
+  const monthly = f.kind === 'monthly';
+  const unit = monthly ? null : f.unit;
+  if (!monthly && !isServiceUnit(unit)) return fail({ code: 'INVALID_UNIT' });
+  const defaultQty = monthly ? QTY_SCALE : f.defaultQty;
+  if (!isInt(defaultQty, unitStep(unit), MAX_DAY_QTY) || defaultQty % unitStep(unit) !== 0)
+    return fail({ code: 'INVALID_QTY' });
+  if (!isInt(f.weekdays, 1, ALL_WEEKDAYS)) return fail({ code: 'NO_WEEKDAYS' });
+  const paidLeaves = monthly ? f.paidLeaves : 0;
+  if (!isInt(paidLeaves, 0, 31)) return fail({ code: 'INVALID_LEAVES' });
+  if (
+    !isIsoDate(f.startDate) ||
+    (f.endDate !== null && (!isIsoDate(f.endDate) || f.endDate < f.startDate))
+  ) {
+    return fail({ code: 'INVALID_DATES' });
+  }
+
+  const limit = Math.min(maxRate, MAX_RATE_MINOR);
+  if (!Array.isArray(f.rates) || f.rates.length === 0 || f.rates.length > MAX_RATES)
+    return fail({ code: 'INVALID_RATES' });
+  const rates: RatePeriod[] = [];
+  for (const r of f.rates) {
+    if (!r || typeof r !== 'object' || !isIsoDate(r.from)) return fail({ code: 'INVALID_RATES' });
+    if (!isInt(r.ratePaise, 1, limit)) return fail({ code: 'INVALID_RATE', max: limit });
+    const prev = rates.at(-1);
+    if (prev && r.from <= prev.from) return fail({ code: 'INVALID_RATES' });
+    // Same price again is no change: keep the history short.
+    if (prev && r.ratePaise === prev.ratePaise) continue;
+    rates.push({ from: r.from, ratePaise: r.ratePaise });
+  }
+  if (rates[0]!.from !== f.startDate) return fail({ code: 'INVALID_RATES' });
+
+  return {
+    ok: true,
+    row: {
+      name,
+      kind: f.kind,
+      unit,
+      defaultQty,
+      rates,
+      weekdays: f.weekdays,
+      paidLeaves,
+      startDate: f.startDate,
+      endDate: f.endDate,
+    },
+  };
+}
+
+export type MarkError =
+  { code: 'INVALID_QTY' } | { code: 'OUT_OF_RANGE' } | { code: 'NOT_SCHEDULED' };
+
+/**
+ * Check a day's mark. null = back to usual. Returns the value to store: a quantity equal to the
+ * usual one is stored as null, so a later change of the usual quantity applies to that day too.
+ */
+export function checkMark(
+  s: HouseholdService,
+  date: string,
+  qty: number | null,
+  today: string,
+): { ok: true; qty: number | null } | { ok: false; error: MarkError } {
+  if (
+    !isIsoDate(date) ||
+    !isActiveOn(s, date) ||
+    date < addDays(today, -MARK_PAST_DAYS) ||
+    date > addDays(today, MARK_FUTURE_DAYS)
+  ) {
+    return { ok: false, error: { code: 'OUT_OF_RANGE' } };
+  }
+  if (qty === null) return { ok: true, qty: null };
+  if (s.kind === 'monthly') {
+    if (qty !== 0 && qty !== QTY_SCALE) return { ok: false, error: { code: 'INVALID_QTY' } };
+    if (!isScheduled(s, date)) return { ok: false, error: { code: 'NOT_SCHEDULED' } };
+  } else if (!isInt(qty, 0, MAX_DAY_QTY) || qty % unitStep(s.unit) !== 0) {
+    return { ok: false, error: { code: 'INVALID_QTY' } };
+  }
+  return { ok: true, qty: qty === usualQty(s, date) ? null : qty };
+}
+
+/** The months a bill can be posted for: from the service's start (at most a year back) to now. */
+export function billableMonths(
+  s: Pick<HouseholdService, 'startDate' | 'endDate'>,
+  today: string,
+): string[] {
+  const first = [monthOf(s.startDate), addMonths(monthOf(today), -BILL_PAST_MONTHS)].sort().at(-1)!;
+  const lastDay = s.endDate !== null && s.endDate < today ? s.endDate : today;
+  const out: string[] = [];
+  for (let m = first; m <= monthOf(lastDay); m = addMonths(m, 1)) out.push(m);
+  return out;
+}
+
+/**
+ * The rates after a price change: `ratePaise` from `from` on. Later periods are dropped (a new
+ * price replaces anything planned after it); from the start date = one price for everything.
+ */
+export function withPriceFrom(
+  rates: readonly RatePeriod[],
+  startDate: string,
+  ratePaise: number,
+  from: string,
+): RatePeriod[] {
+  if (from <= startDate) return [{ from: startDate, ratePaise }];
+  const kept = rates.filter((r) => r.from < from);
+  const before = kept.at(-1);
+  if (before?.ratePaise === ratePaise) return kept;
+  return [...kept, { from, ratePaise }].slice(-MAX_RATES);
+}
+
+/** Rates with the first one moved to a new start date (periods before it are dropped). */
+export function withStartDate(rates: readonly RatePeriod[], startDate: string): RatePeriod[] {
+  const firstRate = rateOn(rates, startDate) ?? rates[0]?.ratePaise ?? 0;
+  return [{ from: startDate, ratePaise: firstRate }, ...rates.filter((r) => r.from > startDate)];
+}

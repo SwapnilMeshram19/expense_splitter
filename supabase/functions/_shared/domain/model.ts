@@ -10,12 +10,15 @@
  */
 import type { PayerLine } from './balances.ts';
 import type { BudgetPeriod } from './budget.ts';
+import { isServiceKind, isServiceUnit, type RatePeriod, type ServiceKind, type ServiceUnit } from './household.ts';
 import type { Frequency } from './recurrence.ts';
 import type { ItemInput, ShareLine, SplitInput } from './splits.ts';
 import type {
   WireActivity,
   WireExpense,
   WireGroup,
+  WireHouseholdMark,
+  WireHouseholdService,
   WireMember,
   WireRecurringRule,
   WireSettlement,
@@ -144,6 +147,43 @@ export interface RecurringRule extends Lifecycle {
   createdByMemberId: string;
 }
 
+/** A home service (milk, maid…); see household.ts. Rates in minor units of the group currency. */
+export interface HouseholdService extends Lifecycle {
+  id: string;
+  groupId: string;
+  name: string;
+  kind: ServiceKind;
+  /** per_unit services only. */
+  unit: ServiceUnit | null;
+  /** Usual quantity a day in hundredths of a unit (1.5 L = 150); 100 for monthly services. */
+  defaultQty: number;
+  /** Oldest first; the first starts on startDate. */
+  rates: RatePeriod[];
+  /** Bit d set = a usual day on weekday d (0 = Sunday). */
+  weekdays: number;
+  /** Monthly services: absences a month that aren't deducted. */
+  paidLeaves: number;
+  startDate: string;
+  endDate: string | null;
+  /** Bills posted to the group: 'YYYY-MM' → expense id. */
+  bills: Record<string, string>;
+  createdByMemberId: string;
+}
+
+/** One day that wasn't as usual. qty null = reset to usual (the row stays, so its version does). */
+export interface HouseholdMark {
+  id: string;
+  groupId: string;
+  serviceId: string;
+  date: string;
+  /** Hundredths of a unit; 0 = absent / not delivered. */
+  qty: number | null;
+  markedByMemberId: string;
+  createdAt: number;
+  updatedAt: number;
+  version: number;
+}
+
 export interface ActivityEntry {
   id: string;
   groupId: string;
@@ -175,6 +215,10 @@ export interface GroupSnapshot {
   currencyLocked: boolean;
   /** Rules that have created at least one expense (their schedule is then fixed). */
   rulesWithOccurrences: string[];
+  /** Home services, oldest first (deleted ones left out). */
+  householdServices: HouseholdService[];
+  /** Their marks from the last 400 days (older days can't be changed or billed any more). */
+  householdMarks: HouseholdMark[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -349,6 +393,46 @@ export function ruleFromWire(w: WithVersion<WireRecurringRule>): RecurringRule {
   };
 }
 
+export function householdServiceFromWire(w: WithVersion<WireHouseholdService>): HouseholdService {
+  const bills: Record<string, string> = {};
+  if (w.bills && typeof w.bills === 'object') {
+    for (const [month, id] of Object.entries(w.bills)) if (typeof id === 'string') bills[month] = lower(id);
+  }
+  return {
+    id: lower(w.id),
+    groupId: lower(w.group_id),
+    name: w.name,
+    kind: isServiceKind(w.kind) ? w.kind : 'per_unit',
+    unit: isServiceUnit(w.unit) ? w.unit : null,
+    defaultQty: num(w.default_qty),
+    rates: (w.rates ?? []).map((r) => ({ from: r.from, ratePaise: num(r.rate_paise) })),
+    weekdays: num(w.weekdays),
+    paidLeaves: num(w.paid_leaves),
+    startDate: w.start_date,
+    endDate: strOrNull(w.end_date),
+    bills,
+    createdByMemberId: lower(w.created_by_member_id),
+    createdAt: num(w.created_at),
+    updatedAt: num(w.updated_at),
+    deletedAt: numOrNull(w.deleted_at),
+    version: num(w.version),
+  };
+}
+
+export function householdMarkFromWire(w: WithVersion<WireHouseholdMark>): HouseholdMark {
+  return {
+    id: lower(w.id),
+    groupId: lower(w.group_id),
+    serviceId: lower(w.service_id),
+    date: w.mark_date,
+    qty: numOrNull(w.qty),
+    markedByMemberId: lower(w.marked_by_member_id),
+    createdAt: num(w.created_at),
+    updatedAt: num(w.updated_at),
+    version: num(w.version),
+  };
+}
+
 export function activityFromWire(w: WireActivity): ActivityEntry {
   return {
     id: lower(w.id),
@@ -373,6 +457,9 @@ export interface WireGroupSnapshot {
   recurring_rules: WithVersion<WireRecurringRule>[];
   currency_locked: boolean;
   rules_with_occurrences: string[];
+  /** Absent from servers before home services. */
+  household_services?: WithVersion<WireHouseholdService>[];
+  household_marks?: WithVersion<WireHouseholdMark>[];
 }
 
 export function snapshotFromWire(w: WireGroupSnapshot): GroupSnapshot {
@@ -385,5 +472,18 @@ export function snapshotFromWire(w: WireGroupSnapshot): GroupSnapshot {
     rules: (w.recurring_rules ?? []).map(ruleFromWire).sort((a, b) => a.createdAt - b.createdAt),
     currencyLocked: w.currency_locked === true,
     rulesWithOccurrences: (w.rules_with_occurrences ?? []).map(lower),
+    householdServices: (w.household_services ?? []).map(householdServiceFromWire).sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1)),
+    householdMarks: (w.household_marks ?? []).map(householdMarkFromWire),
+  };
+}
+
+/** A snapshot cached by an older build lacks newer fields: fill them so screens can rely on them. */
+export function normalizeSnapshot(s: GroupSnapshot): GroupSnapshot {
+  return {
+    ...s,
+    rules: s.rules ?? [],
+    rulesWithOccurrences: s.rulesWithOccurrences ?? [],
+    householdServices: s.householdServices ?? [],
+    householdMarks: s.householdMarks ?? [],
   };
 }

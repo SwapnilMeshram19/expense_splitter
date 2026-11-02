@@ -34,6 +34,8 @@ function snapshot(over: Partial<GroupSnapshot> = {}): GroupSnapshot {
     rules: [],
     currencyLocked: false,
     rulesWithOccurrences: [],
+    householdServices: [],
+    householdMarks: [],
     ...over,
   };
 }

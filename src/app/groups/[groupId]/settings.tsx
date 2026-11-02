@@ -151,7 +151,7 @@ function SettingsForm({
     ) : null;
 
   const nameChanged = groupName.trim() !== group.name && groupName.trim() !== '';
-  const open = (pathname: '/groups/[groupId]/invite' | '/groups/[groupId]/recurring') =>
+  const open = (pathname: '/groups/[groupId]/invite' | '/groups/[groupId]/recurring' | '/groups/[groupId]/household') =>
     router.push({ pathname, params: { groupId: group.id } });
 
   const [busy, setBusy] = useState(false);
@@ -256,6 +256,12 @@ function SettingsForm({
             title="Repeating expenses"
             detail="Rent, Wi-Fi…"
             onPress={() => open('/groups/[groupId]/recurring')}
+          />
+          <ListRow
+            icon="home"
+            title="Home services"
+            detail="Milk, maid…"
+            onPress={() => open('/groups/[groupId]/household')}
             last
           />
         </Card>

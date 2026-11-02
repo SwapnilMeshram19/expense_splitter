@@ -127,6 +127,42 @@ export interface WireRecurringRule extends Lifecycle {
   group_currency?: string;
 }
 
+export interface WireRate {
+  from: string;
+  rate_paise: number;
+}
+
+export interface WireHouseholdService extends Lifecycle {
+  id: string;
+  group_id: string;
+  name: string;
+  kind: string;
+  unit: string | null;
+  default_qty: number;
+  rates: WireRate[];
+  weekdays: number;
+  paid_leaves: number;
+  start_date: string;
+  end_date: string | null;
+  /** 'YYYY-MM' → expense id of the posted bill. */
+  bills: Record<string, string>;
+  created_by_member_id: string;
+  /** Push only, never stored: see WireExpense.group_currency. */
+  group_currency?: string;
+}
+
+/** Marks are never deleted: qty null resets the day to usual. */
+export interface WireHouseholdMark {
+  id: string;
+  group_id: string;
+  service_id: string;
+  mark_date: string;
+  qty: number | null;
+  marked_by_member_id: string;
+  created_at: number;
+  updated_at: number;
+}
+
 /** Sent to the server: the server version this change was made on top of (0 = new). */
 export type Outgoing<T> = T & { base_version: number };
 /** Received from the server. */
@@ -138,6 +174,9 @@ export interface PushBatch {
   expenses: Outgoing<WireExpense>[];
   settlements: Outgoing<WireSettlement>[];
   recurring_rules: Outgoing<WireRecurringRule>[];
+  /** api commands only (the old sync-push never sends them). */
+  household_services?: Outgoing<WireHouseholdService>[];
+  household_marks?: Outgoing<WireHouseholdMark>[];
   activity: WireActivity[];
 }
 

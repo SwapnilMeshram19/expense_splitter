@@ -19,6 +19,7 @@ import {
   type HistoryRow,
   type SettledPart,
 } from '@/features/groups/loadGroupView';
+import { HouseholdStrip } from '@/features/household/HouseholdStrip';
 import { describeSettlementError, METHOD_LABELS } from '@/features/settlements/messages';
 import { balancesMessage } from '@/features/share/messages';
 import { ShareButtons } from '@/features/share/ShareButtons';
@@ -204,6 +205,7 @@ export default function GroupDetailScreen() {
         onShare={openShare}
         onInvite={canEdit ? openInvite : undefined}
       />
+      <HouseholdStrip groupId={groupId} />
       {view.invalidCount > 0 ? (
         <Banner
           tone="warning"

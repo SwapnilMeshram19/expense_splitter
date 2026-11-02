@@ -114,7 +114,14 @@ async function runCommand(userId: string, req: CommandRequest): Promise<CommandR
   if (!plan.ok) return { requestId, ok: false, error: plan.error as { code: string } };
 
   const { batch, generateRuleId } = plan.plan;
-  const rows = batch.groups.length + batch.members.length + batch.expenses.length + batch.settlements.length + batch.recurring_rules.length;
+  const rows =
+    batch.groups.length +
+    batch.members.length +
+    batch.expenses.length +
+    batch.settlements.length +
+    batch.recurring_rules.length +
+    (batch.household_services?.length ?? 0) +
+    (batch.household_marks?.length ?? 0);
   if (rows === 0) return { requestId, ok: true, versions: {}, rev: snapshot?.rev };
 
   const applied = await adminClient.rpc('api_apply', {

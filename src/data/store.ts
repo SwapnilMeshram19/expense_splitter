@@ -20,12 +20,13 @@ import {
   commandGroupId,
   isQueueable,
   planCommand,
+  rebaseCommand,
   type Command,
   type CommandError,
   type CommandInputs,
   type CommandOp,
 } from '@/domain/commands';
-import type { ActivityEntry, GroupSnapshot } from '@/domain/model';
+import { normalizeSnapshot, type ActivityEntry, type GroupSnapshot } from '@/domain/model';
 
 /** Planning before the anonymous account exists (first launch offline). Never sent to the server. */
 export const PENDING_USER = '00000000-0000-4000-8000-000000000000';
@@ -221,7 +222,8 @@ export class DataStore {
     if (saved) {
       this.userId = saved.userId;
       this.order = saved.order;
-      this.server = new Map(saved.groups.map((g) => [g.group.id, g]));
+      // Snapshots cached by an older build lack newer fields (home services…).
+      this.server = new Map(saved.groups.map((g) => [g.group.id, normalizeSnapshot(g)]));
       // Sends that were cut off by the app closing go back to the queue.
       this.ops = saved.ops.map((o) => (o.status === 'sending' ? { ...o, status: 'queued' } : o));
     }
@@ -432,13 +434,17 @@ export class DataStore {
     return this.flushRun;
   }
 
-  /** A refused queued change: try again as is (after fixing whatever the server objected to). */
+  /**
+   * A refused queued change: try again (after fixing whatever the server objected to). A day
+   * someone else marked differently is re-based on their mark: "Try again" means keep mine.
+   */
   retryOp(requestId: string): void {
     const op = this.ops.find((o) => o.requestId === requestId);
     if (!op) return;
+    const cmd = rebaseCommand(this.server.get(op.groupId) ?? null, op.cmd);
     // A new request id: the server remembers its answer to the old one.
     this.removeOp(requestId, false);
-    this.ops = [...this.ops, { ...op, requestId: this.newId(), status: 'queued', error: undefined }];
+    this.ops = [...this.ops, { ...op, cmd, requestId: this.newId(), status: 'queued', error: undefined }];
     this.deps.persistence?.putOp(this.ops.at(-1)!);
     this.recompute();
     void this.flush();

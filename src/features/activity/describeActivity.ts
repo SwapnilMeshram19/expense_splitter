@@ -156,6 +156,19 @@ export function describeActivity(entry: ActivityLogEntry, ctx: ActivityContext):
         };
       }
       if (entry.action === 'delete') return { title: `${actor} deleted the group`, detail: null };
+      // Home services are logged on the group too (household.* commands).
+      const service = asRecord(after?.householdService);
+      if (entry.action === 'update' && service) {
+        const name = str(service, 'name') ?? 'a home service';
+        switch (str(after, 'serviceAction')) {
+          case 'create':
+            return { title: `${actor} added “${name}” to home services`, detail: null };
+          case 'delete':
+            return { title: `${actor} removed “${name}” from home services`, detail: 'Posted bills stay' };
+          default:
+            return { title: `${actor} changed “${name}”`, detail: 'Home services' };
+        }
+      }
       // Recurring rules are logged on the group (see repositories/recurring.ts).
       const rule = asRecord(after?.recurringRule);
       if (entry.action === 'update' && rule) {

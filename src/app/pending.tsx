@@ -22,8 +22,9 @@ export default function PendingScreen() {
   const ops = useData(() => {
     const store = dataStore();
     return store.pendingOps().map((op) => {
-      const group = store.group(op.groupId)?.group;
-      return { op, groupName: group?.name ?? null, currency: group?.currency ?? 'INR' };
+      const snapshot = store.group(op.groupId);
+      const group = snapshot?.group;
+      return { op, snapshot, groupName: group?.name ?? null, currency: group?.currency ?? 'INR' };
     });
   });
 
@@ -44,9 +45,9 @@ export default function PendingScreen() {
           </View>
         ) : null}
 
-        {ops.map(({ op, groupName, currency }) => (
+        {ops.map(({ op, snapshot, groupName, currency }) => (
           <Card key={op.requestId} style={styles.card}>
-            <AppText variant="heading">{pendingTitle(op.cmd, currency)}</AppText>
+            <AppText variant="heading">{pendingTitle(op.cmd, currency, snapshot)}</AppText>
             <AppText variant="caption" color={theme.muted}>
               {groupName ? `${groupName} · ` : ''}
               {formatTimestamp(op.at)}

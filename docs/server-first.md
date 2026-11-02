@@ -7,7 +7,7 @@ except a small offline queue for new items.
 
 | Piece | Where | What it does |
 | ----- | ----- | ------------ |
-| Commands | `src/domain/commands.ts` (shared with the server) | 14 ops (`expense.add`, `group.update`, …). `planCommand` checks the input against the group's current state and returns the rows to write. |
+| Commands | `src/domain/commands.ts` (shared with the server) | 19 ops (`expense.add`, `group.update`, `household.mark`, …). `planCommand` checks the input against the group's current state and returns the rows to write. |
 | `api` Edge Function | `supabase/functions/api` | `POST { commands: [...] }` (≤ 50, ≤ 256 KB). For each: idempotency check → load group state → `planCommand` → `api_apply` (all-or-nothing, version-checked). Then a Realtime signal to the group. |
 | Read RPCs | `supabase/migrations/20261029120000_server_first_api.sql` | `list_groups(p_known)` returns only groups whose `rev` changed; `get_group`; `list_activity` (paged). |
 | API client | `src/api/client.ts` | Typed calls; errors as `ApiError` (`OFFLINE`, `UNAUTHENTICATED`, `BAD_REQUEST`, `SERVER`). |
@@ -21,9 +21,12 @@ except a small offline queue for new items.
 
 1. Plans the command locally against the current view. A validation error comes back at once,
    without a network call.
-2. **Queueable ops** (`expense.add`, `settlement.add`, `group.create`): saved to the outbox, shown
-   immediately, then sent. Offline, they wait and go out on reconnect, app start or refresh. They
-   only add rows with client-made UUIDs, so a late send can't clash with anyone else's edit.
+2. **Queueable ops** (`expense.add`, `settlement.add`, `group.create`, `household.mark`): saved to
+   the outbox, shown immediately, then sent. Offline, they wait and go out on reconnect, app start
+   or refresh. The first three only add rows with client-made UUIDs, so a late send can't clash
+   with anyone else's edit. `household.mark` carries the day's value it was based on: a clash is
+   refused (`MARK_CONFLICT`) and waits on **Not saved yet**, where Try again keeps mine
+   (see `docs/household.md`).
 3. **Everything else** (edits, deletes, members, budgets, rules) needs a connection. The screen
    waits for the server and shows "You're offline" instead of queuing. This is deliberate: a
    queued edit could be stale by the time it's sent.

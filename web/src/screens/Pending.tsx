@@ -32,7 +32,7 @@ export function PendingScreen() {
             <div key={op.requestId} className="list-row static">
               <div className="grow">
                 <div className="ellipsis">
-                  <strong>{pendingTitle(op.cmd, group?.group.currency ?? 'INR')}</strong>
+                  <strong>{pendingTitle(op.cmd, group?.group.currency ?? 'INR', group)}</strong>
                 </div>
                 <div className="small muted">
                   {group ? `${group.group.name} · ` : ''}

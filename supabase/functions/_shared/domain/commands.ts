@@ -17,6 +17,25 @@ import { DEFAULT_CURRENCY, isSupportedCurrency, maxAmountMinor, type CurrencyCod
 import { validateExpense, type ExpenseValidationError } from './expenseValidation.ts';
 import type { ForeignAmount } from './fx.ts';
 import {
+  billableMonths,
+  billDescription,
+  billLines,
+  checkMark,
+  checkService,
+  computeBill,
+  isMonth,
+  markId,
+  marksByDate,
+  MAX_SERVICES_PER_GROUP,
+  monthEnd,
+  monthStart,
+  utcDate,
+  addDays,
+  type MarkError,
+  type ServiceError,
+  type ServiceFields,
+} from './household.ts';
+import {
   activeMemberIdSet,
   activeMembers,
   activityFromWire,
@@ -24,6 +43,8 @@ import {
   compareExpensesNewestFirst,
   expenseFromWire,
   groupFromWire,
+  householdMarkFromWire,
+  householdServiceFromWire,
   isExpenseCategory,
   isSettlementMethod,
   ledgerOf,
@@ -36,6 +57,8 @@ import {
   type ExpenseCategory,
   type Group,
   type GroupSnapshot,
+  type HouseholdMark,
+  type HouseholdService,
   type Member,
   type RecurringRule,
   type RuleLine,
@@ -55,6 +78,8 @@ import type {
   WireActivity,
   WireExpense,
   WireGroup,
+  WireHouseholdMark,
+  WireHouseholdService,
   WireLine,
   WireMember,
   WireRecurringRule,
@@ -149,6 +174,31 @@ export interface CommandInputs {
   'recurring.create': RuleFields & { groupId: string; id: string };
   'recurring.update': RuleFields & { groupId: string; ruleId: string; expectedVersion: number };
   'recurring.delete': { groupId: string; ruleId: string; expectedVersion: number };
+  'household.create': ServiceFields & { groupId: string; id: string };
+  'household.update': ServiceFields & { groupId: string; serviceId: string; expectedVersion: number };
+  'household.delete': { groupId: string; serviceId: string; expectedVersion: number };
+  /**
+   * Set one day of a service. qty null = back to usual. `expected` = the day's value this change
+   * was made on (null = usual): if someone else changed the day meanwhile, the server refuses
+   * with MARK_CONFLICT instead of overwriting their mark.
+   */
+  'household.mark': { groupId: string; serviceId: string; date: string; qty: number | null; expected: number | null };
+  /**
+   * Post (or update) a month's bill as a group expense, split equally. The amount is computed by
+   * the planner from the marks, never sent. Days are counted up to `upTo` (the phone's today in a
+   * month that isn't over). `expectedExpenseVersion`: the posted expense being updated, else null.
+   */
+  'household.postBill': {
+    groupId: string;
+    serviceId: string;
+    expectedVersion: number;
+    month: string;
+    upTo: string;
+    expenseId: string;
+    expectedExpenseVersion: number | null;
+    paidByMemberId: string;
+    memberIds: string[];
+  };
 }
 
 export type CommandOp = keyof CommandInputs;
@@ -168,12 +218,21 @@ export const COMMAND_OPS = [
   'recurring.create',
   'recurring.update',
   'recurring.delete',
+  'household.create',
+  'household.update',
+  'household.delete',
+  'household.mark',
+  'household.postBill',
 ] as const satisfies readonly CommandOp[];
 export const isCommandOp = (v: unknown): v is CommandOp =>
   typeof v === 'string' && (COMMAND_OPS as readonly string[]).includes(v);
 
-/** Ops that may wait in a phone's offline queue: they only add rows, so a late send can't clash. */
-export const QUEUEABLE_OPS = ['expense.add', 'settlement.add', 'group.create'] as const satisfies readonly CommandOp[];
+/**
+ * Ops that may wait in a phone's offline queue. Most only add rows, so a late send can't clash.
+ * household.mark changes a day, but carries the value it was based on: a clash is refused
+ * (MARK_CONFLICT) and shown on "Not saved yet", never applied over someone else's mark.
+ */
+export const QUEUEABLE_OPS = ['expense.add', 'settlement.add', 'group.create', 'household.mark'] as const satisfies readonly CommandOp[];
 export const isQueueable = (op: CommandOp): boolean => (QUEUEABLE_OPS as readonly string[]).includes(op);
 
 // ── Errors ─────────────────────────────────────────────────────────────
@@ -224,6 +283,13 @@ export type RuleError =
   | { code: 'SCHEDULE'; error: ScheduleError }
   | { code: 'SCHEDULE_LOCKED' }
   | { code: 'INVALID_TIME_ZONE' };
+export type HouseholdError = ServiceError | { code: 'TOO_MANY_SERVICES'; max: number };
+export type HouseholdMarkError = MarkError | { code: 'MARK_CONFLICT'; current: number | null };
+export type BillError =
+  | ExpenseError
+  | { code: 'INVALID_MONTH' }
+  | { code: 'NOTHING_TO_BILL' }
+  | { code: 'BILL_TOO_LARGE'; max: number };
 
 export interface CommandErrors {
   'group.create': GroupCreateError;
@@ -240,6 +306,11 @@ export interface CommandErrors {
   'recurring.create': RuleError;
   'recurring.update': RuleError;
   'recurring.delete': never;
+  'household.create': HouseholdError;
+  'household.update': HouseholdError;
+  'household.delete': never;
+  'household.mark': HouseholdMarkError;
+  'household.postBill': BillError;
 }
 
 /** What a command can fail with: its own validation errors, or a common one. */
@@ -281,6 +352,8 @@ const emptyBatch = (): PushBatch => ({
   expenses: [],
   settlements: [],
   recurring_rules: [],
+  household_services: [],
+  household_marks: [],
   activity: [],
 });
 
@@ -390,6 +463,39 @@ const ruleWire = (r: RecurringRule, base: number, currency: string): Outgoing<Wi
   updated_at: r.updatedAt,
   deleted_at: r.deletedAt,
   group_currency: currency,
+  base_version: base,
+});
+
+const serviceWire = (h: HouseholdService, base: number, currency: string): Outgoing<WireHouseholdService> => ({
+  id: h.id,
+  group_id: h.groupId,
+  name: h.name,
+  kind: h.kind,
+  unit: h.unit,
+  default_qty: h.defaultQty,
+  rates: h.rates.map((r) => ({ from: r.from, rate_paise: r.ratePaise })),
+  weekdays: h.weekdays,
+  paid_leaves: h.paidLeaves,
+  start_date: h.startDate,
+  end_date: h.endDate,
+  bills: h.bills,
+  created_by_member_id: h.createdByMemberId,
+  created_at: h.createdAt,
+  updated_at: h.updatedAt,
+  deleted_at: h.deletedAt,
+  group_currency: currency,
+  base_version: base,
+});
+
+const markWire = (m: HouseholdMark, base: number): Outgoing<WireHouseholdMark> => ({
+  id: m.id,
+  group_id: m.groupId,
+  service_id: m.serviceId,
+  mark_date: m.date,
+  qty: m.qty,
+  marked_by_member_id: m.markedByMemberId,
+  created_at: m.createdAt,
+  updated_at: m.updatedAt,
   base_version: base,
 });
 
@@ -1061,6 +1167,183 @@ function planRuleDelete(state: GroupSnapshot | null, ctx: PlanContext, input: Co
   return { ok: true, plan: { groupId: s.group.id, entityId: rule.id, batch } };
 }
 
+// ── Home services ──────────────────────────────────────────────────────
+
+/** Service changes are logged on the group, like rules (activity entity types are fixed). */
+const serviceEntry = (ctx: PlanContext, h: Pick<HouseholdService, 'id' | 'groupId' | 'name' | 'kind'>, serviceAction: 'create' | 'update' | 'delete', actor: string) =>
+  activity(ctx, h.groupId, 'group', h.groupId, 'update', actor, null, {
+    householdService: { id: h.id, name: h.name, kind: h.kind },
+    serviceAction,
+  });
+
+const activeServices = (s: GroupSnapshot) => s.householdServices.filter((h) => h.deletedAt === null);
+
+function planServiceCreate(state: GroupSnapshot | null, ctx: PlanContext, input: CommandInputs['household.create']): PlanResult<'household.create'> {
+  const me = actorIn(state, ctx);
+  if (isErr(me)) return fail(me);
+  const s = state!;
+  const id = input.id.toLowerCase();
+  if (!isUuid(id) || s.householdServices.some((h) => h.id === id)) return fail({ code: 'ID_TAKEN' });
+  const others = activeServices(s);
+  if (others.length >= MAX_SERVICES_PER_GROUP) return fail({ code: 'TOO_MANY_SERVICES', max: MAX_SERVICES_PER_GROUP });
+  const checked = checkService(input, others.map((h) => h.name), maxAmountMinor(s.group.currency));
+  if (!checked.ok) return fail(checked.error);
+
+  const t = ctx.now;
+  const service: HouseholdService = {
+    id,
+    groupId: s.group.id,
+    ...checked.row,
+    bills: {},
+    createdByMemberId: me.id,
+    createdAt: t,
+    updatedAt: t,
+    deletedAt: null,
+    version: 0,
+  };
+  const batch = emptyBatch();
+  batch.household_services!.push(serviceWire(service, 0, s.group.currency));
+  batch.activity.push(serviceEntry(ctx, service, 'create', me.id));
+  return { ok: true, plan: { groupId: s.group.id, entityId: id, batch } };
+}
+
+const findService = (s: GroupSnapshot, serviceId: string) =>
+  s.householdServices.find((h) => h.id === serviceId.toLowerCase() && h.deletedAt === null);
+
+function planServiceUpdate(state: GroupSnapshot | null, ctx: PlanContext, input: CommandInputs['household.update']): PlanResult<'household.update'> {
+  const me = actorIn(state, ctx);
+  if (isErr(me)) return fail(me);
+  const s = state!;
+  const service = findService(s, input.serviceId);
+  if (!service) return fail({ code: 'NOT_FOUND' });
+  if (service.version !== input.expectedVersion) return fail({ code: 'STALE' });
+  const others = activeServices(s).filter((h) => h.id !== service.id);
+  const checked = checkService(input, others.map((h) => h.name), maxAmountMinor(s.group.currency));
+  if (!checked.ok) return fail(checked.error);
+
+  const next: HouseholdService = { ...service, ...checked.row };
+  const same = (Object.keys(checked.row) as (keyof typeof checked.row)[]).every(
+    (k) => JSON.stringify(next[k]) === JSON.stringify(service[k]),
+  );
+  const batch = emptyBatch();
+  if (!same) {
+    next.updatedAt = ctx.now;
+    batch.household_services!.push(serviceWire(next, input.expectedVersion, s.group.currency));
+    batch.activity.push(serviceEntry(ctx, next, 'update', me.id));
+  }
+  return { ok: true, plan: { groupId: s.group.id, entityId: service.id, batch } };
+}
+
+function planServiceDelete(state: GroupSnapshot | null, ctx: PlanContext, input: CommandInputs['household.delete']): PlanResult<'household.delete'> {
+  const me = actorIn(state, ctx);
+  if (isErr(me)) return fail(me);
+  const s = state!;
+  const service = findService(s, input.serviceId);
+  if (!service) return fail({ code: 'NOT_FOUND' });
+  if (service.version !== input.expectedVersion) return fail({ code: 'STALE' });
+  // Posted bills are ordinary expenses: they stay.
+  const batch = emptyBatch();
+  batch.household_services!.push(serviceWire({ ...service, deletedAt: ctx.now, updatedAt: ctx.now }, input.expectedVersion, s.group.currency));
+  batch.activity.push(serviceEntry(ctx, service, 'delete', me.id));
+  return { ok: true, plan: { groupId: s.group.id, entityId: service.id, batch } };
+}
+
+/** A day's stored value: null = usual (no mark, or a mark reset to usual). */
+export const markValue = (s: GroupSnapshot, serviceId: string, date: string): number | null =>
+  s.householdMarks.find((m) => m.id === markId(serviceId, date))?.qty ?? null;
+
+function planMark(state: GroupSnapshot | null, ctx: PlanContext, input: CommandInputs['household.mark']): PlanResult<'household.mark'> {
+  const me = actorIn(state, ctx);
+  if (isErr(me)) return fail(me);
+  const s = state!;
+  const service = findService(s, input.serviceId);
+  if (!service) return fail({ code: 'NOT_FOUND' });
+  const checked = checkMark(service, input.date, input.qty, utcDate(ctx.now));
+  if (!checked.ok) return fail(checked.error);
+
+  const id = markId(service.id, input.date);
+  const existing = s.householdMarks.find((m) => m.id === id) ?? null;
+  const current = existing?.qty ?? null;
+  const batch = emptyBatch();
+  const plan = { ok: true as const, plan: { groupId: s.group.id, entityId: id, batch } };
+  // Someone already set the day to the same thing: nothing to do, nothing to argue about.
+  if (current === checked.qty) return plan;
+  if (current !== (input.expected ?? null)) return fail({ code: 'MARK_CONFLICT', current });
+
+  const t = ctx.now;
+  const mark: HouseholdMark = existing
+    ? { ...existing, qty: checked.qty, markedByMemberId: me.id, updatedAt: t }
+    : { id, groupId: s.group.id, serviceId: service.id, date: input.date, qty: checked.qty, markedByMemberId: me.id, createdAt: t, updatedAt: t, version: 0 };
+  // No history entry: a daily tick isn't news, and the log would fill with them.
+  batch.household_marks!.push(markWire(mark, existing?.version ?? 0));
+  return plan;
+}
+
+function planPostBill(state: GroupSnapshot | null, ctx: PlanContext, input: CommandInputs['household.postBill']): PlanResult<'household.postBill'> {
+  const me = actorIn(state, ctx);
+  if (isErr(me)) return fail(me);
+  const s = state!;
+  const service = findService(s, input.serviceId);
+  if (!service) return fail({ code: 'NOT_FOUND' });
+  if (service.version !== input.expectedVersion) return fail({ code: 'STALE' });
+
+  // The phone's "today" may be a day ahead of the server's (UTC): allow one day.
+  const today = utcDate(ctx.now);
+  const month = input.month;
+  if (!isMonth(month) || !billableMonths(service, addDays(today, 1)).includes(month)) return fail({ code: 'INVALID_MONTH' });
+  if (typeof input.upTo !== 'string' || input.upTo < monthStart(month) || input.upTo > monthEnd(month) || input.upTo > addDays(today, 1)) {
+    return fail({ code: 'INVALID_MONTH' });
+  }
+
+  const bill = computeBill(service, marksByDate(s.householdMarks, service.id), month, input.upTo);
+  if (bill.amountPaise <= 0) return fail({ code: 'NOTHING_TO_BILL' });
+  const max = maxAmountMinor(s.group.currency);
+  if (bill.amountPaise > max) return fail({ code: 'BILL_TOO_LARGE', max });
+
+  const postedId = service.bills[month];
+  const posted = postedId ? s.expenses.find((e) => e.id === postedId) : undefined;
+  const paidBy = typeof input.paidByMemberId === 'string' ? input.paidByMemberId.toLowerCase() : '';
+  const fields: ExpenseFields = {
+    description: billDescription(service.name, month),
+    amountPaise: bill.amountPaise,
+    category: 'other',
+    categoryLabel: 'Home',
+    expenseDate: bill.upTo,
+    payers: [{ memberId: paidBy, amountPaise: bill.amountPaise }],
+    splitInput: { type: 'equal', memberIds: Array.isArray(input.memberIds) ? input.memberIds.map((m) => String(m).toLowerCase()) : [] },
+    note: billLines(service, bill, s.group.currency).join('\n'),
+  };
+
+  let expensePlan: PlanResult<'expense.add'> | PlanResult<'expense.update'>;
+  if (posted) {
+    if (input.expectedExpenseVersion !== posted.version) return fail({ code: 'STALE' });
+    // A receipt someone attached to the bill stays; everything else is the bill's.
+    expensePlan = planExpenseUpdate(s, ctx, { ...fields, groupId: s.group.id, expenseId: posted.id, expectedVersion: posted.version });
+  } else {
+    // The posted expense was deleted (or never existed): post a new one.
+    if (input.expectedExpenseVersion !== null) return fail({ code: 'STALE' });
+    expensePlan = planExpenseAdd(s, ctx, { ...fields, groupId: s.group.id, id: input.expenseId });
+  }
+  if (!expensePlan.ok) return fail(expensePlan.error);
+
+  const batch = expensePlan.plan.batch;
+  const expenseId = expensePlan.plan.entityId;
+  if (service.bills[month] !== expenseId) {
+    const next: HouseholdService = { ...service, bills: { ...service.bills, [month]: expenseId }, updatedAt: ctx.now };
+    batch.household_services!.push(serviceWire(next, input.expectedVersion, s.group.currency));
+  }
+  return { ok: true, plan: { groupId: s.group.id, entityId: expenseId, batch } };
+}
+
+/**
+ * A refused change, re-made on the group as it is now ("Try again" on Not saved yet). For a day
+ * someone else marked differently that means: keep mine. Other commands are sent as they were.
+ */
+export function rebaseCommand(state: GroupSnapshot | null, cmd: Command): Command {
+  if (cmd.op !== 'household.mark' || !state) return cmd;
+  return { ...cmd, input: { ...cmd.input, expected: markValue(state, cmd.input.serviceId, cmd.input.date) } };
+}
+
 /**
  * Plan one command against the group as it is now (`state`; null only for group.create).
  * Never throws for bad input: every problem comes back as an error code.
@@ -1116,6 +1399,21 @@ export function planCommand<K extends CommandOp>(
       case 'recurring.delete':
         result = planRuleDelete(state, ctx, c.input);
         break;
+      case 'household.create':
+        result = planServiceCreate(state, ctx, c.input);
+        break;
+      case 'household.update':
+        result = planServiceUpdate(state, ctx, c.input);
+        break;
+      case 'household.delete':
+        result = planServiceDelete(state, ctx, c.input);
+        break;
+      case 'household.mark':
+        result = planMark(state, ctx, c.input);
+        break;
+      case 'household.postBill':
+        result = planPostBill(state, ctx, c.input);
+        break;
       default:
         result = { ok: false, error: { code: 'NOT_FOUND' } };
     }
@@ -1148,13 +1446,24 @@ export function applyPlan(snapshot: GroupSnapshot | null, plan: Plan): GroupSnap
   for (const w of b.groups) {
     const group = groupFromWire(bump(w));
     if (!s) {
-      s = { rev: 'local', group, members: [], expenses: [], settlements: [], rules: [], currencyLocked: false, rulesWithOccurrences: [] };
+      s = {
+        rev: 'local',
+        group,
+        members: [],
+        expenses: [],
+        settlements: [],
+        rules: [],
+        currencyLocked: false,
+        rulesWithOccurrences: [],
+        householdServices: [],
+        householdMarks: [],
+      };
     } else {
       s = { ...s, group };
     }
   }
   if (!s) return null;
-  let { members, expenses, settlements, rules } = s;
+  let { members, expenses, settlements, rules, householdServices, householdMarks } = s;
   for (const w of b.members) members = upsert(members, memberFromWire(bump(w)));
   for (const w of b.expenses) {
     const e = expenseFromWire(bump(w));
@@ -1168,6 +1477,11 @@ export function applyPlan(snapshot: GroupSnapshot | null, plan: Plan): GroupSnap
     const r = ruleFromWire(bump(w));
     rules = r.deletedAt === null ? upsert(rules, r) : rules.filter((y) => y.id !== r.id);
   }
+  for (const w of b.household_services ?? []) {
+    const h = householdServiceFromWire(bump(w));
+    householdServices = h.deletedAt === null ? upsert(householdServices, h) : householdServices.filter((y) => y.id !== h.id);
+  }
+  for (const w of b.household_marks ?? []) householdMarks = upsert(householdMarks, householdMarkFromWire(bump(w)));
   return {
     ...s,
     rev: `${s.rev}+`,
@@ -1175,7 +1489,14 @@ export function applyPlan(snapshot: GroupSnapshot | null, plan: Plan): GroupSnap
     expenses: [...expenses].sort(compareExpensesNewestFirst),
     settlements: [...settlements].sort((a, c) => c.settledAt - a.settledAt),
     rules,
-    currencyLocked: s.currencyLocked || b.expenses.length > 0 || b.settlements.length > 0 || b.recurring_rules.length > 0,
+    householdServices,
+    householdMarks,
+    currencyLocked:
+      s.currencyLocked ||
+      b.expenses.length > 0 ||
+      b.settlements.length > 0 ||
+      b.recurring_rules.length > 0 ||
+      (b.household_services?.length ?? 0) > 0,
   };
 }
 
